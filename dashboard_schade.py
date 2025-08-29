@@ -118,7 +118,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     - ids_blauw: set met unieke P-nrs 'Coaching'
     - total_geel_rows: totaal # rijen (incl. dubbels) in 'Voltooide coachings'
     - total_blauw_rows: totaal # rijen (incl. dubbels) in 'Coaching'
-    - excel_info: dict[pnr] -> {'naam': 'Voornaam Achternaam', 'teamcoach': ..., 'status': ...}
+    - excel_info: dict[pnr] -> {'naam': 'Voornaam Achternaam', 'teamcoach': ..., 'status': ..., 'beoordeling': ...}
     - warn: eventuele foutmelding
     """
     ids_geel, ids_blauw = set(), set()
@@ -133,12 +133,13 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     def vind_sheet(xls, naam):
         return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
 
-    # Aliases: let op — 'naam' behandelen we als ACHTERNAAM
+    # Aliases
     pnr_keys        = ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]
-    fullname_keys   = ["volledige naam", "chauffeur", "bestuurder", "name"]   # NIET 'naam'
+    fullname_keys   = ["volledige naam", "chauffeur", "bestuurder", "name"]
     voornaam_keys   = ["voornaam", "firstname", "first name", "given name"]
     achternaam_keys = ["achternaam", "familienaam", "lastname", "last name", "surname", "naam"]
     coach_keys      = ["teamcoach", "coach", "team coach"]
+    rating_keys     = ["beoordeling coaching", "beoordeling", "rating", "evaluatie"]
 
     def lees_sheet(sheetnaam, status_label):
         ids = set()
@@ -155,6 +156,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         kol_vn    = next((k for k in voornaam_keys if k in dfc.columns), None)
         kol_an    = next((k for k in achternaam_keys if k in dfc.columns), None)
         kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
+        kol_rate  = next((k for k in rating_keys if k in dfc.columns), None)  # alleen aanwezig in "Voltooide coachings"
 
         if kol_pnr is None:
             return ids, total_rows
@@ -194,6 +196,23 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
             if naam: info["naam"] = naam
             if tc:   info["teamcoach"] = tc
             info["status"] = status_label
+
+            # Beoordeling meenemen (alleen zinvol/aanwezig bij 'Voltooid')
+            if kol_rate and status_label == "Voltooid":
+                raw_rate = str(dfc[kol_rate].iloc[i]).strip().lower()
+                if raw_rate and raw_rate not in {"nan", "none", ""}:
+                    # Normaliseer naar vaste set
+                    mapping = {
+                        "zeer goed": "zeer goed",
+                        "goed": "goed",
+                        "voldoende": "voldoende",
+                        "slecht": "slecht",
+                        "zeer slecht": "zeer slecht",
+                        # evt. toleranter maken:
+                        "zeergoed": "zeer goed",
+                        "zeerslecht": "zeer slecht",
+                    }
+                    info["beoordeling"] = mapping.get(raw_rate, raw_rate)  # onbekende waarde blijft zichtbaar
             excel_info[pnr] = info
 
         return ids, total_rows
@@ -872,14 +891,14 @@ with coaching_tab:
 
     # Tellingen in schadelijst per status (gefilterd op gekozen coach(es))
     geel_count  = len(gecoachte_ids  & ids_schade_sel)
-    blauw_count = len(coaching_ids   & ids_schade_sel)
+    zwart_count = len(coaching_ids   & ids_schade_sel)  # 'lopend' = zwart ⚫
 
     st.markdown("### ℹ️ Coaching-status (gefilterd op teamcoach-selectie)")
     col1, col2 = st.columns(2)
     with col1:
         st.metric("🟡 Voltooide coachings (in schadelijst)", geel_count)
     with col2:
-        st.metric("🔵 Coaching (lopend, in schadelijst)", blauw_count)
+        st.metric("⚫ Coaching (lopend, in schadelijst)", zwart_count)
     st.caption(f"Gekozen teamcoach(es): {gekozen_label}")
 
     st.caption("---")
@@ -891,8 +910,8 @@ with coaching_tab:
         st.metric("🟡 Voltooide coachings (Excel-rijen)", totaal_voltooid_rijen)
         st.metric("🟡 Unieke personen (Excel)", len(gecoachte_ids))
     with col2:
-        st.metric("🔵 Lopende coachings (Excel-rijen)", totaal_lopend_rijen)
-        st.metric("🔵 Unieke personen (Excel)", len(coaching_ids))
+        st.metric("⚫ Lopende coachings (Excel-rijen)", totaal_lopend_rijen)
+        st.metric("⚫ Unieke personen (Excel)", len(coaching_ids))
 
     st.caption("---")
 
@@ -932,19 +951,18 @@ with coaching_tab:
 
     st.caption(f"Vergelijking voor status: {status_keuze} · Teamcoach(es): {gekozen_label}")
 
+    # ===== Lijsten met beoordeling ====
     with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(missing_in_schade)})", expanded=False):
         if not missing_in_schade:
             st.write("—")
         else:
             for dn in missing_in_schade:
                 ex = excel_info.get(dn, {})
-                naam_excel  = ex.get("naam")
-                coach_excel = ex.get("teamcoach")
-                # fallback naar schadelijst als Excel geen naam/coach heeft
-                dfinfo = dn_to_info_df.get(dn, {})
-                naam  = naam_excel  or dfinfo.get("volledige naam_disp", "onbekend")
-                coach = coach_excel or dfinfo.get("teamcoach_disp", "onbekend")
-                st.write(f"• {dn} — {naam} (teamcoach: {coach})")
+                naam_excel  = ex.get("naam", "onbekend")
+                coach_excel = ex.get("teamcoach", "onbekend")
+                beoordeling = ex.get("beoordeling", "—")  # alleen gevuld bij 'Voltooid'
+                show_rate = beoordeling if ex.get("status") == "Voltooid" else "—"
+                st.write(f"• {dn} — {naam_excel} (teamcoach: {coach_excel}, beoordeling: {show_rate})")
 
     with st.expander(f"🟥 In schadelijst maar niet in Coachinglijst ({len(extra_in_schade)})", expanded=False):
         if not extra_in_schade:
@@ -954,4 +972,54 @@ with coaching_tab:
                 dfinfo = dn_to_info_df.get(dn, {})
                 naam  = dfinfo.get("volledige naam_disp", "onbekend")
                 coach = dfinfo.get("teamcoach_disp", "onbekend")
-                st.write(f"• {dn} — {naam} (teamcoach: {coach})")
+                # Geen bron in Excel ⇒ geen beoordeling beschikbaar
+                st.write(f"• {dn} — {naam} (teamcoach: {coach}, beoordeling: —)")
+
+    st.caption("---")
+
+    # ===== Beoordelingen-overzicht (alleen VOLTOOID) =====
+    st.markdown("### ⭐ Beoordelingen van voltooide coachings (gefilterd op teamcoach-selectie)")
+
+    beoordelingen_sel = []
+    for pnr, ex in excel_info.items():
+        if ex.get("status") != "Voltooid":
+            continue
+        tc = ex.get("teamcoach")
+        if _norm(tc) not in selected_norms:
+            continue
+        rate = ex.get("beoordeling")
+        if rate and str(rate).strip().lower() not in {"", "nan", "none"}:
+            beoordelingen_sel.append(str(rate).strip().lower())
+
+    if len(beoordelingen_sel) == 0:
+        st.info("Geen beoordelingen gevonden voor de huidige selectie.")
+    else:
+        # Tellingen in vaste volgorde
+        volgorde = ["zeer goed", "goed", "voldoende", "slecht", "zeer slecht"]
+        vc = pd.Series(beoordelingen_sel).value_counts()
+        series = pd.Series({k: int(vc.get(k, 0)) for k in volgorde})
+
+        col_a, col_b = st.columns([2, 1])
+        with col_a:
+            st.bar_chart(series)  # eenvoudige staafgrafiek
+        with col_b:
+            st.metric("Totaal beoordeelde coachings", int(series.sum()))
+            st.metric(
+                "⌀ Score-indicatie (1–5)",
+                round(
+                    (
+                        series.get("zeer goed", 0) * 5 +
+                        series.get("goed", 0) * 4 +
+                        series.get("voldoende", 0) * 3 +
+                        series.get("slecht", 0) * 2 +
+                        series.get("zeer slecht", 0) * 1
+                    ) / max(series.sum(), 1),
+                    2
+                )
+            )
+
+        # Optioneel: tabelletje
+        st.dataframe(
+            series.rename("aantal").reset_index().rename(columns={"index": "beoordeling"}),
+            use_container_width=True
+        )
