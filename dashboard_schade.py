@@ -85,28 +85,41 @@ COLOR_BLAUW = "#2196F3"  # in coaching
 COLOR_MIX   = "#7E57C2"  # beide
 COLOR_GRIJS = "#BDBDBD"  # geen
 
-def status_van_chauffeur(naam: str) -> str:
+# === Nieuw: badge op basis van beoordeling + lopend ===
+def _beoordeling_emoji(rate: str) -> str:
+    r = (rate or "").strip().lower()
+    if r in {"zeer goed", "goed"}:
+        return "🟢 "
+    if r == "voldoende":
+        return "🟠 "
+    if r in {"slecht", "zeer slecht"}:
+        return "🔴 "
+    return ""  # geen beoordeling bekend
+
+def badge_van_chauffeur(naam: str) -> str:
+    """
+    Bepaalt de badges voor een chauffeur:
+    - Groen/Oranje/Rood op basis van 'Beoordeling coaching' uit excel_info
+    - Zwart erbij als er een lopende coaching is
+    """
     dn = naam_naar_dn(naam)
     if not dn:
-        return "Geen"
-    sdn = str(dn)
-    in_geel = sdn in gecoachte_ids
-    in_blauw = sdn in coaching_ids
-    if in_geel and in_blauw:
-        return "Beide"
-    if in_geel:
-        return "Voltooid"
-    if in_blauw:
-        return "Coaching"
-    return "Geen"
+        return ""
 
-def badge_van_status(status: str) -> str:
-    return {
-        "Voltooid": "🟡 ",
-        "Coaching": "⚫ ",     # zwart ipv blauw
-        "Beide": "🟡⚫ ",      # geel + zwart
-        "Geen": ""
-    }.get(status, "")
+    sdn = str(dn).strip()
+    info = excel_info.get(sdn, {})
+    beoordeling = info.get("beoordeling")
+    status_excel = info.get("status")  # "Voltooid" of "Coaching"
+
+    # Kleur op basis van beoordeling
+    kleur = _beoordeling_emoji(beoordeling)
+
+    # Lopen coaching?
+    lopend = (status_excel == "Coaching") or (sdn in coaching_ids)
+
+    # Combineer: kleur eerst, dan zwart als lopend
+    return f"{kleur}{'⚫ ' if lopend else ''}"
+
 
 
 # ========= Coachingslijst inlezen (incl. naam/teamcoach uit Excel) =========
@@ -578,8 +591,8 @@ with chauffeur_tab:
     else:
         # Dataframe voor badges en status
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
-        plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
-        plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
+        plot_df["badge"] = plot_df["chauffeur"].apply(badge_van_chauffeur)
+
 
         # ========== KPI blok ==========
         totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
