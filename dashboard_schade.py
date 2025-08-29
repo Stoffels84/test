@@ -635,6 +635,7 @@ with chauffeur_tab:
                     aantal = int(rec["aantal"])
                     status = rec["status"]
                     badge  = rec["badge"]
+
                     subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
                     with st.expander(subtitel):
                         cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
