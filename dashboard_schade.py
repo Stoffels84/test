@@ -590,10 +590,9 @@ with chauffeur_tab:
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        # Dataframe voor badges en status
+        # Dataframe voor badges
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
-        plot_df["badge"] = plot_df["chauffeur"].apply(badge_van_chauffeur)
-
+        plot_df["badge"] = plot_df["chauffeur"].apply(badge_van_chauffeur)  # ← geen 'status' meer
 
         # ========== KPI blok ==========
         totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
@@ -620,7 +619,6 @@ with chauffeur_tab:
         # ========== Accordeons per interval ==========
         st.subheader("📊 Chauffeurs gegroepeerd per interval")
 
-        # Robuuste bin-randen (stap 5)
         step = 5
         max_val = int(plot_df["aantal"].max()) if not plot_df.empty else 0
         if max_val <= 0:
@@ -648,8 +646,7 @@ with chauffeur_tab:
                 for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
                     chauffeur_label = rec["chauffeur"]
                     aantal = int(rec["aantal"])
-                    status = rec["status"]
-                    badge  = rec["badge"]
+                    badge  = rec["badge"]              # ← alleen badge gebruiken
 
                     subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
                     with st.expander(subtitel):
@@ -671,6 +668,7 @@ with chauffeur_tab:
                                 st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                             else:
                                 st.markdown(prefix + "❌ Geen geldige link")
+
 
 # ========= TAB 2: Voertuig =========
 with voertuig_tab:
