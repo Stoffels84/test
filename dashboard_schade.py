@@ -1036,3 +1036,20 @@ with coaching_tab:
             series.rename("aantal").reset_index().rename(columns={"index": "beoordeling"}),
             use_container_width=True
         )
+
+
+
+
+# Zoek alle P-nrs met status 'Voltooid' maar zonder beoordeling
+zonder_beoordeling = [
+    (pnr, ex.get("naam"), ex.get("teamcoach"))
+    for pnr, ex in excel_info.items()
+    if ex.get("status") == "Voltooid" and not ex.get("beoordeling")
+]
+
+if zonder_beoordeling:
+    st.write("⚠️ Voorbeeld(en) zonder beoordeling:")
+    for pnr, naam, coach in zonder_beoordeling[:5]:  # toon max 5 voorbeelden
+        st.write(f"- {pnr} — {naam} (teamcoach: {coach})")
+else:
+    st.write("Alle voltooide coachings hebben een beoordeling ✅")
