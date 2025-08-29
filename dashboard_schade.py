@@ -88,13 +88,12 @@ COLOR_GRIJS = "#BDBDBD"  # geen
 # === Nieuw: badge op basis van beoordeling + lopend ===
 def _beoordeling_emoji(rate: str) -> str:
     r = (rate or "").strip().lower()
-    if r in {"zeer goed", "goed"}:
+    if r in {"zeer goed", "goed", "voldoende"}:
         return "🟢 "
-    if r == "voldoende":
-        return "🟠 "
-    if r in {"slecht", "zeer slecht"}:
+    if r in {"slecht", "onvoldoende", "zeer slecht"}:
         return "🔴 "
     return ""  # geen beoordeling bekend
+
 
 def badge_van_chauffeur(naam: str) -> str:
     """
