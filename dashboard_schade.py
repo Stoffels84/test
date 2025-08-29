@@ -365,7 +365,8 @@ df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 
 # ========= UI: Titel + Caption =========
 st.title("📊 Schadegevallen Dashboard")
-st.caption("🟡 = voltooide coaching · ⚫ = aangevraagde coaching")
+st.caption("🟢 = goede beoordeling · 🟠 = voldoende · 🔴 = slecht/zeer slecht · ⚫ = lopende coaching")
+
 
 
 # ========= Query params presets =========
