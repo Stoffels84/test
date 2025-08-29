@@ -569,6 +569,7 @@ if generate_pdf:
 # ========= TAB 1: Chauffeur =========
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
+    st.caption("🟢 = goede beoordeling · 🟠 = voldoende · 🔴 = slecht/zeer slecht · ⚫ = lopende coaching")
 
     chart_series = df_filtered["volledige naam_disp"].value_counts()
 
