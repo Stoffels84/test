@@ -101,7 +101,13 @@ def status_van_chauffeur(naam: str) -> str:
     return "Geen"
 
 def badge_van_status(status: str) -> str:
-    return {"Voltooid": "🟡 ", "Coaching": "🔵 ", "Beide": "🟡🔵 ", "Geen": ""}.get(status, "")
+    return {
+        "Voltooid": "🟡 ",
+        "Coaching": "⚫ ",     # zwart ipv blauw
+        "Beide": "🟡⚫ ",      # geel + zwart
+        "Geen": ""
+    }.get(status, "")
+
 
 # ========= Coachingslijst inlezen (incl. naam/teamcoach uit Excel) =========
 @st.cache_data(show_spinner=False)
@@ -327,7 +333,8 @@ df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 
 # ========= UI: Titel + Caption =========
 st.title("📊 Schadegevallen Dashboard")
-st.caption("🟡 = voltooide coaching · 🔵 = in coaching (lopend)")
+st.caption("🟡 = voltooide coaching · ⚫ = aangevraagde coaching")
+
 
 # ========= Query params presets =========
 qp = st.query_params  # Streamlit 1.32+
