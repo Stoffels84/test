@@ -884,15 +884,15 @@ with opzoeken_tab:
 
 # ========= TAB 5: Coaching =========
 with coaching_tab:
-    # ————————— 1) KPI: status in schadelijst, gefilterd op teamcoach —————————
+    # ---------- 1) KPI: status in schadelijst (gefilterd op teamcoaches) ----------
     st.markdown("## ℹ️ Coaching-status (gefilterd op teamcoach-selectie)")
 
-    # Basis: schadelijst reeds gefilterd (df_filtered)
+    # PNRS in de huidige schadelijst-selectie
     pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
 
-    # Coachinglijst filteren op gekozen teamcoaches (op basis van excel_info['teamcoach'])
-    def filter_coach_set_by_tc(pnr_set: set[str]) -> set[str]:
-        if not selected_teamcoaches:  # zou nooit leeg zijn, maar voor de zekerheid
+    # Filter helper: beperk coachingsets tot de gekozen teamcoaches
+    def _filter_by_teamcoaches(pnr_set):
+        if not selected_teamcoaches:
             return set(map(str, pnr_set))
         out = set()
         for p in map(str, pnr_set):
@@ -901,26 +901,25 @@ with coaching_tab:
                 out.add(p)
         return out
 
-    set_voltooid_tc = filter_coach_set_by_tc(set(map(str, gecoachte_ids)))
-    set_lopend_tc   = filter_coach_set_by_tc(set(map(str, coaching_ids)))
+    set_voltooid_tc = _filter_by_teamcoaches(gecoachte_ids)   # voltooide coachings
+    set_lopend_tc   = _filter_by_teamcoaches(coaching_ids)    # lopende coachings
 
-    # KPI's: hoeveel unieke PNRS in schadelijst die (voltooid/lopend) zijn volgens Excel + TC-filter
+    # KPI's: hoeveel unieke PNRS in schadelijst die ook (voltooid/lopend) zijn
     kpi_voltooid_in_schade = len(pnrs_schade_sel & set_voltooid_tc)
     kpi_lopend_in_schade   = len(pnrs_schade_sel & set_lopend_tc)
 
-    colA, colB = st.columns(2)
-    with colA:
+    c1, c2 = st.columns(2)
+    with c1:
         st.metric("🟡 Voltooide coachings (in schadelijst)", kpi_voltooid_in_schade)
-    with colB:
+    with c2:
         st.metric("🔵 Coaching (lopend, in schadelijst)",   kpi_lopend_in_schade)
 
-    # Toon gekozen teamcoaches
     if selected_teamcoaches:
         st.caption("Gekozen teamcoach(es): " + ", ".join(selected_teamcoaches))
 
     st.markdown("---")
 
-    # ————————— 2) Totale aantallen uit Coachingslijst.xlsx —————————
+    # ---------- 2) Totale aantallen uit Coachingslijst.xlsx ----------
     st.markdown("## 📊 Totale aantallen uit Coachingslijst.xlsx")
 
     r1c1, r1c2 = st.columns(2)
@@ -937,9 +936,8 @@ with coaching_tab:
 
     st.markdown("---")
 
-    # ————————— 3) Vergelijking schadelijst ↔ Excel (met statuskeuze) —————————
+    # ---------- 3) Vergelijking schadelijst ↔ Excel ----------
     st.markdown("## 🔎 Vergelijking schadelijst ↔ Excel")
-
     status_keuze = st.radio(
         "Welke status uit coachingslijst vergelijken?",
         options=["Lopend", "Voltooid", "Beide"],
@@ -956,74 +954,74 @@ with coaching_tab:
         set_coach_sel = set_lopend_tc | set_voltooid_tc
 
     st.caption(
-        "Vergelijking voor status: **{status}** · Teamcoach(es): {tcs}".format(
-            status=status_keuze,
-            tcs=", ".join(selected_teamcoaches) if selected_teamcoaches else "—",
-        )
+        f"Vergelijking voor status: **{status_keuze}** · Teamcoach(es): "
+        f"{', '.join(selected_teamcoaches) if selected_teamcoaches else '—'}"
     )
 
-    # Sets voor de 2 expanders
+    # Sets voor de twee vergelijkingen
     coach_niet_in_schade = set_coach_sel - pnrs_schade_sel
     schade_niet_in_coach = pnrs_schade_sel - set_coach_sel
 
-    # Helpers voor tabellen
-    def status_in_coachinglijst(pnr: str) -> str:
-        in_l = pnr in set(map(str, coaching_ids))
-        in_v = pnr in set(map(str, gecoachte_ids))
-        if in_l and in_v: return "Beide"
-        if in_l: return "Lopend"
-        if in_v: return "Voltooid"
-        return "Geen"
-
-    def naam_van_pnr(pnr: str) -> str:
+    # ---------- Helpers voor tabellen ----------
+    def _naam(pnr: str) -> str:
         nm = (excel_info.get(pnr, {}) or {}).get("naam")
         if nm and str(nm).strip().lower() not in {"nan", "none", ""}:
             return str(nm)
         r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "volledige naam_disp"]
         return r.iloc[0] if not r.empty else str(pnr)
 
-    def teamcoach_van_pnr(pnr: str) -> str:
+    def _tc(pnr: str) -> str:
         tc = (excel_info.get(pnr, {}) or {}).get("teamcoach")
         if tc and str(tc).strip().lower() not in {"nan", "none", ""}:
             return str(tc)
         r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "teamcoach_disp"]
         return r.iloc[0] if not r.empty else "onbekend"
 
-    def badge_pnr(pnr: str) -> str:
-        # gebruikt jouw bestaande badge_van_chauffeur()
-        return badge_van_chauffeur(f"{pnr} - {naam_van_pnr(pnr)}")
+    def _status_volledig(pnr: str) -> str:
+        """Status volgens de VOLLEDIGE coachinglijst (niet TC- of statusgefilterd),
+        zodat je in de tabel kan zien of iemand bv. wél lopend is maar bij een andere coach."""
+        in_l = str(pnr) in set(map(str, coaching_ids))
+        in_v = str(pnr) in set(map(str, gecoachte_ids))
+        if in_l and in_v: return "Beide"
+        if in_l: return "Lopend"
+        if in_v: return "Voltooid"
+        return "Geen"
 
-    def count_schades_in_selectie(pnr: str) -> int:
-        return int((df_filtered["dienstnummer"].astype(str) == str(pnr)).sum())
+    def _badge(pnr: str) -> str:
+        return badge_van_chauffeur(f"{pnr} - {_naam(pnr)}")
 
-    def maak_tabel(pnrs_set: set[str], context_label: str) -> pd.DataFrame:
+    def _table(pnrs_set):
         rows = []
-        for p in sorted(pnrs_set):
+        for p in sorted(map(str, pnrs_set)):
             rows.append({
                 "Dienstnr": p,
-                "Naam": f"{badge_pnr(p)}{naam_van_pnr(p)}",
-                "Teamcoach": teamcoach_van_pnr(p),
-                "Status (coachinglijst)": status_in_coachinglijst(p),
-                "Schades (in selectie)": count_schades_in_selectie(p),
-                "Context": context_label,
+                "Naam": f"{_badge(p)}{_naam(p)}",
+                "Teamcoach": _tc(p),
+                "Status (coachinglijst)": _status_volledig(p),
             })
         out = pd.DataFrame(rows)
         if not out.empty:
             out = out.sort_values(["Teamcoach", "Naam"]).reset_index(drop=True)
         return out
 
-    # Expander 1: in coachinglijst maar niet in schadelijst
+    # ---------- Expander 1: in coachinglijst maar niet in schadelijst ----------
     with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(coach_niet_in_schade)})", expanded=False):
-        df_coach_not_schade = maak_tabel(coach_niet_in_schade, "Coaching(sel) ∧ ¬Schade")
+        df_coach_not_schade = _table(coach_niet_in_schade)
         if df_coach_not_schade.empty:
             st.caption("Geen resultaten.")
         else:
             st.dataframe(df_coach_not_schade, use_container_width=True)
 
-    # Expander 2: in schadelijst maar niet in coachinglijst
+    # ---------- Expander 2: in schadelijst maar niet in Coachinglijst ----------
     with st.expander(f"🟥 In schadelijst maar niet in Coachinglijst ({len(schade_niet_in_coach)})", expanded=False):
-        df_schade_not_coach = maak_tabel(schade_niet_in_coach, "Schade ∧ ¬Coaching(sel)")
+        df_schade_not_coach = _table(schade_niet_in_coach)
         if df_schade_not_coach.empty:
             st.caption("Geen resultaten.")
         else:
+            # Hier de gevraagde weergave-aanpassing:
+            # toon 'Geen' als 'Niet aangevraagd'
+            if "Status (coachinglijst)" in df_schade_not_coach.columns:
+                df_schade_not_coach["Status (coachinglijst)"] = (
+                    df_schade_not_coach["Status (coachinglijst)"].replace({"Geen": "Niet aangevraagd"})
+                )
             st.dataframe(df_schade_not_coach, use_container_width=True)
