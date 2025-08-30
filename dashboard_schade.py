@@ -885,31 +885,34 @@ with opzoeken_tab:
 # ========= TAB 5: Coaching =========
 # ========= TAB 5: Coaching =========
 with coaching_tab:
-    st.subheader("🎯 Coaching-overzicht")
-    st.caption("🟢/🔴 = beoordeling uit coachinglijst · ⚫ = lopend · 🟨 = voltooid · ⚪ = geen coaching")
+    st.subheader("🎯 Coaching-vergelijking")
+    st.caption("Maak hieronder je setkeuze: vergelijk schadelijst tegen (lopend, voltooid of beide) uit de coachinglijst.")
 
-    # ⛳ Vergelijken binnen huidige filters of over hele dataset
+    # Vergelijken binnen de huidige filters of volledige dataset
     vergelijk_in_filter = st.checkbox(
         "Vergelijk binnen huidige filters",
         value=True,
-        key="coach_compare_filter"
+        key="coach_cmp_filter"
     )
     df_basis = df_filtered if vergelijk_in_filter else df
 
-    # Verzamel sets
-    pnrs_schade   = set(df_basis["dienstnummer"].dropna().astype(str))
-    set_lopend    = set(map(str, coaching_ids))      # lopende coachings uit Coachingslijst.xlsx
-    set_voltooid  = set(map(str, gecoachte_ids))     # voltooide coachings uit Coachingslijst.xlsx
-    set_coaching  = set_lopend | set_voltooid
+    # Keuze welke categorieën van de coachinglijst meetellen
+    col_ck1, col_ck2 = st.columns(2)
+    use_lopend   = col_ck1.checkbox("Lopend",   value=True,  key="coach_cat_lopend")
+    use_voltooid = col_ck2.checkbox("Voltooid", value=True,  key="coach_cat_voltooid")
 
-    # Snij- en verschilverzamelingen
-    lopend_met_schade    = pnrs_schade & set_lopend
-    voltooid_met_schade  = pnrs_schade & set_voltooid
-    schade_geen_coaching = pnrs_schade - set_coaching
-    lopend_zonder_schade = set_lopend - pnrs_schade
-    voltooid_zonder_schade = set_voltooid - pnrs_schade
+    # Verzamel PNRS
+    pnrs_schade  = set(df_basis["dienstnummer"].dropna().astype(str))
+    set_lopend   = set(map(str, coaching_ids))
+    set_voltooid = set(map(str, gecoachte_ids))
 
-    # Kleine helpers
+    # Welke coaching-PNRS tellen we mee?
+    selected_sets = []
+    if use_lopend:   selected_sets.append(set_lopend)
+    if use_voltooid: selected_sets.append(set_voltooid)
+    set_coaching_sel = set().union(*selected_sets) if selected_sets else set()
+
+    # Helpers
     def pnr_naar_naam(pnr: str) -> str:
         nm = (excel_info.get(str(pnr), {}) or {}).get("naam")
         if nm and str(nm).strip().lower() not in {"nan", "none", ""}:
@@ -924,60 +927,63 @@ with coaching_tab:
         r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "teamcoach_disp"]
         return r.iloc[0] if not r.empty else "onbekend"
 
-    def pnr_badge(pnr: str, status: str) -> str:
+    def status_in_coachinglijst(pnr: str) -> str:
+        in_l = pnr in set_lopend
+        in_v = pnr in set_voltooid
+        if in_l and in_v: return "Beide"
+        if in_l: return "Lopend"
+        if in_v: return "Voltooid"
+        return "Geen"
+
+    def badge_pnr(pnr: str) -> str:
+        # badge_van_chauffeur verwacht label "1234 - Naam"
         label = f"{pnr} - {pnr_naar_naam(pnr)}"
-        base = badge_van_chauffeur(label)  # 🟢/🔴 + ⚫ indien lopend
-        prefix = "⚫ " if status == "Lopend" else ("🟨 " if status == "Voltooid" else "⚪ ")
-        return prefix + base
+        return badge_van_chauffeur(label)
 
-    def schades_count(pnr: str) -> int:
-        return int((df_basis["dienstnummer"].astype(str) == str(pnr)).sum())
+    # Zoekfilter op PNR
+    zoek_pnr = st.text_input("🔎 Filter op personeelsnummer (optioneel)", key="coach_cmp_search").strip()
+    def _filter_set(S):
+        return sorted(p for p in S if (not zoek_pnr) or (zoek_pnr in str(p)))
 
-    zoek_pnr = st.text_input("🔎 Filter op personeelsnummer (optioneel)", key="coach_zoek_pnr").strip()
-    def _filter_set(s):
-        return sorted(p for p in s if (zoek_pnr in str(p)) or not zoek_pnr)
+    # 1) In schadelijst ∧ NIET in (geselecteerde) coachinglijst
+    schade_niet_in_coaching = pnrs_schade - set_coaching_sel
 
-    def maak_tabel(pnrs_set, status_label):
-        rows = []
-        for pnr in _filter_set(pnrs_set):
-            rows.append({
-                "Dienstnr": pnr,
-                "Naam": f"{pnr_badge(pnr, status_label)}{pnr_naar_naam(pnr)}",
-                "Teamcoach": pnr_naar_teamcoach(pnr),
-                "Status": status_label,
-                "Schades (basis)": schades_count(pnr),
-            })
-        return pd.DataFrame(rows)
+    # 2) In (geselecteerde) coachinglijst ∧ NIET in schadelijst
+    coaching_niet_in_schade = set_coaching_sel - pnrs_schade
 
     # KPI's
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Unieke PNRS in schadelijst", len(pnrs_schade))
-    c2.metric("⚫ Lopend ∩ schade", len(lopend_met_schade))
-    c3.metric("🟨 Voltooid ∩ schade", len(voltooid_met_schade))
-    c4.metric("⚪ Schade ∧ geen coaching", len(schade_geen_coaching))
-    c5.metric("Coaching zonder schade", len(lopend_zonder_schade) + len(voltooid_zonder_schade))
+    c1, c2 = st.columns(2)
+    c1.metric("Schadelijst ∧ níet in coaching (geselecteerd)", len(schade_niet_in_coaching))
+    c2.metric("Coaching (geselecteerd) ∧ níet in schadelijst", len(coaching_niet_in_schade))
 
     st.markdown("---")
 
-    # Overlap-tabellen (coaching én schade)
-    with st.expander(f"⚫ Lopend ∩ Schade — {len(_filter_set(lopend_met_schade))}"):
-        df1 = maak_tabel(lopend_met_schade, "Lopend")
-        st.dataframe(df1.sort_values(["Teamcoach", "Naam"]).reset_index(drop=True), use_container_width=True) if not df1.empty else st.caption("Geen resultaten.")
+    # Tabelmaker
+    import pandas as _pd
+    def maak_tabel(pnrs_set, context):
+        rows = []
+        for p in _filter_set(pnrs_set):
+            rows.append({
+                "Dienstnr": p,
+                "Naam": f"{badge_pnr(p)}{pnr_naar_naam(p)}",
+                "Teamcoach": pnr_naar_teamcoach(p),
+                "Status (coachinglijst)": status_in_coachinglijst(p),
+                "Context": context,
+            })
+        df_out = _pd.DataFrame(rows)
+        if not df_out.empty:
+            df_out = df_out.sort_values(["Teamcoach", "Naam"]).reset_index(drop=True)
+        return df_out
 
-    with st.expander(f"🟨 Voltooid ∩ Schade — {len(_filter_set(voltooid_met_schade))}"):
-        df2 = maak_tabel(voltooid_met_schade, "Voltooid")
-        st.dataframe(df2.sort_values(["Teamcoach, Naam".split(", ")[0], "Naam"]).reset_index(drop=True), use_container_width=True) if not df2.empty else st.caption("Geen resultaten.")
+    # Uitklappers met tabellen
+    with st.expander(f"① In schadelijst, niet in coachinglijst (geselecteerde categorieën) — {len(_filter_set(schade_niet_in_coaching))}"):
+        df_a = maak_tabel(schade_niet_in_coaching, "Schade ∧ ¬Coaching(sel)")
+        st.dataframe(df_a, use_container_width=True) if not df_a.empty else st.caption("Geen resultaten.")
 
-    with st.expander(f"⚪ Schade ∧ Geen coaching — {len(_filter_set(schade_geen_coaching))}"):
-        df3 = maak_tabel(schade_geen_coaching, "Geen")
-        st.dataframe(df3.sort_values(["Teamcoach", "Naam"]).reset_index(drop=True), use_container_width=True) if not df3.empty else st.caption("Geen resultaten.")
+    with st.expander(f"② In coachinglijst (geselecteerde categorieën), niet in schadelijst — {len(_filter_set(coaching_niet_in_schade))}"):
+        df_b = maak_tabel(coaching_niet_in_schade, "Coaching(sel) ∧ ¬Schade")
+        st.dataframe(df_b, use_container_width=True) if not df_b.empty else st.caption("Geen resultaten.")
 
-    # Coaching zonder schade (zichtbaar om hiaten te vinden)
-    st.markdown("---")
-    with st.expander(f"📋 Coaching zonder schade (Lopend) — {len(_filter_set(lopend_zonder_schade))}"):
-        df4 = maak_tabel(lopend_zonder_schade, "Lopend")
-        st.dataframe(df4.sort_values(["Teamcoach", "Naam"]).reset_index(drop=True), use_container_width=True) if not df4.empty else st.caption("Geen resultaten.")
-
-    with st.expander(f"📋 Coaching zonder schade (Voltooid) — {len(_filter_set(voltooid_zonder_schade))}"):
-        df5 = maak_tabel(voltooid_zonder_schade, "Voltooid")
-        st.dataframe(df5.sort_values(["Teamcoach", "Naam"]).reset_index(drop=True), use_container_width=True) if not df5.empty else st.caption("Geen resultaten.")
+    # Hint wanneer geen categorie is aangevinkt
+    if not (use_lopend or use_voltooid):
+        st.info("Je hebt geen categorie aangevinkt. Dan tellen er 0 PNRS mee uit de coachinglijst.")
