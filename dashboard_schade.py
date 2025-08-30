@@ -884,57 +884,106 @@ with opzoeken_tab:
 
 # ========= TAB 5: Coaching =========
 with coaching_tab:
-    st.subheader("🎯 Coaching-vergelijking")
-    st.caption("Vergelijk schadelijst met (lopend/voltooid) in de coachinglijst. "
-               "Links: in schadelijst ∧ niet in coaching. Rechts: in coaching ∧ niet in schadelijst.")
+    # ————————— 1) KPI: status in schadelijst, gefilterd op teamcoach —————————
+    st.markdown("## ℹ️ Coaching-status (gefilterd op teamcoach-selectie)")
 
-    # 0) Instellingen voor de vergelijking
-    vergelijk_in_filter = st.checkbox(
-        "Vergelijk binnen huidige filters (i.p.v. volledige dataset)",
-        value=True,
-        key="coach_cmp_filter"
+    # Basis: schadelijst reeds gefilterd (df_filtered)
+    pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
+
+    # Coachinglijst filteren op gekozen teamcoaches (op basis van excel_info['teamcoach'])
+    def filter_coach_set_by_tc(pnr_set: set[str]) -> set[str]:
+        if not selected_teamcoaches:  # zou nooit leeg zijn, maar voor de zekerheid
+            return set(map(str, pnr_set))
+        out = set()
+        for p in map(str, pnr_set):
+            tc = (excel_info.get(p, {}) or {}).get("teamcoach")
+            if tc in selected_teamcoaches:
+                out.add(p)
+        return out
+
+    set_voltooid_tc = filter_coach_set_by_tc(set(map(str, gecoachte_ids)))
+    set_lopend_tc   = filter_coach_set_by_tc(set(map(str, coaching_ids)))
+
+    # KPI's: hoeveel unieke PNRS in schadelijst die (voltooid/lopend) zijn volgens Excel + TC-filter
+    kpi_voltooid_in_schade = len(pnrs_schade_sel & set_voltooid_tc)
+    kpi_lopend_in_schade   = len(pnrs_schade_sel & set_lopend_tc)
+
+    colA, colB = st.columns(2)
+    with colA:
+        st.metric("🟡 Voltooide coachings (in schadelijst)", kpi_voltooid_in_schade)
+    with colB:
+        st.metric("🔵 Coaching (lopend, in schadelijst)",   kpi_lopend_in_schade)
+
+    # Toon gekozen teamcoaches
+    if selected_teamcoaches:
+        st.caption("Gekozen teamcoach(es): " + ", ".join(selected_teamcoaches))
+
+    st.markdown("---")
+
+    # ————————— 2) Totale aantallen uit Coachingslijst.xlsx —————————
+    st.markdown("## 📊 Totale aantallen uit Coachingslijst.xlsx")
+
+    r1c1, r1c2 = st.columns(2)
+    with r1c1:
+        st.metric("🟡 Voltooide coachings (Excel-rijen)", int(totaal_voltooid_rijen))
+    with r1c2:
+        st.metric("🔵 Lopende coachings (Excel-rijen)",   int(totaal_lopend_rijen))
+
+    r2c1, r2c2 = st.columns(2)
+    with r2c1:
+        st.metric("🟡 Unieke personen (Excel)", len(set(map(str, gecoachte_ids))))
+    with r2c2:
+        st.metric("🔵 Unieke personen (Excel)", len(set(map(str, coaching_ids))))
+
+    st.markdown("---")
+
+    # ————————— 3) Vergelijking schadelijst ↔ Excel (met statuskeuze) —————————
+    st.markdown("## 🔎 Vergelijking schadelijst ↔ Excel")
+
+    status_keuze = st.radio(
+        "Welke status uit coachingslijst vergelijken?",
+        options=["Lopend", "Voltooid", "Beide"],
+        index=0,
+        horizontal=True,
+        key="coach_status_select",
     )
-    df_basis = df_filtered if vergelijk_in_filter else df
 
-    c_ck1, c_ck2 = st.columns(2)
-    use_lopend   = c_ck1.checkbox("Lopend meenemen", value=True,  key="coach_cat_lopend")
-    use_voltooid = c_ck2.checkbox("Voltooid meenemen", value=True, key="coach_cat_voltooid")
+    if status_keuze == "Lopend":
+        set_coach_sel = set_lopend_tc
+    elif status_keuze == "Voltooid":
+        set_coach_sel = set_voltooid_tc
+    else:
+        set_coach_sel = set_lopend_tc | set_voltooid_tc
 
-    # 1) Verzamel PNRS
-    pnrs_schade  = set(df_basis["dienstnummer"].dropna().astype(str))
-    set_lopend   = set(map(str, coaching_ids))     # uit Coachingslijst.xlsx (tab 'Coaching')
-    set_voltooid = set(map(str, gecoachte_ids))    # uit Coachingslijst.xlsx (tab 'Voltooide coachings')
+    st.caption(
+        "Vergelijking voor status: **{status}** · Teamcoach(es): {tcs}".format(
+            status=status_keuze,
+            tcs=", ".join(selected_teamcoaches) if selected_teamcoaches else "—",
+        )
+    )
 
-    # Welke categorieën van de coachinglijst tellen mee?
-    selected_sets = []
-    if use_lopend:   selected_sets.append(set_lopend)
-    if use_voltooid: selected_sets.append(set_voltooid)
-    set_coaching_sel = set().union(*selected_sets) if selected_sets else set()
+    # Sets voor de 2 expanders
+    coach_niet_in_schade = set_coach_sel - pnrs_schade_sel
+    schade_niet_in_coach = pnrs_schade_sel - set_coach_sel
 
-    # 2) Hulpfuncties
-    def pnr_naar_naam(pnr: str) -> str:
-        nm = (excel_info.get(str(pnr), {}) or {}).get("naam")
-        if nm and str(nm).strip().lower() not in {"nan", "none", ""}:
-            return str(nm)
-        r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "volledige naam_disp"]
-        return r.iloc[0] if not r.empty else str(pnr)
-
-    def pnr_naar_teamcoach(pnr: str) -> str:
-        tc = (excel_info.get(str(pnr), {}) or {}).get("teamcoach")
-        if tc and str(tc).strip().lower() not in {"nan", "none", ""}:
-            return str(tc)
-        r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "teamcoach_disp"]
-        return r.iloc[0] if not r.empty else "onbekend"
-
+    # Helpers voor tabellen
     def status_in_coachinglijst(pnr: str) -> str:
-        in_l = pnr in set_lopend
-        in_v = pnr in set_voltooid
+        in_l = pnr in set(map(str, coaching_ids))
+        in_v = pnr in set(map(str, gecoachte_ids))
         if in_l and in_v: return "Beide"
         if in_l: return "Lopend"
         if in_v: return "Voltooid"
         return "Geen"
 
-    def badge_pnr(pnr: str) -> str:
-        label = f"{pnr} - {pnr_naar_naam(pnr)}"  # badge_van_chauffeur verwacht dit format
-        re
+    def naam_van_pnr(pnr: str) -> str:
+        nm = (excel_info.get(pnr, {}) or {}).get("naam")
+        if nm and str(nm).strip().lower() not in {"nan", "none", ""}:
+            return str(nm)
+        r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "volledige naam_disp"]
+        return r.iloc[0] if not r.empty else str(pnr)
 
+    def teamcoach_van_pnr(pnr: str) -> str:
+        tc = (excel_info.get(pnr, {}) or {}).get("teamcoach")
+        if tc and str(tc).strip().lower() not in {"nan", "none", ""}:
+            return str(tc)
+        r = df.
