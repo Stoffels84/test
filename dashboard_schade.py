@@ -986,4 +986,44 @@ with coaching_tab:
         tc = (excel_info.get(pnr, {}) or {}).get("teamcoach")
         if tc and str(tc).strip().lower() not in {"nan", "none", ""}:
             return str(tc)
-        r = df.
+        r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "teamcoach_disp"]
+        return r.iloc[0] if not r.empty else "onbekend"
+
+    def badge_pnr(pnr: str) -> str:
+        # gebruikt jouw bestaande badge_van_chauffeur()
+        return badge_van_chauffeur(f"{pnr} - {naam_van_pnr(pnr)}")
+
+    def count_schades_in_selectie(pnr: str) -> int:
+        return int((df_filtered["dienstnummer"].astype(str) == str(pnr)).sum())
+
+    def maak_tabel(pnrs_set: set[str], context_label: str) -> pd.DataFrame:
+        rows = []
+        for p in sorted(pnrs_set):
+            rows.append({
+                "Dienstnr": p,
+                "Naam": f"{badge_pnr(p)}{naam_van_pnr(p)}",
+                "Teamcoach": teamcoach_van_pnr(p),
+                "Status (coachinglijst)": status_in_coachinglijst(p),
+                "Schades (in selectie)": count_schades_in_selectie(p),
+                "Context": context_label,
+            })
+        out = pd.DataFrame(rows)
+        if not out.empty:
+            out = out.sort_values(["Teamcoach", "Naam"]).reset_index(drop=True)
+        return out
+
+    # Expander 1: in coachinglijst maar niet in schadelijst
+    with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(coach_niet_in_schade)})", expanded=False):
+        df_coach_not_schade = maak_tabel(coach_niet_in_schade, "Coaching(sel) ∧ ¬Schade")
+        if df_coach_not_schade.empty:
+            st.caption("Geen resultaten.")
+        else:
+            st.dataframe(df_coach_not_schade, use_container_width=True)
+
+    # Expander 2: in schadelijst maar niet in coachinglijst
+    with st.expander(f"🟥 In schadelijst maar niet in Coachinglijst ({len(schade_niet_in_coach)})", expanded=False):
+        df_schade_not_coach = maak_tabel(schade_niet_in_coach, "Schade ∧ ¬Coaching(sel)")
+        if df_schade_not_coach.empty:
+            st.caption("Geen resultaten.")
+        else:
+            st.dataframe(df_schade_not_coach, use_container_width=True)
