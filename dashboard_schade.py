@@ -781,8 +781,7 @@ with locatie_tab:
         st.warning("⚠️ Kolom voor locatie niet gevonden.")
         st.stop()
 
-    # ---------- Instellingen ----------
-    # Autocomplete-selectie van locaties
+    # ---------- Filters & instellingen ----------
     loc_options = sorted(
         [x for x in df_filtered["Locatie_disp"].dropna().unique().tolist() if str(x).strip()]
     )
@@ -814,14 +813,13 @@ with locatie_tab:
         st.info("Geen resultaten binnen de huidige filters/keuze.")
         st.stop()
 
-    # Sets voor coachingsstatus (lopend + voltooid)
-    set_coaching_all = set(map(str, coaching_ids)) | set(map(str, gecoachte_ids))
-
-    # ---------- Aggregaties per locatie ----------
+    # ---------- Aggregaties per locatie (géén coachingberekeningen) ----------
     agg = (
         work.groupby("Locatie_disp")
-            .agg(Schades=("dienstnummer_s", "size"),
-                 Unieke_chauffeurs=("dienstnummer_s", "nunique"))
+            .agg(
+                Schades=("dienstnummer_s", "size"),
+                Unieke_chauffeurs=("dienstnummer_s", "nunique"),
+            )
             .reset_index()
             .rename(columns={"Locatie_disp": "Locatie"})
     )
@@ -843,13 +841,6 @@ with locatie_tab:
     agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
     agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
 
-    # % zonder coaching (lopend/voltooid)
-    zonder = work.groupby("Locatie_disp")["dienstnummer_s"].apply(
-        lambda s: (~s.isin(set_coaching_all)).sum()
-    ).rename("Zonder_coaching")
-    agg = agg.merge(zonder, left_on="Locatie", right_index=True, how="left")
-    agg["% zonder coaching"] = ((agg["Zonder_coaching"] / agg["Schades"]) * 100).round(0).astype("Int64")
-
     # Filter op drempel
     agg = agg[agg["Schades"] >= int(min_schades)]
     if agg.empty:
@@ -862,20 +853,32 @@ with locatie_tab:
     c2.metric("Totaal schadegevallen", int(len(work)))
     st.markdown("---")
 
-    # ---------- Samenvatting + export ----------
+    # ---------- Samenvatting (zonder '% zonder coaching') + export ----------
     st.subheader("📊 Samenvatting per locatie")
+
     agg_view = agg.copy()
     agg_view["Periode"] = agg_view.apply(
-        lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}" if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
+        lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
+                  if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
         axis=1
     )
-    cols_show = ["Locatie", "Schades", "Unieke_chauffeurs", "Unieke_voertuigen",
-                 "Unieke_teamcoaches", "% zonder coaching", "Periode"]
+
+    cols_show = [
+        "Locatie",
+        "Schades",
+        "Unieke_chauffeurs",
+        "Unieke_voertuigen",
+        "Unieke_teamcoaches",
+        "Periode",
+    ]
 
     st.dataframe(
-        agg_view[cols_show].sort_values(["Schades", "% zonder coaching"], ascending=[False, False]).reset_index(drop=True),
+        agg_view[cols_show]
+            .sort_values("Schades", ascending=False)
+            .reset_index(drop=True),
         use_container_width=True
     )
+
     st.download_button(
         "⬇️ Download samenvatting (CSV)",
         agg_view[cols_show].to_csv(index=False).encode("utf-8"),
@@ -887,7 +890,7 @@ with locatie_tab:
     st.markdown("---")
     st.subheader("📂 Schadegevallen per locatie")
 
-    # ---------- Detail per locatie ----------
+    # ---------- Detail per locatie (géén coaching-info) ----------
     for _, r in agg.sort_values("Schades", ascending=False).iterrows():
         locatie = r["Locatie"]
         subset = work.loc[work["Locatie_disp"] == locatie].copy()
@@ -897,25 +900,20 @@ with locatie_tab:
         kol_list = ["Datum"]
         if "volledige naam_disp" in subset.columns: kol_list.append("volledige naam_disp")
         if "BusTram_disp" in subset.columns:        kol_list.append("BusTram_disp")
-        if "teamcoach_disp" in subset.columns:      kol_list.append("teamcoach_disp")
         if "Link" in subset.columns:                kol_list.append("Link")
 
         subset = subset[kol_list].sort_values(by="Datum")
 
-        header = (
-            f"{locatie} — {len(subset)} schadegevallen • "
-            f"{int(r['% zonder coaching']) if pd.notna(r['% zonder coaching']) else 0}% zonder coaching"
-        )
+        header = f"{locatie} — {len(subset)} schadegevallen"
         with st.expander(header, expanded=expand_all):
             for _, row in subset.iterrows():
                 datum_obj = row.get("Datum")
                 datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
                 chauffeur = row.get("volledige naam_disp", "onbekend")
                 voertuig  = row.get("BusTram_disp", "onbekend") if "BusTram_disp" in subset.columns else "onbekend"
-                coach     = row.get("teamcoach_disp", "onbekend") if "teamcoach_disp" in subset.columns else "onbekend"
                 link      = extract_url(row.get("Link")) if "Link" in subset.columns else None
 
-                prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
+                prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — "
                 if isinstance(link, str) and link:
                     st.markdown(prefix + f"[🔗 openen]({link})", unsafe_allow_html=True)
                 else:
