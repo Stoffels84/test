@@ -26,21 +26,40 @@ st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
 # 🔄 Auto-refresh: herlaad de pagina elk uur
 st_autorefresh(interval=3600 * 1000, key="data_refresh")
 
-import os
-from dotenv import load_dotenv
+# ========= mail.env laden =========
+def _load_env(path: str):
+    """Laad key=value uit bestand in os.environ (fallback als python-dotenv niet beschikbaar is)."""
+    try:
+        from dotenv import load_dotenv  # type: ignore
+        load_dotenv(path)
+    except Exception:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip())
 
-# ====== Laad mail.env ======
-load_dotenv("mail.env")   # zorgt dat alles uit mail.env in os.environ komt
+_load_env("mail.env")
 
-# ====== SMTP instellingen ======
-SMTP_HOST = os.getenv("SMTP_HOST")
+# ========= SMTP instellingen =========
+SMTP_HOST = os.getenv("SMTP_HOST", "mail.delijn-teambuiling.be")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASS = os.getenv("SMTP_PASS")
+SMTP_USER = os.getenv("SMTP_USER", "no-reply@delijn-teambuiling.be")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER)
 
+# ========= OTP instellingen =========
+OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))              # aantal cijfers
+OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))  # 10 min geldig
+OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))  # minimaal 60s tussen verzenden
 
+# ========= Helpers =========
 def _mask_email(addr: str) -> str:
+    """Masker e-mail voor weergave (privacy)."""
     try:
         local, dom = addr.split("@", 1)
         if len(local) <= 2:
@@ -52,18 +71,25 @@ def _mask_email(addr: str) -> str:
         return addr
 
 
-def _gen_otp(n: int = OTP_LENGTH) -> str:
+def _gen_otp(n: int | None = None) -> str:
+    """Genereer een numerieke OTP-code."""
+    if n is None:
+        n = OTP_LENGTH
     digits = "0123456789"
     return "".join(secrets.choice(digits) for _ in range(n))
 
 
 def _hash_code(code: str) -> str:
+    """Hash de OTP voor opslag in sessie."""
     return hashlib.sha256(code.encode()).hexdigest()
 
 
 def _send_email(to_addr: str, subject: str, body: str) -> None:
+    """Verzend een e-mail via SMTP (STARTTLS of SSL)."""
     if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
-        raise RuntimeError("SMTP-configuratie ontbreekt: stel SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/EMAIL_FROM in als omgevingsvariabelen.")
+        raise RuntimeError(
+            "SMTP-configuratie ontbreekt: stel SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/EMAIL_FROM in (mail.env)."
+        )
 
     msg = EmailMessage()
     msg["From"] = EMAIL_FROM
@@ -71,11 +97,25 @@ def _send_email(to_addr: str, subject: str, body: str) -> None:
     msg["Subject"] = subject
     msg.set_content(body)
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls(context=ssl.create_default_context())
-        if SMTP_USER and SMTP_PASS:
-            server.login(SMTP_USER, SMTP_PASS)
-        server.send_message(msg)
+    use_ssl = (
+        str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
+        or int(SMTP_PORT) == 465
+    )
+
+    if use_ssl:
+        # Direct SSL (poort 465)
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as server:
+            if SMTP_USER and SMTP_PASS:
+                server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+    else:
+        # STARTTLS (poort 587)
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls(context=ssl.create_default_context())
+            if SMTP_USER and SMTP_PASS:
+                server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
 
 
 # ========= Data helpers (gedeeld met hoofd-app) =========
