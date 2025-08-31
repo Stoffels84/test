@@ -529,7 +529,8 @@ def run_dashboard():
         if st.button("🚪 Uitloggen"):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
-            st.experimental_rerun()
+            st.rerun()
+
 
     # === Data laden pas NA login ===
     df, options = load_schade_prepared()
