@@ -47,6 +47,52 @@ OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))
 OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))   # 10 min
 OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))
 
+
+
+
+
+
+# ==== OTP mail templates (kun je later in mail.env instellen) ====
+OTP_SUBJECT = os.getenv("OTP_SUBJECT", "Je verificatiecode: {code}")
+
+OTP_BODY_TEXT = os.getenv(
+    "OTP_BODY_TEXT",
+    (
+        "Hallo,\n\n"
+        "Je verificatiecode voor het Schade Dashboard is: {code}\n"
+        "Deze code is {minutes} minuten geldig.\n\n"
+        "PNR: {pnr}\n"
+        "Datum: {date}\n"
+        "---\n"
+        "Als jij dit niet was, negeer dan deze e-mail."
+    )
+)
+
+# Optioneel: HTML-versie. Laat leeg ("") als je enkel tekst wil.
+OTP_BODY_HTML = os.getenv(
+    "OTP_BODY_HTML",
+    ""
+    # voorbeeld (vervangen door eigen HTML indien gewenst):
+    # """
+    # <div style="font-family:Arial,sans-serif">
+    #   <h2>Je verificatiecode</h2>
+    #   <p>Code: <strong style="font-size:20px">{code}</strong></p>
+    #   <p>Geldig: {minutes} minuten</p>
+    #   <p><small>PNR: {pnr} — {date}</small></p>
+    #   <hr><p style="color:#666">Als jij dit niet was, negeer dan deze e-mail.</p>
+    # </div>
+    # """
+)
+
+
+
+
+
+
+
+
+
+
 # =========================
 # Domeinlogica
 # =========================
@@ -122,46 +168,38 @@ def _send_email(to_addr: str, subject: str, body: str) -> None:
 # =========================
 # Contact mapping
 # =========================
-@st.cache_data(show_spinner=False, ttl=3600)
-def load_contact_map(path="schade met macro.xlsm") -> dict:
-    try:
-        xls = pd.ExcelFile(path)
-    except Exception as e:
-        st.error(f"Kon '{path}' niet openen: {e}")
-        st.stop()
+# ==== OTP mail templates (kun je later in mail.env instellen) ====
+OTP_SUBJECT = os.getenv("OTP_SUBJECT", "Je verificatiecode: {code}")
 
-    sheet = next((nm for nm in xls.sheet_names if str(nm).strip().lower() == "contact"), None)
-    if sheet is None:
-        st.error("Tabblad 'contact' niet gevonden.")
-        st.stop()
+OTP_BODY_TEXT = os.getenv(
+    "OTP_BODY_TEXT",
+    (
+        "Hallo,\n\n"
+        "Je verificatiecode voor het Schade Dashboard is: {code}\n"
+        "Deze code is {minutes} minuten geldig.\n\n"
+        "PNR: {pnr}\n"
+        "Datum: {date}\n"
+        "---\n"
+        "Als jij dit niet was, negeer dan deze e-mail."
+    )
+)
 
-    dfc = pd.read_excel(xls, sheet_name=sheet, header=0)
-    if dfc.empty:
-        return {}
+# Optioneel: HTML-versie. Laat leeg ("") als je enkel tekst wil.
+OTP_BODY_HTML = os.getenv(
+    "OTP_BODY_HTML",
+    ""
+    # voorbeeld (vervangen door eigen HTML indien gewenst):
+    # """
+    # <div style="font-family:Arial,sans-serif">
+    #   <h2>Je verificatiecode</h2>
+    #   <p>Code: <strong style="font-size:20px">{code}</strong></p>
+    #   <p>Geldig: {minutes} minuten</p>
+    #   <p><small>PNR: {pnr} — {date}</small></p>
+    #   <hr><p style="color:#666">Als jij dit niet was, negeer dan deze e-mail.</p>
+    # </div>
+    # """
+)
 
-    cols_lower = [str(c).strip().lower() for c in dfc.columns]
-    col_pnr = dfc.columns[0]
-    col_mail = dfc.columns[2] if len(dfc.columns) >= 3 else dfc.columns[1]
-    if "personeelsnummer" in cols_lower:
-        col_pnr = dfc.columns[cols_lower.index("personeelsnummer")]
-    elif "dienstnummer" in cols_lower:
-        col_pnr = dfc.columns[cols_lower.index("dienstnummer")]
-    if "email" in cols_lower:
-        col_mail = dfc.columns[cols_lower.index("email")]
-    elif "e-mail" in cols_lower:
-        col_mail = dfc.columns[cols_lower.index("e-mail")]
-
-    mapping = {}
-    for _, row in dfc.iterrows():
-        p = str(row.get(col_pnr, "")).strip()
-        m = str(row.get(col_mail, "")).strip().lower()
-        if not p or "@" not in m:
-            continue
-        digits = re.findall(r"\d+", p)
-        if not digits:
-            continue
-        mapping[digits[0]] = m
-    return mapping
 
 # =========================
 # Login flow
