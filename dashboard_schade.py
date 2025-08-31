@@ -824,49 +824,95 @@ with locatie_tab:
                                 st.markdown(prefix + "❌ Geen geldige of aanwezige link")
 
 # ========= TAB 4: Opzoeken =========
+
 # ========= TAB 4: Opzoeken =========
 with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
-    zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
+    # 1) Invoer met eigen key (voorkomt rode foutstijl)
+    zoek = st.text_input(
+        "Personeelsnummer (dienstnummer)",
+        placeholder="bv. 41092",
+        key="zoek_pnr_input"
+    )
 
-    # puur cijfers uit de input halen
-    dn_hits = re.findall(r"\d+", str(zoek))
+    # 2) Cijferige PNR extraheren
+    dn_hits = re.findall(r"\d+", str(zoek).strip())
     pnr = dn_hits[0] if dn_hits else ""
 
     if not pnr:
         st.info("Geef een personeelsnummer in om resultaten te zien.")
         st.stop()
 
-    # Resultaten binnen huidige filters (voor teller & tabel)
+    # 3) Data voor deze PNR
+    # - res: binnen huidige filters (voor teller + tabel)
+    # - res_all: volledige dataset (fallbacks voor naam/teamcoach)
     res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
-    # Fallback buiten filters om naam/coach toch te tonen
     res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
 
-    # Naam en teamcoach bepalen (eerst uit gefilterde data, anders uit volledige/Excel)
+    # 4) Naam en teamcoach bepalen (eerst uit gefilterde data, anders uit volledige/Excel)
     if not res.empty:
         naam_disp = res["volledige naam_disp"].iloc[0]
         teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+        # probeer rauwe 'volledige naam' om het PNR proper weg te knippen
+        naam_raw = res["volledige naam"].iloc[0] if "volledige naam" in res.columns else naam_disp
     elif not res_all.empty:
         naam_disp = res_all["volledige naam_disp"].iloc[0]
         teamcoach_disp = res_all["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res_all.columns else "onbekend"
+        naam_raw = res_all["volledige naam"].iloc[0] if "volledige naam" in res_all.columns else naam_disp
     else:
+        # laatste fallback: Excel-info
         naam_disp = (excel_info.get(pnr, {}) or {}).get("naam") or ""
         teamcoach_disp = (excel_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
+        naam_raw = naam_disp
 
-    # Tekst zoals in screenshot: "11236 Baert Freddy"
-    naam_label = f"{pnr} {naam_disp}".strip()
+    # 5) Dubbele PNR uit de naam strippen
+    try:
+        naam_clean = toon_chauffeur(naam_raw)  # jouw helper: knipt "1234 - " of "1234" vooraan weg
+    except Exception:
+        naam_clean = re.sub(rf"^\s*{re.escape(str(pnr))}\s*-?\s*", "", str(naam_raw or "")).strip()
+        naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", naam_clean).strip()
 
-    st.markdown(f"**👤 Chauffeur:** {naam_label}")
+    chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
+
+    # 6) Coachingstatus bepalen
+    in_lopend   = pnr in set(map(str, coaching_ids))     # tabblad Coaching
+    in_voltooid = pnr in set(map(str, gecoachte_ids))    # tabblad Voltooide coachings
+
+    if in_lopend:
+        status_lbl = "Lopend"
+        status_emoji = "⚫"
+        status_bron = "bron: Coaching (lopend)"
+    elif in_voltooid:
+        # beoordeling uit excel_info
+        beo_raw = (excel_info.get(pnr, {}) or {}).get("beoordeling", "")
+        b = str(beo_raw or "").strip().lower()
+        if b in {"zeer goed", "goed"}:
+            status_lbl, status_emoji = "Goed", "🟢"
+        elif b in {"voldoende"}:
+            status_lbl, status_emoji = "Voldoende", "🟠"
+        elif b in {"onvoldoende", "slecht", "zeer slecht"}:
+            status_lbl, status_emoji = "Onvoldoende" if b == "onvoldoende" else "Slecht", "🔴"
+        else:
+            status_lbl, status_emoji = "Voltooid (geen beoordeling)", "🟡"
+        status_bron = f"bron: Voltooide coachings (beoordeling: {beo_raw or '—'})"
+    else:
+        status_lbl = "Niet aangevraagd"
+        status_emoji = "⚪"
+        status_bron = "bron: niet aanwezig in Coachingslijst.xlsx"
+
+    # 7) Header-informatie
+    st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
     st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
+    st.markdown(f"**🎯 Coachingstatus:** {status_emoji} {status_lbl}  \n*{status_bron}*")
     st.markdown("---")
 
+    # 8) Teller + tabel
     st.metric("Aantal schadegevallen", len(res))
 
     if res.empty:
         st.caption("Geen schadegevallen binnen de huidige filters.")
     else:
-        # Sorteren en link kolom maken
         res = res.sort_values("Datum", ascending=False).copy()
         heeft_link = "Link" in res.columns
         res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
@@ -875,20 +921,22 @@ with opzoeken_tab:
         if heeft_link:
             kol.append("URL")
 
-        # Tabel zoals in screenshot (linktekst = 'openen')
+        column_config = {
+            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+            "Locatie_disp": st.column_config.TextColumn("Locatie"),
+        }
+        if heeft_link:
+            column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+
         st.dataframe(
             res[kol],
-            column_config={
-                "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                **({"URL": st.column_config.LinkColumn("Link", display_text="openen")} if heeft_link else {})
-            },
+            column_config=column_config,
             use_container_width=True,
-            # Zet eventueel hide_index=True als je de linker index niet wilt zien
-            # hide_index=True,
+            # hide_index=True,  # zet aan als je de linker index niet wil tonen
         )
 
-# ========= TAB 5: Coaching =========
+
+
 # ========= TAB 5: Coaching =========
 with coaching_tab:
     # ================= 1) KPI: status in schadelijst (TC-filter) =================
