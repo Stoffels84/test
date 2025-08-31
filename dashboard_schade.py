@@ -154,132 +154,49 @@ def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = N
 # =========================
 def load_contact_map() -> dict[str, dict]:
     """
-    Laadt mapping PNR -> {"email": ..., "name": ...} uit een Excel-tabblad.
+    Leest contactgegevens uit 'schade met macro.xlsm', tabblad 'contact':
+      Kolom A = personeelsnummer
+      Kolom B = naam
+      Kolom C = mailadres
 
-    Bronnen (in volgorde):
-      1) CONTACTS_FILE + CONTACTS_SHEET uit mail.env (aanrader)
-      2) 'schade met macro.xlsm' + automatisch gevonden tabblad ('Contacten', 'Contact', 'Mail', 'Emails', 'Users')
-      3) 'contacten.xlsx' of 'contacten.csv' (fallback)
-
-    Vereist: kolommen voor PNR + e-mail. Naam is optioneel.
-    Ondersteunde kolomnamen (case-insensitive; spaties/strepen ok):
-      - PNR:   ["pnr","p nr","dienstnummer","personeelsnummer"]
-      - email: ["email","e mail","mail"]
-      - name:  ["naam","volledige naam","chauffeur","bestuurder","name","voornaam","achternaam"]
+    Geeft mapping terug:
+      { "41092": {"email": "persoon@bedrijf.be", "name": "Voornaam Achternaam"} }
     """
-    # 1) Lees expliciet pad/blad uit env als je die zet
-    env_path = (os.getenv("CONTACTS_FILE") or "").strip()
-    env_sheet = (os.getenv("CONTACTS_SHEET") or "").strip()
+    path = "schade met macro.xlsm"
+    if not os.path.exists(path):
+        raise RuntimeError("Bestand 'schade met macro.xlsm' niet gevonden in de projectmap.")
 
-    # 2) Kandidaten: eerst env, dan jouw schadebestand, dan losse bestanden
-    candidates: list[tuple[str, str | None]] = []
-    if env_path:
-        candidates.append((env_path, env_sheet or None))
+    # Zoek het tabblad 'contact' (case-insensitive)
+    xls = pd.ExcelFile(path)
+    sheet = None
+    for sh in xls.sheet_names:
+        if str(sh).strip().lower() == "contact":
+            sheet = sh
+            break
+    if sheet is None:
+        raise RuntimeError("Tabblad 'contact' niet gevonden in 'schade met macro.xlsm'.")
 
-    # jouw hoofd-bestand met schade
-    if os.path.exists("schade met macro.xlsm"):
-        candidates.append(("schade met macro.xlsm", None))
+    # Lees kolommen A, B, C (zonder header)
+    df = pd.read_excel(xls, sheet_name=sheet, header=None, usecols="A:C")
+    if df.empty or df.shape[1] < 3:
+        raise RuntimeError("Tabblad 'contact' bevat geen gegevens in kolommen A:C.")
 
-    # laatste fallbacks
-    if os.path.exists("contacten.xlsx"):
-        candidates.append(("contacten.xlsx", None))
-    if os.path.exists("contacten.csv"):
-        candidates.append(("contacten.csv", None))
-
-    # helpers
-    def _norm_cols(cols):
-        out = []
-        for c in cols:
-            s = str(c).strip().lower()
-            s = s.replace("_", " ").replace("-", " ")
-            out.append(s)
-        return out
-
-    def _find_col(cols, candidates):
-        for cand in candidates:
-            if cand in cols:
-                return cand
-        return None
-
-    def _read_excel_with_guess(path: str, sheet_hint: str | None) -> pd.DataFrame:
-        # Als sheet_hint is gezet, gebruik die; anders slimme gok
-        xls = pd.ExcelFile(path)
-        if sheet_hint and sheet_hint in xls.sheet_names:
-            return pd.read_excel(xls, sheet_name=sheet_hint)
-
-        # probeer veelvoorkomende namen
-        guesses = ["Contacten", "contacten", "Contact", "contact", "Mail", "mail",
-                   "Emails", "emails", "Users", "users"]
-        for g in guesses:
-            if g in xls.sheet_names:
-                return pd.read_excel(xls, sheet_name=g)
-
-        # als niets matcht: neem eerste blad (maar alleen als het echt kolommen met PNR/mail heeft)
-        return pd.read_excel(xls, sheet_name=xls.sheet_names[0])
-
-    # doorloop kandidaten
-    for path, sheet in candidates:
-        try:
-            if not os.path.exists(path):
-                continue
-
-            if path.lower().endswith((".xls", ".xlsx", ".xlsm")):
-                dfc = _read_excel_with_guess(path, sheet)
-            elif path.lower().endswith(".csv"):
-                dfc = pd.read_csv(path)
-            else:
-                continue
-
-            cols_norm = _norm_cols(dfc.columns)
-
-            pnr_col   = _find_col(cols_norm, ["pnr","p nr","dienstnummer","personeelsnummer"])
-            email_col = _find_col(cols_norm, ["email","e mail","mail"])
-            naam_col  = _find_col(cols_norm, ["naam","volledige naam","chauffeur","bestuurder","name"])
-            vn_col    = _find_col(cols_norm, ["voornaam","first name","firstname","given name"])
-            an_col    = _find_col(cols_norm, ["achternaam","last name","lastname","surname"])
-
-            if pnr_col is None or email_col is None:
-                # Dit blad is niet de contactenlijst → probeer volgende kandidaat
-                continue
-
-            # map terug naar echte kolomnamen
-            real = {c_norm: dfc.columns[cols_norm.index(c_norm)] for c_norm in set(cols_norm)}
-
-            mapping: dict[str, dict] = {}
-            for _, r in dfc.iterrows():
-                raw_pnr = str(r[real[pnr_col]])
-                pnr_digits = "".join(re.findall(r"\d+", raw_pnr))
-                if not pnr_digits:
-                    continue
-
-                email = str(r[real[email_col]]).strip()
-                if not email or email.lower() in {"nan","none"}:
-                    continue
-
-                name_val = ""
-                if naam_col:
-                    name_val = str(r[real[naam_col]] or "").strip()
-                if not name_val and (vn_col or an_col):
-                    vn = str(r[real[vn_col]]).strip() if vn_col else ""
-                    an = str(r[real[an_col]]).strip() if an_col else ""
-                    name_val = (f"{vn} {an}").strip()
-
-                mapping[pnr_digits] = {"email": email, "name": name_val}
-
-            if mapping:
-                return mapping
-            # anders probeer volgende kandidaat
-        except Exception:
-            # ga door naar de volgende kandidaat
+    mapping: dict[str, dict] = {}
+    for _, row in df.iterrows():
+        pnr = str(row[0]).strip() if pd.notna(row[0]) else ""
+        if not pnr:
             continue
+        name = str(row[1]).strip() if pd.notna(row[1]) else ""
+        email = str(row[2]).strip() if pd.notna(row[2]) else ""
+        if not email or email.lower() in {"nan", "none", ""}:
+            continue
+        mapping[pnr] = {"email": email, "name": name}
 
-    # niets gevonden → duidelijke foutmelding voor de UI
-    raise RuntimeError(
-        "Contactlijst niet gevonden. Zet in je mail.env bijvoorbeeld:\n"
-        "  CONTACTS_FILE='schade met macro.xlsm'\n"
-        "  CONTACTS_SHEET='Contacten'\n"
-        "of maak een tabblad met kolommen PNR + email (optioneel naam)."
-    )
+    if not mapping:
+        raise RuntimeError("Geen geldige rijen gevonden in tabblad 'contact'. Controleer of kolom A personeelsnummer bevat en kolom C e-mailadressen.")
+
+    return mapping
+
 
 
 # =========================
