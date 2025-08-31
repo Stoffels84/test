@@ -1027,64 +1027,110 @@ with coaching_tab:
             st.dataframe(df_schade_not_coach, use_container_width=True)
 
 
-# ——— Extra: >N schades en NIET in 'Coaching' (lopend) én NIET in 'Voltooide coachings' ———
+# ——— Extra: >N schades en NIET in 'Coaching' (lopend) of 'Voltooide coachings' ———
 st.markdown("---")
-st.markdown("## 🚩 Chauffeurs met meerdere **schades** en **niet** in *Coaching* (lopend) **of** *Voltooide coachings*")
+st.markdown("## 🚩 Chauffeurs met meerdere schades en niet in *Coaching* (lopend) of *Voltooide coachings*")
 
 gebruik_filters_s = st.checkbox(
     "Tel schades binnen huidige filters (uitschakelen = volledige schadelijst)",
-    value=True,
-    key="cmp_schades_no_coaching_use_filters"
+    value=False,
+    key="more_schades_no_coach_use_filters"
 )
 df_basis_s = df_filtered if gebruik_filters_s else df
 
 drempel_schades = st.number_input(
     "Toon bestuurders met méér dan ... schadegevallen (in gekozen schadelijst)",
-    min_value=1, value=2, step=1, key="cmp_schades_no_coaching_threshold"
+    min_value=1, value=2, step=1, key="more_schades_no_coach_threshold"
 )
 
-# 1) Tel schades per PNR (in basisselectie)
-df_cnt_s = (
-    df_basis_s.assign(dienstnummer=df_basis_s["dienstnummer"].astype(str))
-              .groupby("dienstnummer").size()
-              .rename("Schades (in selectie)").reset_index()
+# 1) Tel schades per PNR (robuust pnr-parsen)
+pnr_col = (
+    df_basis_s["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).dropna().str.strip()
+    if "dienstnummer" in df_basis_s.columns else
+    df_basis_s["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).dropna().str.strip()
 )
-cnt_map_s = dict(zip(df_cnt_s["dienstnummer"], df_cnt_s["Schades (in selectie)"]))
+df_cnt_s = pnr_col.to_frame("pnr")
+df_cnt_s["cnt"] = 1
+df_cnt_s = df_cnt_s.groupby("pnr", as_index=False)["cnt"].sum()
+cnt_map_s = dict(zip(df_cnt_s["pnr"], df_cnt_s["cnt"]))
 
 # 2) Kandidaten: > drempel schades
-pnrs_meer_dan = set(df_cnt_s.loc[df_cnt_s["Schades (in selectie)"] > drempel_schades, "dienstnummer"])
+pnrs_meer_dan = {p for p, c in cnt_map_s.items() if c > drempel_schades}
 
 # 3) Sluit iedereen uit die in 'Coaching' (lopend) OF 'Voltooide coachings' staat
-set_lopend_all    = set(map(str, coaching_ids))     # sheet "Coaching"
-set_voltooid_all  = set(map(str, gecoachte_ids))    # sheet "Voltooide coachings"
-set_coaching_all  = set_lopend_all | set_voltooid_all
-result_set        = pnrs_meer_dan - set_coaching_all
+set_lopend_all   = set(map(str, coaching_ids))     # sheet "Coaching"
+set_voltooid_all = set(map(str, gecoachte_ids))    # sheet "Voltooide coachings"
+set_coaching_all = set_lopend_all | set_voltooid_all
+result_set       = pnrs_meer_dan - set_coaching_all
 
 # Helpers
 def _naam_s(p):
     nm = (excel_info.get(p, {}) or {}).get("naam")
     if nm and str(nm).strip().lower() not in {"nan","none",""}:
         return str(nm)
-    r = df.loc[df["dienstnummer"].astype(str) == str(p), "volledige naam_disp"]
+    r = df.loc[df["dienstnummer"].astype(str) == str(p), "volledige naam_disp"] if "dienstnummer" in df.columns else pd.Series([])
     return r.iloc[0] if not r.empty else str(p)
 
 def _tc_s(p):
     tc = (excel_info.get(p, {}) or {}).get("teamcoach")
     if tc and str(tc).strip().lower() not in {"nan","none",""}:
         return str(tc)
-    r = df.loc[df["dienstnummer"].astype(str) == str(p), "teamcoach_disp"]
+    r = df.loc[df["dienstnummer"].astype(str) == str(p), "teamcoach_disp"] if "dienstnummer" in df.columns else pd.Series([])
     return r.iloc[0] if not r.empty else "onbekend"
 
 def _badge_s(p):
     return badge_van_chauffeur(f"{p} - {_naam_s(p)}")
 
 def _status_volledig(p):
-    in_l = str(p) in set_lopend_all
-    in_v = str(p) in set_voltooid_all
+    in_l = p in set_lopend_all
+    in_v = p in set_voltooid_all
     if in_l and in_v: return "Beide"
     if in_l: return "Lopend"
     if in_v: return "Voltooid"
     return "Niet aangevraagd"
 
 # Tabel
-rows_s =_
+rows_s = []
+for p in sorted(result_set, key=lambda x: (-cnt_map_s.get(x, 0), x)):
+    rows_s.append({
+        "Dienstnr": p,
+        "Naam": f"{_badge_s(p)}{_naam_s(p)}",
+        "Teamcoach": _tc_s(p),
+        "Schades (in selectie)" if gebruik_filters_s else "Schades (volledig)": int(cnt_map_s.get(p, 0)),
+        "Status (coachinglijst)": _status_volledig(p),  # nu "Niet aangevraagd"
+    })
+
+df_schades_no_coaching = pd.DataFrame(rows_s)
+if not df_schades_no_coaching.empty:
+    # uniforme kolomnaam voor sortering/leesbaarheid
+    if "Schades (volledig)" in df_schades_no_coaching.columns:
+        df_schades_no_coaching = df_schades_no_coaching.rename(columns={"Schades (volledig)": "Schades"})
+    else:
+        df_schades_no_coaching = df_schades_no_coaching.rename(columns={"Schades (in selectie)": "Schades"})
+    df_schades_no_coaching = df_schades_no_coaching.sort_values(
+        ["Schades", "Teamcoach", "Naam"], ascending=[False, True, True]
+    ).reset_index(drop=True)
+
+with st.expander(
+    f"🟥 > {drempel_schades} schades en **niet** in 'Coaching' (lopend) **of** 'Voltooide coachings' ({len(result_set)})",
+    expanded=True  # open zodat je de lijst sowieso ziet
+):
+    if df_schades_no_coaching.empty:
+        st.caption("Geen resultaten.")
+        # Extra debug-info kan helpen bij controle:
+        st.caption(f"PNR's met >{drempel_schades} schades (voor uitsluiting): {len(pnrs_meer_dan)}")
+        st.caption(f"Uitgesloten wegens coaching (lopend/voltooid): {len(set_coaching_all & pnrs_meer_dan)}")
+    else:
+        # 'Geen' → 'Niet aangevraagd' (voor het geval)
+        if "Status (coachinglijst)" in df_schades_no_coaching.columns:
+            df_schades_no_coaching["Status (coachinglijst)"] = (
+                df_schades_no_coaching["Status (coachinglijst)"].replace({"Geen": "Niet aangevraagd"})
+            )
+        st.dataframe(df_schades_no_coaching, use_container_width=True)
+        st.download_button(
+            "⬇️ Download CSV",
+            df_schades_no_coaching.to_csv(index=False).encode("utf-8"),
+            file_name=f"meerdan_{drempel_schades}_schades_niet_in_coaching_of_voltooid.csv",
+            mime="text/csv",
+            key="dl_more_schades_no_coaching_final"
+        )
