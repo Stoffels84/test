@@ -26,17 +26,18 @@ st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
 # 🔄 Auto-refresh: herlaad de pagina elk uur
 st_autorefresh(interval=3600 * 1000, key="data_refresh")
 
-# ========= E-mail OTP helpers =========
-OTP_LENGTH = 6
-OTP_TTL_SECONDS = 10 * 60      # 10 minuten geldig
-OTP_RESEND_SECONDS = 60        # minimaal 60s tussen verzendingen
+import os
+from dotenv import load_dotenv
 
-SMTP_HOST = os.getenv("mail@delijn-teambuiling.be")
-SMTP_PORT = int(os.getenv("mail@delijn-teambuiling.be", "587"))
-SMTP_USER = os.getenv("	no-reply@delijn-teambuiling.be")
-SMTP_PASS = os.getenv("22111984")
-EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER or "SCHADE")
-ALLOWED_EMAIL_DOMAIN = os.getenv("christoff.rotty@icloud.com", "")  # optioneel, bv. "bedrijf.be"
+# ====== Laad mail.env ======
+load_dotenv("mail.env")   # zorgt dat alles uit mail.env in os.environ komt
+
+# ====== SMTP instellingen ======
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER)
 
 
 def _mask_email(addr: str) -> str:
