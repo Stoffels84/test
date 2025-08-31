@@ -154,16 +154,39 @@ def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = N
 # =========================
 def load_contact_map() -> dict[str, dict]:
     """
-    Laadt mapping PNR -> {"email": ..., "name": ...}
-    Bronnen:
-      - CONTACTS_FILE uit mail.env (xls/xlsx/csv)
-      - contacten.xlsx
-      - contacten.csv
-    Vereist: PNR + email kolom. Naam optioneel.
-    """
-    path_env = os.getenv("CONTACTS_FILE", "").strip()
-    candidate_paths = [p for p in [path_env, "contacten.xlsx", "contacten.csv"] if p]
+    Laadt mapping PNR -> {"email": ..., "name": ...} uit een Excel-tabblad.
 
+    Bronnen (in volgorde):
+      1) CONTACTS_FILE + CONTACTS_SHEET uit mail.env (aanrader)
+      2) 'schade met macro.xlsm' + automatisch gevonden tabblad ('Contacten', 'Contact', 'Mail', 'Emails', 'Users')
+      3) 'contacten.xlsx' of 'contacten.csv' (fallback)
+
+    Vereist: kolommen voor PNR + e-mail. Naam is optioneel.
+    Ondersteunde kolomnamen (case-insensitive; spaties/strepen ok):
+      - PNR:   ["pnr","p nr","dienstnummer","personeelsnummer"]
+      - email: ["email","e mail","mail"]
+      - name:  ["naam","volledige naam","chauffeur","bestuurder","name","voornaam","achternaam"]
+    """
+    # 1) Lees expliciet pad/blad uit env als je die zet
+    env_path = (os.getenv("CONTACTS_FILE") or "").strip()
+    env_sheet = (os.getenv("CONTACTS_SHEET") or "").strip()
+
+    # 2) Kandidaten: eerst env, dan jouw schadebestand, dan losse bestanden
+    candidates: list[tuple[str, str | None]] = []
+    if env_path:
+        candidates.append((env_path, env_sheet or None))
+
+    # jouw hoofd-bestand met schade
+    if os.path.exists("schade met macro.xlsm"):
+        candidates.append(("schade met macro.xlsm", None))
+
+    # laatste fallbacks
+    if os.path.exists("contacten.xlsx"):
+        candidates.append(("contacten.xlsx", None))
+    if os.path.exists("contacten.csv"):
+        candidates.append(("contacten.csv", None))
+
+    # helpers
     def _norm_cols(cols):
         out = []
         for c in cols:
@@ -178,31 +201,48 @@ def load_contact_map() -> dict[str, dict]:
                 return cand
         return None
 
-    fb_domain = os.getenv("FALLBACK_EMAIL_DOMAIN", "").strip().lower()
+    def _read_excel_with_guess(path: str, sheet_hint: str | None) -> pd.DataFrame:
+        # Als sheet_hint is gezet, gebruik die; anders slimme gok
+        xls = pd.ExcelFile(path)
+        if sheet_hint and sheet_hint in xls.sheet_names:
+            return pd.read_excel(xls, sheet_name=sheet_hint)
 
-    for path in candidate_paths:
-        if not os.path.exists(path):
-            continue
+        # probeer veelvoorkomende namen
+        guesses = ["Contacten", "contacten", "Contact", "contact", "Mail", "mail",
+                   "Emails", "emails", "Users", "users"]
+        for g in guesses:
+            if g in xls.sheet_names:
+                return pd.read_excel(xls, sheet_name=g)
+
+        # als niets matcht: neem eerste blad (maar alleen als het echt kolommen met PNR/mail heeft)
+        return pd.read_excel(xls, sheet_name=xls.sheet_names[0])
+
+    # doorloop kandidaten
+    for path, sheet in candidates:
         try:
+            if not os.path.exists(path):
+                continue
+
             if path.lower().endswith((".xls", ".xlsx", ".xlsm")):
-                dfc = pd.read_excel(path)
+                dfc = _read_excel_with_guess(path, sheet)
             elif path.lower().endswith(".csv"):
                 dfc = pd.read_csv(path)
             else:
                 continue
 
             cols_norm = _norm_cols(dfc.columns)
-            pnr_col = _find_col(cols_norm, ["pnr","p nr","dienstnummer","personeelsnummer"])
+
+            pnr_col   = _find_col(cols_norm, ["pnr","p nr","dienstnummer","personeelsnummer"])
             email_col = _find_col(cols_norm, ["email","e mail","mail"])
-            naam_col = _find_col(cols_norm, ["naam","volledige naam","chauffeur","bestuurder","name"])
-            vn_col = _find_col(cols_norm, ["voornaam","first name","firstname","given name"])
-            an_col = _find_col(cols_norm, ["achternaam","last name","lastname","surname"])
+            naam_col  = _find_col(cols_norm, ["naam","volledige naam","chauffeur","bestuurder","name"])
+            vn_col    = _find_col(cols_norm, ["voornaam","first name","firstname","given name"])
+            an_col    = _find_col(cols_norm, ["achternaam","last name","lastname","surname"])
 
-            if pnr_col is None:
-                raise ValueError("PNR-kolom niet gevonden")
-            if email_col is None and not fb_domain:
-                raise ValueError("E-mailkolom niet gevonden en FALLBACK_EMAIL_DOMAIN niet gezet")
+            if pnr_col is None or email_col is None:
+                # Dit blad is niet de contactenlijst → probeer volgende kandidaat
+                continue
 
+            # map terug naar echte kolomnamen
             real = {c_norm: dfc.columns[cols_norm.index(c_norm)] for c_norm in set(cols_norm)}
 
             mapping: dict[str, dict] = {}
@@ -212,11 +252,7 @@ def load_contact_map() -> dict[str, dict]:
                 if not pnr_digits:
                     continue
 
-                if email_col:
-                    email = str(r[real[email_col]]).strip()
-                else:
-                    email = f"{pnr_digits}@{fb_domain}" if fb_domain else ""
-
+                email = str(r[real[email_col]]).strip()
                 if not email or email.lower() in {"nan","none"}:
                     continue
 
@@ -229,16 +265,22 @@ def load_contact_map() -> dict[str, dict]:
                     name_val = (f"{vn} {an}").strip()
 
                 mapping[pnr_digits] = {"email": email, "name": name_val}
+
             if mapping:
                 return mapping
+            # anders probeer volgende kandidaat
         except Exception:
+            # ga door naar de volgende kandidaat
             continue
 
+    # niets gevonden → duidelijke foutmelding voor de UI
     raise RuntimeError(
-        "Kon geen contactmap laden. Zet CONTACTS_FILE in mail.env naar een .xlsx/.csv "
-        "met kolommen (minstens): PNR + email. Optioneel: naam. "
-        "Of plaats 'contacten.xlsx' / 'contacten.csv' in de projectmap."
+        "Contactlijst niet gevonden. Zet in je mail.env bijvoorbeeld:\n"
+        "  CONTACTS_FILE='schade met macro.xlsm'\n"
+        "  CONTACTS_SHEET='Contacten'\n"
+        "of maak een tabblad met kolommen PNR + email (optioneel naam)."
     )
+
 
 # =========================
 # Badge helpers / misc
