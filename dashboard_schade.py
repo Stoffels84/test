@@ -29,12 +29,6 @@ st_autorefresh(interval=3600 * 1000, key="data_refresh")
 # =========================================
 # Config & helpers (kopieer dit blok)
 # =========================================
-import os
-import secrets
-import smtplib
-import ssl
-import hashlib
-from email.message import EmailMessage
 
 # ---- mail.env laden (met fallback zonder python-dotenv) ----
 def _load_env(path: str = "mail.env") -> None:
