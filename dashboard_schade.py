@@ -7,14 +7,12 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 import tempfile
-import hashlib
 from datetime import datetime
 import os
 import re
 from streamlit_autorefresh import st_autorefresh
 
 # ========= Instellingen =========
-LOGIN_ACTIEF = False  # Zet True om login te activeren
 plt.rcParams["figure.dpi"] = 150
 st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
 
@@ -22,9 +20,6 @@ st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
 st_autorefresh(interval=3600 * 1000, key="data_refresh")
 
 # ========= Helpers =========
-def hash_wachtwoord(wachtwoord: str) -> str:
-    return hashlib.sha256(str(wachtwoord).encode()).hexdigest()
-
 @st.cache_data(show_spinner=False, ttl=3600)  # cache max 1 uur geldig
 def load_excel(path, **kwargs):
     try:
@@ -70,6 +65,7 @@ def _parse_excel_dates(series: pd.Series) -> pd.Series:
 
 # Kleine helper om hyperlinks uit Excel-formules te halen
 HYPERLINK_RE = re.compile(r'HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
+
 def extract_url(x) -> str | None:
     if pd.isna(x):
         return None
@@ -85,7 +81,7 @@ COLOR_BLAUW = "#2196F3"  # in coaching
 COLOR_MIX   = "#7E57C2"  # beide
 COLOR_GRIJS = "#BDBDBD"  # geen
 
-# === Nieuw: badge op basis van beoordeling + lopend ===
+# === Badge op basis van beoordeling + lopend ===
 def _beoordeling_emoji(rate: str) -> str:
     r = (rate or "").strip().lower()
     if r in {"zeer goed", "goed", "voldoende"}:
@@ -110,6 +106,67 @@ def badge_van_chauffeur(naam: str) -> str:
     kleur = _beoordeling_emoji(beoordeling)
     lopend = (status_excel == "Coaching") or (sdn in coaching_ids)
     return f"{kleur}{'⚫ ' if lopend else ''}"
+
+# ========= DATA LADEN & VOORBEREIDEN =========
+def _clean_display_series(s: pd.Series) -> pd.Series:
+    """Vectorized 'safe_name' zonder Python-loops."""
+    s = s.astype("string").str.strip()
+    bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
+    return s.mask(bad, "onbekend")
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
+    # 1) Inlezen + kolommen trimmen
+    df_raw = pd.read_excel(path, sheet_name=sheet)
+    df_raw.columns = df_raw.columns.str.strip()
+
+    # 2) Datum robuust + filteren op geldige datums
+    d1 = pd.to_datetime(df_raw["Datum"], errors="coerce", dayfirst=True)
+    need_retry = d1.isna()
+    if need_retry.any():
+        d2 = pd.to_datetime(df_raw.loc[need_retry, "Datum"], errors="coerce", dayfirst=False)
+        d1.loc[need_retry] = d2
+    df_raw["Datum"] = d1
+    df_ok = df_raw[df_raw["Datum"].notna()].copy()
+
+    # 3) Strings strippen (vectorized)
+    for col in ("volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"):
+        if col in df_ok.columns:
+            df_ok[col] = df_ok[col].astype("string").str.strip()
+
+    # 4) Afgeleide velden
+    df_ok["dienstnummer"] = (
+        df_ok["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
+    )
+    df_ok["KwartaalP"] = df_ok["Datum"].dt.to_period("Q")
+    df_ok["Kwartaal"]  = df_ok["KwartaalP"].astype(str)
+
+    # 5) Display-kolommen
+    df_ok["volledige naam_disp"] = _clean_display_series(df_ok["volledige naam"])
+    df_ok["teamcoach_disp"]      = _clean_display_series(df_ok["teamcoach"])
+    df_ok["Locatie_disp"]        = _clean_display_series(df_ok["Locatie"])
+    df_ok["BusTram_disp"]        = _clean_display_series(df_ok["Bus/ Tram"])
+
+    # 6) Optielijsten + datumbereik
+    options = {
+        "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
+        "locatie":   sorted(df_ok["Locatie_disp"].dropna().unique().tolist()),
+        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),
+        "kwartaal":  sorted(df_ok["KwartaalP"].dropna().astype(str).unique().tolist()),
+        "min_datum": df_ok["Datum"].min().normalize(),
+        "max_datum": df_ok["Datum"].max().normalize(),
+    }
+    return df_ok, options
+
+@st.cache_data
+def df_to_csv_bytes(d: pd.DataFrame) -> bytes:
+    return d.to_csv(index=False).encode("utf-8")
+
+# === laad + prepare (cached) ===
+df, options = load_schade_prepared()
+
+# ========= GEEN LOGIN: app is vrij toegankelijk =========
+# Alle login-gerelateerde code is verwijderd.
 
 # ========= Coachingslijst inlezen (incl. naam/teamcoach uit Excel) =========
 @st.cache_data(show_spinner=False)
@@ -157,7 +214,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         kol_vn    = next((k for k in voornaam_keys if k in dfc.columns), None)
         kol_an    = next((k for k in achternaam_keys if k in dfc.columns), None)
         kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
-        kol_rate  = next((k for k in rating_keys if k in dfc.columns), None)  # alleen in 'Voltooide coachings'
+        kol_rate  = next((k for k in rating_keys if k in dfc.columns), None)  # alleen in 'Voltooid'
 
         if kol_pnr is None:
             return ids, total_rows
@@ -222,144 +279,6 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         ids_blauw, total_blauw_rows = lees_sheet(s_blauw, "Coaching")
 
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
-
-# ========= DATA LADEN & VOORBEREIDEN (SNEL) =========
-def _clean_display_series(s: pd.Series) -> pd.Series:
-    """Vectorized 'safe_name' zonder Python-loops."""
-    s = s.astype("string").str.strip()
-    bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
-    return s.mask(bad, "onbekend")
-
-@st.cache_data(show_spinner=False, ttl=3600)
-def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
-    # 1) Inlezen + kolommen trimmen
-    df_raw = pd.read_excel(path, sheet_name=sheet)
-    df_raw.columns = df_raw.columns.str.strip()
-
-    # 2) Datum robuust + filteren op geldige datums
-    d1 = pd.to_datetime(df_raw["Datum"], errors="coerce", dayfirst=True)
-    need_retry = d1.isna()
-    if need_retry.any():
-        d2 = pd.to_datetime(df_raw.loc[need_retry, "Datum"], errors="coerce", dayfirst=False)
-        d1.loc[need_retry] = d2
-    df_raw["Datum"] = d1
-    df_ok = df_raw[df_raw["Datum"].notna()].copy()
-
-    # 3) Strings strippen (vectorized)
-    for col in ("volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"):
-        if col in df_ok.columns:
-            df_ok[col] = df_ok[col].astype("string").str.strip()
-
-    # 4) Afgeleide velden
-    df_ok["dienstnummer"] = (
-        df_ok["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
-    )
-    df_ok["KwartaalP"] = df_ok["Datum"].dt.to_period("Q")
-    df_ok["Kwartaal"]  = df_ok["KwartaalP"].astype(str)
-
-    # 5) Display-kolommen
-    df_ok["volledige naam_disp"] = _clean_display_series(df_ok["volledige naam"])
-    df_ok["teamcoach_disp"]      = _clean_display_series(df_ok["teamcoach"])
-    df_ok["Locatie_disp"]        = _clean_display_series(df_ok["Locatie"])
-    df_ok["BusTram_disp"]        = _clean_display_series(df_ok["Bus/ Tram"])
-
-    # 6) Optielijsten + datumbereik
-    options = {
-        "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
-        "locatie":   sorted(df_ok["Locatie_disp"].dropna().unique().tolist()),
-        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),
-        "kwartaal":  sorted(df_ok["KwartaalP"].dropna().astype(str).unique().tolist()),
-        "min_datum": df_ok["Datum"].min().normalize(),
-        "max_datum": df_ok["Datum"].max().normalize(),
-    }
-    return df_ok, options
-
-@st.cache_data
-def df_to_csv_bytes(d: pd.DataFrame) -> bytes:
-    return d.to_csv(index=False).encode("utf-8")
-
-# === laad + prepare (cached) ===
-df, options = load_schade_prepared()
-
-# ========= Gebruikersbestand (login) =========
-gebruikers_df = load_excel("chauffeurs.xlsx")
-gebruikers_df.columns = gebruikers_df.columns.str.strip().str.lower()
-
-# normaliseer kolommen (login/wachtwoord varianten)
-kol_map = {}
-if "gebruikersnaam" in gebruikers_df.columns:
-    kol_map["gebruikersnaam"] = "gebruikersnaam"
-elif "login" in gebruikers_df.columns:
-    kol_map["login"] = "gebruikersnaam"
-
-if "paswoord" in gebruikers_df.columns:
-    kol_map["paswoord"] = "paswoord"
-elif "wachtwoord" in gebruikers_df.columns:
-    kol_map["wachtwoord"] = "paswoord"
-
-for c in ["rol", "dienstnummer", "laatste login"]:
-    if c in gebruikers_df.columns:
-        kol_map[c] = c
-gebruikers_df = gebruikers_df.rename(columns=kol_map)
-
-# Vereisten check
-vereist_login_kolommen = {"gebruikersnaam", "paswoord"}
-missend_login = [c for c in vereist_login_kolommen if c not in gebruikers_df.columns]
-if missend_login:
-    st.error(f"Login configuratie onvolledig. Ontbrekende kolommen (na normalisatie): {', '.join(missend_login)}")
-    st.stop()
-
-# Strings netjes
-gebruikers_df["gebruikersnaam"] = gebruikers_df["gebruikersnaam"].astype(str).str.strip()
-gebruikers_df["paswoord"] = gebruikers_df["paswoord"].astype(str).str.strip()
-for c in ["rol", "dienstnummer", "laatste login"]:
-    if c not in gebruikers_df.columns:
-        gebruikers_df[c] = pd.NA
-
-# Session login status
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if LOGIN_ACTIEF and not st.session_state.logged_in:
-    st.title("🔐 Inloggen")
-    username = st.text_input("Gebruikersnaam")
-    password = st.text_input("Wachtwoord", type="password")
-    if st.button("Log in"):
-        rij = gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == str(username).strip()]
-        if not rij.empty:
-            opgeslagen = str(rij["paswoord"].iloc[0])
-            ok = (opgeslagen == str(password)) or (opgeslagen == hash_wachtwoord(password))
-            if ok:
-                st.session_state.logged_in = True
-                st.session_state.username = str(username).strip()
-                st.success("✅ Ingelogd!")
-                if "laatste login" in gebruikers_df.columns:
-                    try:
-                        gebruikers_df.loc[rij.index, "laatste login"] = datetime.now()
-                        gebruikers_df.to_excel("chauffeurs.xlsx", index=False)
-                    except Exception as e:
-                        st.warning(f"Kon 'laatste login' niet opslaan: {e}")
-                st.rerun()
-            else:
-                st.error("❌ Onjuiste gebruikersnaam of wachtwoord.")
-        else:
-            st.error("❌ Onjuiste gebruikersnaam of wachtwoord.")
-    st.stop()
-else:
-    if not LOGIN_ACTIEF:
-        st.session_state.logged_in = True
-        st.session_state.username = "demo"
-
-# Rol + naam
-if not LOGIN_ACTIEF:
-    rol = "teamcoach"; naam = "demo"
-else:
-    ingelogde_info = gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == st.session_state.username].iloc[0]
-    rol = str(ingelogde_info.get("rol", "teamcoach")).strip()
-    if rol == "chauffeur":
-        naam = str(ingelogde_info.get("dienstnummer", ingelogde_info["gebruikersnaam"]))
-    else:
-        naam = str(ingelogde_info["gebruikersnaam"]).strip()
 
 # ========= Coachingslijst =========
 gecoachte_ids, coaching_ids, totaal_voltooid_rijen, totaal_lopend_rijen, excel_info, coach_warn = lees_coachingslijst()
@@ -585,9 +504,7 @@ if generate_pdf:
         except Exception:
             pass
 
-
-
-# ========= TAB 1: Chauffeur (snel & simpel) =========
+# ========= TAB 1: Chauffeur =========
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
@@ -651,7 +568,7 @@ with chauffeur_tab:
                         prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
                         st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
-# ========= TAB 2: Voertuig (snel, zonder grafieken) =========
+# ========= TAB 2: Voertuig =========
 with voertuig_tab:
     st.subheader("🚘 Schadegevallen per voertuigtype")
 
@@ -687,7 +604,7 @@ with voertuig_tab:
                         prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🧑‍💼 {coach} — 📍 {loc} — "
                         st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
-# ========= TAB 3: Locatie (schoon, geen coaching-info) =========
+# ========= TAB 3: Locatie =========
 with locatie_tab:
     st.subheader("📍 Schadegevallen per locatie")
     ok = True
@@ -795,7 +712,7 @@ with locatie_tab:
                     prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — "
                     st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
-# ========= TAB 4: Opzoeken (met coachingstatus) =========
+# ========= TAB 4: Opzoeken =========
 with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
@@ -883,7 +800,7 @@ with opzoeken_tab:
                 column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
             st.dataframe(res[kol], column_config=column_config, use_container_width=True)
 
-# ========= TAB 5: Coaching (snel, zonder st.stop) =========
+# ========= TAB 5: Coaching =========
 with coaching_tab:
     try:
         st.subheader("🎯 Coaching – vergelijkingen")
