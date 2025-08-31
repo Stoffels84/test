@@ -1027,118 +1027,99 @@ with coaching_tab:
             st.dataframe(df_schade_not_coach, use_container_width=True)
 
 
-# ——— Extra: >N coachings (LOPEND) en géén schades ———
+# ——— Extra: >N schades en NIET in tabblad 'Coaching' (lopend) ———
 st.markdown("---")
-st.markdown("## 🚩 Bestuurders met meerdere **lopend** coachings en **geen** schades")
+st.markdown("## 🚩 Chauffeurs met meerdere **schades** en **niet** in tabblad *Coaching* (lopend)")
 
-# Kies of je schadelijst vergelijkt binnen huidige filters of volledig
-gebruik_filters = st.checkbox(
-    "Vergelijk tegen schadelijst binnen huidige filters (uitschakelen = volledige schadelijst)",
+gebruik_filters_s = st.checkbox(
+    "Tel schades binnen huidige filters (uitschakelen = volledige schadelijst)",
     value=True,
-    key="cmp_lopend_no_schade_use_filters"
+    key="cmp_schades_no_lopend_use_filters"
 )
-df_basis_schade = df_filtered if gebruik_filters else df
+df_basis_s = df_filtered if gebruik_filters_s else df
 
-drempel_coach = st.number_input(
-    "Toon bestuurders met méér dan ... **lopend** coachings (volgens Coachingslijst.xlsx)",
-    min_value=1, value=2, step=1, key="cmp_lopend_no_schade_threshold"
+drempel_schades = st.number_input(
+    "Toon bestuurders met méér dan ... schadegevallen (in gekozen schadelijst)",
+    min_value=1, value=2, step=1, key="cmp_schades_no_lopend_threshold"
 )
 
-@st.cache_data(show_spinner=False)
-def tel_lopende_coachings_per_pnr(pad="Coachingslijst.xlsx", selected_tc=None):
-    """Tel per PNR het aantal rijen in sheet 'Coaching' (lopend). Filter optioneel op teamcoaches."""
-    try:
-        xls = pd.ExcelFile(pad)
-    except Exception:
-        return pd.Series(dtype=int)
+# 1) Tel schades per PNR (in basisselectie)
+df_cnt_s = (
+    df_basis_s.assign(dienstnummer=df_basis_s["dienstnummer"].astype(str))
+              .groupby("dienstnummer").size()
+              .rename("Schades (in selectie)").reset_index()
+)
+cnt_map_s = dict(zip(df_cnt_s["dienstnummer"], df_cnt_s["Schades (in selectie)"]))
 
-    # sheet zoeken (case-insensitive)
-    def vind_sheet(xls, naam):
-        return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
+# 2) Kandidaten: > drempel schades
+pnrs_meer_dan = set(df_cnt_s.loc[df_cnt_s["Schades (in selectie)"] > drempel_schades, "dienstnummer"])
 
-    s_coach = vind_sheet(xls, "coaching")
-    if not s_coach:
-        return pd.Series(dtype=int)
+# 3) Sluit iedereen uit die in tabblad 'Coaching' (lopend) staat — GEEN check op 'Voltooid'
+set_lopend_all = set(map(str, coaching_ids))  # uit Coachingslijst.xlsx, sheet "Coaching"
+result_set = pnrs_meer_dan - set_lopend_all
 
-    dfc = pd.read_excel(xls, sheet_name=s_coach)
-    dfc.columns = dfc.columns.str.strip().str.lower()
-
-    # kolommen herkennen
-    pnr_keys   = ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]
-    coach_keys = ["teamcoach", "coach", "team coach"]
-    kol_pnr = next((k for k in pnr_keys if k in dfc.columns), None)
-    kol_tc  = next((k for k in coach_keys if k in dfc.columns), None)
-    if kol_pnr is None:
-        return pd.Series(dtype=int)
-
-    # optioneel filteren op gekozen teamcoaches
-    if selected_tc and kol_tc:
-        dfc = dfc[dfc[kol_tc].isin(selected_tc)]
-
-    s_pnr = (
-        dfc[kol_pnr].astype(str)
-        .str.extract(r"(\d+)", expand=False)
-        .dropna().str.strip()
-    )
-    return s_pnr.value_counts()  # index = pnr (str), value = aantal coachings (lopend)
-
-# counts uit de **Coaching**-sheet (lopend), gefilterd op gekozen teamcoaches
-counts_lopend = tel_lopende_coachings_per_pnr(selected_tc=selected_teamcoaches)
-
-# PNRS met > drempel lopend coachings
-pnrs_lopend_hot = set(counts_lopend[counts_lopend > drempel_coach].index.astype(str))
-
-# PNRS die géén schade hebben (binnen basiskeuze)
-pnrs_met_schade = set(df_basis_schade["dienstnummer"].dropna().astype(str))
-result_set = pnrs_lopend_hot - pnrs_met_schade
-
-# helpers
-def _naam_pnr(p):
+# Helpers
+def _naam_s(p):
     nm = (excel_info.get(p, {}) or {}).get("naam")
     if nm and str(nm).strip().lower() not in {"nan","none",""}:
         return str(nm)
     r = df.loc[df["dienstnummer"].astype(str) == str(p), "volledige naam_disp"]
     return r.iloc[0] if not r.empty else str(p)
 
-def _tc_pnr(p):
+def _tc_s(p):
     tc = (excel_info.get(p, {}) or {}).get("teamcoach")
     if tc and str(tc).strip().lower() not in {"nan","none",""}:
         return str(tc)
     r = df.loc[df["dienstnummer"].astype(str) == str(p), "teamcoach_disp"]
     return r.iloc[0] if not r.empty else "onbekend"
 
-def _badge_pnr(p):  # gebruikt jouw badge-logica
-    return badge_van_chauffeur(f"{p} - {_naam_pnr(p)}")
+def _badge_s(p):
+    return badge_van_chauffeur(f"{p} - {_naam_s(p)}")
 
-# tabel bouwen
-rows = []
-for p in sorted(result_set, key=lambda x: (-int(counts_lopend.get(x, 0)), x)):
-    rows.append({
+def _status_volledig(p):
+    """Optioneel: toon volledige status (voor context). Hier laten we 'Voltooid' wel zien."""
+    in_l = str(p) in set(map(str, coaching_ids))
+    in_v = str(p) in set(map(str, gecoachte_ids))
+    if in_l and in_v: return "Beide"
+    if in_l: return "Lopend"
+    if in_v: return "Voltooid"
+    return "Niet aangevraagd"
+
+# Tabel opbouwen
+rows_s = []
+for p in sorted(result_set, key=lambda x: (-cnt_map_s.get(x, 0), x)):
+    rows_s.append({
         "Dienstnr": p,
-        "Naam": f"{_badge_pnr(p)}{_naam_pnr(p)}",
-        "Teamcoach": _tc_pnr(p),
-        "Lopende coachings (Excel)": int(counts_lopend.get(p, 0)),
-        "Status": "Lopend",
+        "Naam": f"{_badge_s(p)}{_naam_s(p)}",
+        "Teamcoach": _tc_s(p),
+        "Schades (in selectie)": int(cnt_map_s.get(p, 0)),
+        "Status (coachinglijst)": _status_volledig(p),  # zal nooit 'Lopend' zijn door de uitsluiting
     })
-df_lopend_no_schade = pd.DataFrame(rows)
-if not df_lopend_no_schade.empty:
-    df_lopend_no_schade = df_lopend_no_schade.sort_values(
-        ["Lopende coachings (Excel)", "Teamcoach", "Naam"],
+
+df_schades_no_lopend = pd.DataFrame(rows_s)
+if not df_schades_no_lopend.empty:
+    df_schades_no_lopend = df_schades_no_lopend.sort_values(
+        ["Schades (in selectie)", "Teamcoach", "Naam"],
         ascending=[False, True, True]
     ).reset_index(drop=True)
 
 with st.expander(
-    f"🟦 > {drempel_coach} **lopend** coachings en géén schades ({len(result_set)})",
+    f"🟥 > {drempel_schades} schades en **niet** in 'Coaching' (lopend) ({len(result_set)})",
     expanded=False
 ):
-    if df_lopend_no_schade.empty:
+    if df_schades_no_lopend.empty:
         st.caption("Geen resultaten.")
     else:
-        st.dataframe(df_lopend_no_schade, use_container_width=True)
+        # Optioneel: toon 'Geen' als 'Niet aangevraagd'
+        if "Status (coachinglijst)" in df_schades_no_lopend.columns:
+            df_schades_no_lopend["Status (coachinglijst)"] = (
+                df_schades_no_lopend["Status (coachinglijst)"].replace({"Geen": "Niet aangevraagd"})
+            )
+        st.dataframe(df_schades_no_lopend, use_container_width=True)
         st.download_button(
             "⬇️ Download CSV",
-            df_lopend_no_schade.to_csv(index=False).encode("utf-8"),
-            file_name=f"meerdan_{drempel_coach}_lopendcoachings_geen_schades.csv",
+            df_schades_no_lopend.to_csv(index=False).encode("utf-8"),
+            file_name=f"meerdan_{drempel_schades}_schades_niet_in_coaching.csv",
             mime="text/csv",
-            key="dl_more_lopend_no_schade"
+            key="dl_more_schades_no_lopend"
         )
