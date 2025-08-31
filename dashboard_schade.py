@@ -921,6 +921,7 @@ with locatie_tab:
                 else:
                     st.markdown(prefix + "❌ geen link")
 
+
 # ========= TAB 4: Opzoeken =========
 with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
