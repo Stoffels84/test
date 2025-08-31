@@ -1,3 +1,4 @@
+# dashboard_schade.py
 import os
 import re
 import time
@@ -5,13 +6,23 @@ import secrets
 import smtplib
 import ssl
 import hashlib
+import tempfile
+from io import BytesIO
 from email.message import EmailMessage
 from datetime import datetime
+
 import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
+
+# PDF (ReportLab)
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
 # =========================
-# mail.env laden
+# .env / mail.env laden
 # =========================
 def _load_env(path: str = "mail.env") -> None:
     try:
@@ -47,13 +58,7 @@ OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))
 OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))   # 10 min
 OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))
 
-
-
-
-
-
-# ==== OTP mail templates (kun je later in mail.env instellen) ====
-# ==== OTP mail templates ====
+# ==== OTP mail templates (enkel hier definiëren) ====
 OTP_SUBJECT = os.getenv("OTP_SUBJECT", "Je verificatiecode")
 
 OTP_BODY_TEXT = os.getenv(
@@ -69,48 +74,6 @@ OTP_BODY_TEXT = os.getenv(
 
 # Optioneel: HTML-versie. Laat leeg ("") als je enkel tekst wil.
 OTP_BODY_HTML = os.getenv("OTP_BODY_HTML", "")
-
-
-
-def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = None) -> None:
-    if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
-        raise RuntimeError("SMTP-configuratie ontbreekt in mail.env")
-
-    msg = EmailMessage()
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to_addr
-    msg["Subject"] = subject
-
-    # Alt-tekst + (optioneel) HTML
-    msg.set_content(body_text)
-    if html:
-        msg.add_alternative(html, subtype="html")
-
-    use_ssl = (
-        str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
-        or int(SMTP_PORT) == 465
-    )
-    if use_ssl:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as server:
-            if SMTP_USER and SMTP_PASS:
-                server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls(context=ssl.create_default_context())
-            if SMTP_USER and SMTP_PASS:
-                server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
-
-
-
-
-
-
-
-
-
-
 
 # =========================
 # Domeinlogica
@@ -158,7 +121,7 @@ def _gen_otp(n: int | None = None) -> str:
 def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
-def _send_email(to_addr: str, subject: str, body: str) -> None:
+def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = None) -> None:
     if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
         raise RuntimeError("SMTP-configuratie ontbreekt in mail.env")
 
@@ -166,7 +129,9 @@ def _send_email(to_addr: str, subject: str, body: str) -> None:
     msg["From"] = EMAIL_FROM
     msg["To"] = to_addr
     msg["Subject"] = subject
-    msg.set_content(body)
+    msg.set_content(body_text)
+    if html:
+        msg.add_alternative(html, subtype="html")
 
     use_ssl = (
         str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
@@ -187,97 +152,155 @@ def _send_email(to_addr: str, subject: str, body: str) -> None:
 # =========================
 # Contact mapping
 # =========================
-# ==== OTP mail templates (kun je later in mail.env instellen) ====
-OTP_SUBJECT = os.getenv("OTP_SUBJECT", "Je verificatiecode: {code}")
+def load_contact_map() -> dict[str, dict]:
+    """
+    Laadt mapping PNR -> {"email": ..., "name": ...}
+    Bronnen:
+      - CONTACTS_FILE uit mail.env (xls/xlsx/csv)
+      - contacten.xlsx
+      - contacten.csv
+    Vereist: PNR + email kolom. Naam optioneel.
+    """
+    path_env = os.getenv("CONTACTS_FILE", "").strip()
+    candidate_paths = [p for p in [path_env, "contacten.xlsx", "contacten.csv"] if p]
 
-OTP_BODY_TEXT = os.getenv(
-    "OTP_BODY_TEXT",
-    (
-        "Hallo,\n\n"
-        "Je verificatiecode voor het Schade Dashboard is: {code}\n"
-        "Deze code is {minutes} minuten geldig.\n\n"
-        "PNR: {pnr}\n"
-        "Datum: {date}\n"
-        "---\n"
-        "Als jij dit niet was, negeer dan deze e-mail."
+    def _norm_cols(cols):
+        out = []
+        for c in cols:
+            s = str(c).strip().lower()
+            s = s.replace("_", " ").replace("-", " ")
+            out.append(s)
+        return out
+
+    def _find_col(cols, candidates):
+        for cand in candidates:
+            if cand in cols:
+                return cand
+        return None
+
+    fb_domain = os.getenv("FALLBACK_EMAIL_DOMAIN", "").strip().lower()
+
+    for path in candidate_paths:
+        if not os.path.exists(path):
+            continue
+        try:
+            if path.lower().endswith((".xls", ".xlsx", ".xlsm")):
+                dfc = pd.read_excel(path)
+            elif path.lower().endswith(".csv"):
+                dfc = pd.read_csv(path)
+            else:
+                continue
+
+            cols_norm = _norm_cols(dfc.columns)
+            pnr_col = _find_col(cols_norm, ["pnr","p nr","dienstnummer","personeelsnummer"])
+            email_col = _find_col(cols_norm, ["email","e mail","mail"])
+            naam_col = _find_col(cols_norm, ["naam","volledige naam","chauffeur","bestuurder","name"])
+            vn_col = _find_col(cols_norm, ["voornaam","first name","firstname","given name"])
+            an_col = _find_col(cols_norm, ["achternaam","last name","lastname","surname"])
+
+            if pnr_col is None:
+                raise ValueError("PNR-kolom niet gevonden")
+            if email_col is None and not fb_domain:
+                raise ValueError("E-mailkolom niet gevonden en FALLBACK_EMAIL_DOMAIN niet gezet")
+
+            real = {c_norm: dfc.columns[cols_norm.index(c_norm)] for c_norm in set(cols_norm)}
+
+            mapping: dict[str, dict] = {}
+            for _, r in dfc.iterrows():
+                raw_pnr = str(r[real[pnr_col]])
+                pnr_digits = "".join(re.findall(r"\d+", raw_pnr))
+                if not pnr_digits:
+                    continue
+
+                if email_col:
+                    email = str(r[real[email_col]]).strip()
+                else:
+                    email = f"{pnr_digits}@{fb_domain}" if fb_domain else ""
+
+                if not email or email.lower() in {"nan","none"}:
+                    continue
+
+                name_val = ""
+                if naam_col:
+                    name_val = str(r[real[naam_col]] or "").strip()
+                if not name_val and (vn_col or an_col):
+                    vn = str(r[real[vn_col]]).strip() if vn_col else ""
+                    an = str(r[real[an_col]]).strip() if an_col else ""
+                    name_val = (f"{vn} {an}").strip()
+
+                mapping[pnr_digits] = {"email": email, "name": name_val}
+            if mapping:
+                return mapping
+        except Exception:
+            continue
+
+    raise RuntimeError(
+        "Kon geen contactmap laden. Zet CONTACTS_FILE in mail.env naar een .xlsx/.csv "
+        "met kolommen (minstens): PNR + email. Optioneel: naam. "
+        "Of plaats 'contacten.xlsx' / 'contacten.csv' in de projectmap."
     )
-)
-
-# Optioneel: HTML-versie. Laat leeg ("") als je enkel tekst wil.
-OTP_BODY_HTML = os.getenv(
-    "OTP_BODY_HTML",
-    ""
-    # voorbeeld (vervangen door eigen HTML indien gewenst):
-    # """
-    # <div style="font-family:Arial,sans-serif">
-    #   <h2>Je verificatiecode</h2>
-    #   <p>Code: <strong style="font-size:20px">{code}</strong></p>
-    #   <p>Geldig: {minutes} minuten</p>
-    #   <p><small>PNR: {pnr} — {date}</small></p>
-    #   <hr><p style="color:#666">Als jij dit niet was, negeer dan deze e-mail.</p>
-    # </div>
-    # """
-)
-
 
 # =========================
-# Login flow
+# Badge helpers / misc
 # =========================
-def login_gate():
-    st.title("🔐 Login")
-    contacts = load_contact_map()
+def naam_naar_dn(naam: str) -> str | None:
+    if pd.isna(naam):
+        return None
+    s = str(naam).strip()
+    m = re.match(r"\s*(\d+)", s)
+    return m.group(1) if m else None
 
-    if "otp" not in st.session_state:
-        st.session_state.otp = {"pnr": None, "email": None, "hash": None, "expires": 0, "last_sent": 0, "sent": False}
+def _beoordeling_emoji(rate: str) -> str:
+    r = (rate or "").strip().lower()
+    if r in {"zeer goed", "goed"}:
+        return "🟢 "
+    if r in {"voldoende"}:
+        return "🟠 "
+    if r in {"slecht", "onvoldoende", "zeer slecht"}:
+        return "🔴 "
+    return ""
 
-    otp = st.session_state.otp
-    pnr_input = st.text_input("Personeelsnummer", value=otp.get("pnr") or "")
-    want_code = st.button("📨 Verstuur code")
+def badge_van_chauffeur(naam: str) -> str:
+    dn = naam_naar_dn(naam)
+    if not dn:
+        return ""
+    sdn = str(dn).strip()
+    info = st.session_state.get("excel_info", {}).get(sdn, {})
+    beoordeling = info.get("beoordeling")
+    status_excel = info.get("status")
+    kleur = _beoordeling_emoji(beoordeling)
+    coaching_ids = st.session_state.get("coaching_ids", set())
+    lopend = (status_excel == "Coaching") or (sdn in coaching_ids)
+    return f"{kleur}{'⚫ ' if lopend else ''}"
 
-    pnr_digits = "".join(re.findall(r"\d", pnr_input or ""))
+# =========================
+# Naam resolver voor mail
+# =========================
+def _resolve_name_for_pnr(pnr: str, contacts: dict) -> str | None:
+    v = contacts.get(pnr)
+    if isinstance(v, dict):
+        nm = str(v.get("name") or "").strip()
+        if nm:
+            return nm
+    return None  # Excel-fallback kun je toevoegen indien gewenst
 
-    if want_code:
-        if not pnr_digits:
-            st.error("Geen geldig PNR.")
-        elif pnr_digits not in contacts:
-            st.error("Onbekend PNR.")
-        else:
-            email = contacts[pnr_digits]
-            if not _is_allowed_email(email):
-                st.error(f"E-mailadres {email} is niet toegestaan.")
-            else:
-                code = _gen_otp()
-                st.session_state.otp.update({
-                    "pnr": pnr_digits,
-                    "email": email,
-                    "hash": _hash_code(code),
-                    "expires": time.time() + OTP_TTL_SECONDS,
-                    "last_sent": time.time(),
-                    "sent": True,
-                })
-                body = f"Je verificatiecode is: {code}\n\nGeldig {OTP_TTL_SECONDS//60} minuten."
-                try:
-                    _send_email(email, "OTP-code", body)
-                    st.success(f"Code verzonden naar {_mask_email(email)}")
-                except Exception as e:
-                    st.error(f"Kon geen mail sturen: {e}")
+# =========================
+# CSV/PDF helpers
+# =========================
+@st.cache_data
+def df_to_csv_bytes(d: pd.DataFrame) -> bytes:
+    return d.to_csv(index=False).encode("utf-8")
 
-    if otp.get("sent"):
-        code_in = st.text_input("Verificatiecode", max_chars=OTP_LENGTH)
-        if st.button("Inloggen"):
-            if time.time() > otp["expires"]:
-                st.error("Code verlopen.")
-            elif _hash_code(code_in.strip()) != otp["hash"]:
-                st.error("Ongeldige code.")
-            else:
-                st.session_state.authenticated = True
-                st.session_state.user_pnr = otp["pnr"]
-                st.session_state.user_email = otp["email"]
-                st.success("✅ Ingelogd")
+def extract_url(x) -> str | None:
+    if pd.isna(x):
+        return None
+    s = str(x).strip()
+    if s.startswith(("http://", "https://")):
+        return s
+    m = re.search(r'HYPERLINK\(\s*"([^"]+)"', s, flags=re.IGNORECASE)
+    return m.group(1) if m else None
 
-
-
-# ========= Hoofd-app functies =========
+# ========= Data laden =========
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
     df_raw = pd.read_excel(path, sheet_name=sheet)
@@ -320,22 +343,6 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
         "max_datum": df_ok["Datum"].max().normalize(),
     }
     return df_ok, options
-
-
-@st.cache_data
-def df_to_csv_bytes(d: pd.DataFrame) -> bytes:
-    return d.to_csv(index=False).encode("utf-8")
-
-
-def extract_url(x) -> str | None:
-    if pd.isna(x):
-        return None
-    s = str(x).strip()
-    if s.startswith(("http://", "https://")):
-        return s
-    m = re.search(r'HYPERLINK\(\s*"([^"]+)"', s, flags=re.IGNORECASE)
-    return m.group(1) if m else None
-
 
 # ========= Coachingslijst inlezen =========
 @st.cache_data(show_spinner=False)
@@ -432,43 +439,12 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
 
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
 
-
-# ========= Badge helpers =========
-def naam_naar_dn(naam: str) -> str | None:
-    if pd.isna(naam):
-        return None
-    s = str(naam).strip()
-    m = re.match(r"\s*(\d+)", s)
-    return m.group(1) if m else None
-
-
-def _beoordeling_emoji(rate: str) -> str:
-    r = (rate or "").strip().lower()
-    if r in {"zeer goed", "goed", "voldoende"}:
-        return "🟢 "
-    if r in {"slecht", "onvoldoende", "zeer slecht"}:
-        return "🔴 "
-    return ""
-
-
-def badge_van_chauffeur(naam: str) -> str:
-    dn = naam_naar_dn(naam)
-    if not dn:
-        return ""
-    sdn = str(dn).strip()
-    info = st.session_state.get("excel_info", {}).get(sdn, {})
-    beoordeling = info.get("beoordeling")
-    status_excel = info.get("status")
-    kleur = _beoordeling_emoji(beoordeling)
-    coaching_ids = st.session_state.get("coaching_ids", set())
-    lopend = (status_excel == "Coaching") or (sdn in coaching_ids)
-    return f"{kleur}{'⚫ ' if lopend else ''}"
-
-
-# ========= LOGIN FLOW =========
+# =========================
+# LOGIN FLOW (enkel deze versie)
+# =========================
 def login_gate():
     st.title("🔐 Beveiligde toegang")
-    st.caption("Log in met je personeelsnummer. Je ontvangt een verificatiecode per e‑mail.")
+    st.caption("Log in met je personeelsnummer. Je ontvangt een verificatiecode per e-mail.")
 
     contacts = load_contact_map()
 
@@ -490,39 +466,51 @@ def login_gate():
     with col2:
         want_code = st.button("📨 Verstuur code")
 
-    # Normaliseer PNR (alleen digits)
     pnr_digits = "".join(re.findall(r"\d", pnr_input or ""))
 
     if want_code:
         if not pnr_digits:
             st.error("Vul een geldig personeelsnummer in.")
-        elif pnr_digits not in contacts:
-            st.error("Onbekend personeelsnummer.")
         else:
-            now = time.time()
-            if now - otp.get("last_sent", 0) < OTP_RESEND_SECONDS and otp.get("pnr") == pnr_digits:
-                remaining = int(OTP_RESEND_SECONDS - (now - otp.get("last_sent", 0)))
-                st.warning(f"Wacht {remaining}s voordat je opnieuw een code aanvraagt.")
+            rec = contacts.get(pnr_digits)
+            if not rec:
+                st.error("Onbekend personeelsnummer.")
             else:
-                email = contacts[pnr_digits]
-                try:
-                    code = _gen_otp()
-                    st.session_state.otp.update({
-                        "pnr": pnr_digits,
-                        "email": email,
-                        "hash": _hash_code(code),
-                        "expires": time.time() + OTP_TTL_SECONDS,
-                        "last_sent": time.time(),
-                        "sent": True,
-                    })
-                    body = (
-                        "Je verificatiecode voor het Schade Dashboard is: "
-                        f"{code}\n\nDe code is {OTP_TTL_SECONDS//60} minuten geldig."
-                    )
-                    _send_email(email, "Je verificatiecode", body)
-                    st.success(f"Code verzonden naar {_mask_email(email)}. Vul de code hieronder in.")
-                except Exception as e:
-                    st.error(f"Kon geen e‑mail verzenden: {e}")
+                email = rec["email"] if isinstance(rec, dict) else str(rec)
+                if not _is_allowed_email(email):
+                    st.error(f"E-mailadres {email} is niet toegestaan.")
+                else:
+                    now = time.time()
+                    if now - otp.get("last_sent", 0) < OTP_RESEND_SECONDS and otp.get("pnr") == pnr_digits:
+                        remaining = int(OTP_RESEND_SECONDS - (now - otp.get("last_sent", 0)))
+                        st.warning(f"Wacht {remaining}s voordat je opnieuw een code aanvraagt.")
+                    else:
+                        try:
+                            code = _gen_otp()
+                            st.session_state.otp.update({
+                                "pnr": pnr_digits,
+                                "email": email,
+                                "hash": _hash_code(code),
+                                "expires": time.time() + OTP_TTL_SECONDS,
+                                "last_sent": time.time(),
+                                "sent": True,
+                            })
+
+                            # Templated mail
+                            minutes = OTP_TTL_SECONDS // 60
+                            now_str = datetime.now().strftime("%d-%m-%Y %H:%M")
+                            naam = _resolve_name_for_pnr(pnr_digits, contacts) or (rec.get("name") if isinstance(rec, dict) else None) or "collega"
+
+                            subject = OTP_SUBJECT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
+                            body_text = OTP_BODY_TEXT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
+
+                            body_html_raw = (OTP_BODY_HTML or "").strip()
+                            body_html = body_html_raw.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam) if body_html_raw else None
+
+                            _send_email(email, subject, body_text, html=body_html)
+                            st.success(f"Code verzonden naar {_mask_email(email)}. Vul de code hieronder in.")
+                        except Exception as e:
+                            st.error(f"Kon geen e-mail verzenden: {e}")
 
     if otp.get("sent"):
         with st.form("otp_form"):
@@ -547,7 +535,6 @@ def login_gate():
             st.rerun()
 
         if resend:
-            # forceer opnieuw versturen via zelfde flow
             st.session_state.otp["sent"] = False
             st.rerun()
 
@@ -559,7 +546,6 @@ def login_gate():
             elif _hash_code(code_in.strip()) != otp.get("hash"):
                 st.error("Ongeldige code.")
             else:
-                # Succesvol
                 st.session_state.authenticated = True
                 st.session_state.user_pnr = otp.get("pnr")
                 st.session_state.user_email = otp.get("email")
@@ -574,11 +560,9 @@ def login_gate():
                 }
                 st.rerun()
 
-
-
-# ========= Hoofd-dashboard =========
+# ========= Dashboard =========
 def run_dashboard():
-    # Header + logout
+    # Sidebar header + logout
     with st.sidebar:
         user_pnr = st.session_state.get("user_pnr", "?")
         user_email = st.session_state.get("user_email", "?")
@@ -588,8 +572,7 @@ def run_dashboard():
                 del st.session_state[k]
             st.rerun()
 
-
-    # === Data laden pas NA login ===
+    # Data laden
     df, options = load_schade_prepared()
     gecoachte_ids, coaching_ids, totaal_voltooid_rijen, totaal_lopend_rijen, excel_info, coach_warn = lees_coachingslijst()
     st.session_state["coaching_ids"] = coaching_ids
@@ -599,12 +582,10 @@ def run_dashboard():
     df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 
     st.title("📊 Schadegevallen Dashboard")
-    st.caption("🟢 = goede beoordeling · 🟠 = voldoende · 🔴 = slecht/zeer slecht · ⚫ = lopende coaching")
+    st.caption("🟢 = goed · 🟠 = voldoende · 🔴 = slecht/zeer slecht · ⚫ = lopende coaching")
 
     if coach_warn:
         st.sidebar.warning(f"⚠️ {coach_warn}")
-
-    qp = st.query_params
 
     def _clean_list(values, allowed):
         return [v for v in (values or []) if v in allowed]
@@ -624,18 +605,10 @@ def run_dashboard():
             picked = options if (all_label in picked_raw or len(picked_raw) == 0) else picked_raw
             return picked
 
-        selected_teamcoaches = multiselect_all(
-            "Teamcoach", teamcoach_options, "— Alle teamcoaches —", key="filter_teamcoach"
-        )
-        selected_locaties = multiselect_all(
-            "Locatie", locatie_options, "— Alle locaties —", key="filter_locatie"
-        )
-        selected_voertuigen = multiselect_all(
-            "Voertuigtype", voertuig_options, "— Alle voertuigen —", key="filter_voertuig"
-        )
-        selected_kwartalen = multiselect_all(
-            "Kwartaal", kwartaal_options, "— Alle kwartalen —", key="filter_kwartaal"
-        )
+        selected_teamcoaches = multiselect_all("Teamcoach", teamcoach_options, "— Alle teamcoaches —", key="filter_teamcoach")
+        selected_locaties = multiselect_all("Locatie", locatie_options, "— Alle locaties —", key="filter_locatie")
+        selected_voertuigen = multiselect_all("Voertuigtype", voertuig_options, "— Alle voertuigen —", key="filter_voertuig")
+        selected_kwartalen = multiselect_all("Kwartaal", kwartaal_options, "— Alle kwartalen —", key="filter_kwartaal")
 
         if selected_kwartalen:
             sel_periods_idx = pd.PeriodIndex(selected_kwartalen, freq="Q")
@@ -976,16 +949,14 @@ def run_dashboard():
                 naam_disp = (ex_info.get(pnr, {}) or {}).get("naam") or ""
                 teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
                 naam_raw = naam_disp
-            # Strip PNR uit naam
             try:
                 s = str(naam_raw or "").strip()
                 naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", s)
             except Exception:
                 naam_clean = naam_disp
             chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
-            # Coachingstatus
             set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
-            set_voltooid = set(map(str, st.session_state.get("excel_info", {}).keys()))  # benadering
+            set_voltooid = set(map(str, st.session_state.get("excel_info", {}).keys()))
             if pnr in set_lopend:
                 status_lbl, status_emoji = "Lopend", "⚫"
                 status_bron = "bron: Coaching (lopend)"
@@ -1016,7 +987,10 @@ def run_dashboard():
                 heeft_link = "Link" in res.columns
                 res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
                 kol = ["Datum", "Locatie_disp"] + (["URL"] if heeft_link else [])
-                column_config = {"Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"), "Locatie_disp": st.column_config.TextColumn("Locatie")}
+                column_config = {
+                    "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                    "Locatie_disp": st.column_config.TextColumn("Locatie")
+                }
                 if heeft_link:
                     column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
                 st.dataframe(res[kol], column_config=column_config, use_container_width=True)
@@ -1026,26 +1000,19 @@ def run_dashboard():
         try:
             st.subheader("🎯 Coaching – vergelijkingen")
             set_lopend_all   = set(map(str, st.session_state.get("coaching_ids", set())))
-            # Voor 'voltooid' gebruiken we de sleutels van excel_info als benadering
             set_voltooid_all = set(st.session_state.get("excel_info", {}).keys())
-
             def _filter_by_tc(pnrs: set[str]) -> set[str]:
-                # Zonder teamcoach-filter in deze versie
                 return set(pnrs)
-
             set_lopend_tc   = _filter_by_tc(set_lopend_all)
             set_voltooid_tc = _filter_by_tc(set_voltooid_all)
             pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
-
             c1, c2 = st.columns(2)
             c1.metric("🔵 Lopend (in schadelijst)", len(pnrs_schade_sel & set_lopend_tc))
             c2.metric("🟡 Voltooid (in schadelijst)", len(pnrs_schade_sel & set_voltooid_tc))
             st.markdown("---")
-
             r1, r2 = st.columns(2)
             r1.metric("🔵 Unieke personen (Coaching, Excel)", len(set_lopend_all))
             r2.metric("🟡 Unieke personen (Voltooid, Excel)", len(set_voltooid_all))
-
             st.markdown("---")
             st.markdown("## 🔎 Vergelijking schadelijst ↔ Coachingslijst")
             status_keuze = st.radio("Welke status vergelijken?", options=["Lopend","Voltooid","Beide"], index=0, horizontal=True, key="coach_status_select")
@@ -1129,7 +1096,6 @@ def run_dashboard():
         except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
-
 
 # ========= App entrypoint =========
 if not st.session_state.get("authenticated"):
