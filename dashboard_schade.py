@@ -773,55 +773,63 @@ with voertuig_tab:
                                 st.markdown(prefix + "❌ Geen geldige link")
 
 # ========= TAB 3: Locatie =========
+# ========= TAB 3: Locatie =========
 with locatie_tab:
-    st.subheader("Aantal schadegevallen per locatie")
+    st.subheader("📍 Schadegevallen per locatie")
 
     locatie_col = "Locatie_disp" if "Locatie_disp" in df_filtered.columns else None
-    if locatie_col is None:
+    if not locatie_col:
         st.warning("⚠️ Kolom voor locatie niet gevonden.")
-    else:
-        chart_data = df_filtered[locatie_col].value_counts()
+        st.stop()
 
-        if chart_data.empty:
-            st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
-        else:
-            fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
-            chart_data.sort_values().plot(kind="barh", ax=ax)
-            ax.set_xlabel("Aantal schadegevallen")
-            ax.set_ylabel("Locatie")
-            ax.set_title("Schadegevallen per locatie")
-            st.pyplot(fig)
+    # Tellers
+    counts = df_filtered[locatie_col].value_counts()
+    if counts.empty:
+        st.info("Geen schadegevallen binnen de huidige filters.")
+        st.stop()
 
-            st.subheader("📂 Schadegevallen per locatie")
+    c1, c2 = st.columns(2)
+    c1.metric("Unieke locaties", int(counts.shape[0]))
+    c2.metric("Totaal schadegevallen", int(len(df_filtered)))
+    st.markdown("---")
 
-            for locatie in chart_data.sort_values(ascending=False).index.tolist():
-                kol_list = ["Datum", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
-                if "Link" in df_filtered.columns:
-                    kol_list.append("Link")
-                aanwezige_kol = [k for k in kol_list if k in df_filtered.columns]
-                schade_per_locatie = (
-                    df_filtered.loc[df_filtered[locatie_col] == locatie, aanwezige_kol]
-                    .sort_values(by="Datum")
-                )
-                aantal = len(schade_per_locatie)
+    st.subheader("📂 Schadegevallen per locatie")
 
-                with st.expander(f"{locatie} — {aantal} schadegevallen"):
-                    if schade_per_locatie.empty:
-                        st.caption("Geen rijen binnen de huidige filters.")
+    for locatie in counts.sort_values(ascending=False).index.tolist():
+        # Kolommen die we tonen (alleen toevoegen als ze écht bestaan)
+        kol_list = ["Datum"]
+        if "volledige naam_disp" in df_filtered.columns: kol_list.append("volledige naam_disp")
+        if "BusTram_disp" in df_filtered.columns:        kol_list.append("BusTram_disp")
+        if "teamcoach_disp" in df_filtered.columns:      kol_list.append("teamcoach_disp")
+        if "Link" in df_filtered.columns:                kol_list.append("Link")
+
+        subset = (
+            df_filtered.loc[df_filtered[locatie_col] == locatie, kol_list]
+            .sort_values(by="Datum")
+        )
+        aantal = len(subset)
+
+        with st.expander(f"{locatie} — {aantal} schadegevallen", expanded=False):
+            if subset.empty:
+                st.caption("Geen rijen binnen de huidige filters.")
+            else:
+                # Toon elke rij in compacte regel met icoontjes en klikbare link (indien aanwezig)
+                for _, row in subset.iterrows():
+                    datum_obj = row.get("Datum")
+                    datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
+
+                    chauffeur = row.get("volledige naam_disp", "onbekend")
+                    voertuig  = row.get("BusTram_disp", "onbekend") if "BusTram_disp" in subset.columns else "onbekend"
+                    coach     = row.get("teamcoach_disp", "onbekend") if "teamcoach_disp" in subset.columns else "onbekend"
+
+                    link = extract_url(row.get("Link")) if "Link" in subset.columns else None
+                    prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
+
+                    if isinstance(link, str) and link:
+                        st.markdown(prefix + f"[🔗 openen]({link})", unsafe_allow_html=True)
                     else:
-                        for _, row in schade_per_locatie.iterrows():
-                            datum_obj = row.get("Datum")
-                            datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
-                            chauffeur = row.get("volledige naam_disp", "onbekend")
-                            voertuig  = row.get("BusTram_disp", "onbekend")
-                            coach     = row.get("teamcoach_disp", "onbekend")
-                            link = extract_url(row.get("Link")) if "Link" in schade_per_locatie.columns else None
+                        st.markdown(prefix + "❌ geen link")
 
-                            prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
-                            if isinstance(link, str) and link:
-                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
-                            else:
-                                st.markdown(prefix + "❌ Geen geldige of aanwezige link")
 
 # ========= TAB 4: Opzoeken =========
 
