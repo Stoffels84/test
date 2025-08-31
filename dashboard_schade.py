@@ -31,8 +31,8 @@ OTP_LENGTH = 6
 OTP_TTL_SECONDS = 10 * 60      # 10 minuten geldig
 OTP_RESEND_SECONDS = 60        # minimaal 60s tussen verzendingen
 
-SMTP_HOST = os.getenv("mail.delijn-teambuiling.be")
-SMTP_PORT = int(os.getenv("mail.delijn-teambuiling.be", "587"))
+SMTP_HOST = os.getenv("mail@delijn-teambuiling.be")
+SMTP_PORT = int(os.getenv("mail@delijn-teambuiling.be", "587"))
 SMTP_USER = os.getenv("	no-reply@delijn-teambuiling.be")
 SMTP_PASS = os.getenv("22111984")
 EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER or "SCHADE")
