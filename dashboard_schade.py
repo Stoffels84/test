@@ -1027,20 +1027,20 @@ with coaching_tab:
             st.dataframe(df_schade_not_coach, use_container_width=True)
 
 
-# ——— Extra: >N schades en NIET in tabblad 'Coaching' (lopend) ———
+# ——— Extra: >N schades en NIET in 'Coaching' (lopend) én NIET in 'Voltooide coachings' ———
 st.markdown("---")
-st.markdown("## 🚩 Chauffeurs met meerdere **schades** en **niet** in tabblad *Coaching* (lopend)")
+st.markdown("## 🚩 Chauffeurs met meerdere **schades** en **niet** in *Coaching* (lopend) **of** *Voltooide coachings*")
 
 gebruik_filters_s = st.checkbox(
     "Tel schades binnen huidige filters (uitschakelen = volledige schadelijst)",
     value=True,
-    key="cmp_schades_no_lopend_use_filters"
+    key="cmp_schades_no_coaching_use_filters"
 )
 df_basis_s = df_filtered if gebruik_filters_s else df
 
 drempel_schades = st.number_input(
     "Toon bestuurders met méér dan ... schadegevallen (in gekozen schadelijst)",
-    min_value=1, value=2, step=1, key="cmp_schades_no_lopend_threshold"
+    min_value=1, value=2, step=1, key="cmp_schades_no_coaching_threshold"
 )
 
 # 1) Tel schades per PNR (in basisselectie)
@@ -1054,9 +1054,11 @@ cnt_map_s = dict(zip(df_cnt_s["dienstnummer"], df_cnt_s["Schades (in selectie)"]
 # 2) Kandidaten: > drempel schades
 pnrs_meer_dan = set(df_cnt_s.loc[df_cnt_s["Schades (in selectie)"] > drempel_schades, "dienstnummer"])
 
-# 3) Sluit iedereen uit die in tabblad 'Coaching' (lopend) staat — GEEN check op 'Voltooid'
-set_lopend_all = set(map(str, coaching_ids))  # uit Coachingslijst.xlsx, sheet "Coaching"
-result_set = pnrs_meer_dan - set_lopend_all
+# 3) Sluit iedereen uit die in 'Coaching' (lopend) OF 'Voltooide coachings' staat
+set_lopend_all    = set(map(str, coaching_ids))     # sheet "Coaching"
+set_voltooid_all  = set(map(str, gecoachte_ids))    # sheet "Voltooide coachings"
+set_coaching_all  = set_lopend_all | set_voltooid_all
+result_set        = pnrs_meer_dan - set_coaching_all
 
 # Helpers
 def _naam_s(p):
@@ -1077,49 +1079,12 @@ def _badge_s(p):
     return badge_van_chauffeur(f"{p} - {_naam_s(p)}")
 
 def _status_volledig(p):
-    """Optioneel: toon volledige status (voor context). Hier laten we 'Voltooid' wel zien."""
-    in_l = str(p) in set(map(str, coaching_ids))
-    in_v = str(p) in set(map(str, gecoachte_ids))
+    in_l = str(p) in set_lopend_all
+    in_v = str(p) in set_voltooid_all
     if in_l and in_v: return "Beide"
     if in_l: return "Lopend"
     if in_v: return "Voltooid"
     return "Niet aangevraagd"
 
-# Tabel opbouwen
-rows_s = []
-for p in sorted(result_set, key=lambda x: (-cnt_map_s.get(x, 0), x)):
-    rows_s.append({
-        "Dienstnr": p,
-        "Naam": f"{_badge_s(p)}{_naam_s(p)}",
-        "Teamcoach": _tc_s(p),
-        "Schades (in selectie)": int(cnt_map_s.get(p, 0)),
-        "Status (coachinglijst)": _status_volledig(p),  # zal nooit 'Lopend' zijn door de uitsluiting
-    })
-
-df_schades_no_lopend = pd.DataFrame(rows_s)
-if not df_schades_no_lopend.empty:
-    df_schades_no_lopend = df_schades_no_lopend.sort_values(
-        ["Schades (in selectie)", "Teamcoach", "Naam"],
-        ascending=[False, True, True]
-    ).reset_index(drop=True)
-
-with st.expander(
-    f"🟥 > {drempel_schades} schades en **niet** in 'Coaching' (lopend) ({len(result_set)})",
-    expanded=False
-):
-    if df_schades_no_lopend.empty:
-        st.caption("Geen resultaten.")
-    else:
-        # Optioneel: toon 'Geen' als 'Niet aangevraagd'
-        if "Status (coachinglijst)" in df_schades_no_lopend.columns:
-            df_schades_no_lopend["Status (coachinglijst)"] = (
-                df_schades_no_lopend["Status (coachinglijst)"].replace({"Geen": "Niet aangevraagd"})
-            )
-        st.dataframe(df_schades_no_lopend, use_container_width=True)
-        st.download_button(
-            "⬇️ Download CSV",
-            df_schades_no_lopend.to_csv(index=False).encode("utf-8"),
-            file_name=f"meerdan_{drempel_schades}_schades_niet_in_coaching.csv",
-            mime="text/csv",
-            key="dl_more_schades_no_lopend"
-        )
+# Tabel
+rows_s =_
