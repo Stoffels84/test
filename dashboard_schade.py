@@ -36,7 +36,7 @@ SMTP_PORT = int(os.getenv("mail@delijn-teambuiling.be", "587"))
 SMTP_USER = os.getenv("	no-reply@delijn-teambuiling.be")
 SMTP_PASS = os.getenv("22111984")
 EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER or "SCHADE")
-ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "")  # optioneel, bv. "bedrijf.be"
+ALLOWED_EMAIL_DOMAIN = os.getenv("christoff.rotty@icloud.com", "")  # optioneel, bv. "bedrijf.be"
 
 
 def _mask_email(addr: str) -> str:
