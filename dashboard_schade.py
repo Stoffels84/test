@@ -1025,3 +1025,76 @@ with coaching_tab:
                     df_schade_not_coach["Status (coachinglijst)"].replace({"Geen": "Niet aangevraagd"})
                 )
             st.dataframe(df_schade_not_coach, use_container_width=True)
+
+
+# ——— Extra: chauffeurs met >N schades zonder coaching ———
+st.markdown("---")
+st.markdown("## 🚩 Chauffeurs met meerdere schades zonder coaching")
+
+drempel_meer_dan = st.number_input(
+    "Toon bestuurders met méér dan ... schadegevallen (in huidige selectie)",
+    min_value=1, value=2, step=1, key="no_coach_threshold"
+)
+
+# Tel schades per PNR in de huidige selectie
+df_cnt = (
+    df_filtered.assign(dienstnummer=df_filtered["dienstnummer"].astype(str))
+              .groupby("dienstnummer").size().rename("Schades (in selectie)").reset_index()
+)
+
+# Iedereen die nergens in de coachinglijst staat (niet lopend, niet voltooid)
+set_coaching_all = set(map(str, coaching_ids)) | set(map(str, gecoachte_ids))
+pnrs_zonder_coach = set(df_cnt.loc[df_cnt["Schades (in selectie)"] > drempel_meer_dan, "dienstnummer"]) - set_coaching_all
+
+# Helpers (we gebruiken dezelfde logica als hoger in het tabje)
+def _naam_nc(pnr: str) -> str:
+    nm = (excel_info.get(pnr, {}) or {}).get("naam")
+    if nm and str(nm).strip().lower() not in {"nan", "none", ""}:
+        return str(nm)
+    r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "volledige naam_disp"]
+    return r.iloc[0] if not r.empty else str(pnr)
+
+def _tc_nc(pnr: str) -> str:
+    tc = (excel_info.get(pnr, {}) or {}).get("teamcoach")
+    if tc and str(tc).strip().lower() not in {"nan", "none", ""}:
+        return str(tc)
+    r = df.loc[df["dienstnummer"].astype(str) == str(pnr), "teamcoach_disp"]
+    return r.iloc[0] if not r.empty else "onbekend"
+
+def _badge_nc(pnr: str) -> str:
+    return badge_van_chauffeur(f"{pnr} - {_naam_nc(pnr)}")
+
+# Bouw de tabel
+cnt_map = dict(zip(df_cnt["dienstnummer"], df_cnt["Schades (in selectie)"]))
+rows_nc = []
+for p in sorted(pnrs_zonder_coach, key=lambda x: (-cnt_map.get(x, 0), x)):
+    rows_nc.append({
+        "Dienstnr": p,
+        "Naam": f"{_badge_nc(p)}{_naam_nc(p)}",
+        "Teamcoach": _tc_nc(p),
+        "Schades (in selectie)": cnt_map.get(p, 0),
+        "Status (coachinglijst)": "Niet aangevraagd",
+    })
+
+import pandas as _pd
+df_no_coach_hot = _pd.DataFrame(rows_nc)
+if not df_no_coach_hot.empty:
+    df_no_coach_hot = df_no_coach_hot.sort_values(
+        ["Schades (in selectie)", "Teamcoach", "Naam"], ascending=[False, True, True]
+    ).reset_index(drop=True)
+
+with st.expander(
+    f"🟥 > {drempel_meer_dan} schades en niet in coaching ({len(pnrs_zonder_coach)})",
+    expanded=False
+):
+    if df_no_coach_hot.empty:
+        st.caption("Geen resultaten.")
+    else:
+        st.dataframe(df_no_coach_hot, use_container_width=True)
+        st.download_button(
+            "⬇️ Download CSV (zonder coaching)",
+            df_no_coach_hot.to_csv(index=False).encode("utf-8"),
+            file_name=f"meerdan_{drempel_meer_dan}_schades_geen_coaching.csv",
+            mime="text/csv",
+            key="dl_no_coach_hot"
+        )
