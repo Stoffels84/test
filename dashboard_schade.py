@@ -515,7 +515,8 @@ def login_gate():
                     "last_sent": 0.0,
                     "sent": False,
                 }
-                st.experimental_rerun()
+                st.rerun()
+
 
 
 # ========= Hoofd-dashboard =========
