@@ -53,36 +53,55 @@ OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))
 
 
 # ==== OTP mail templates (kun je later in mail.env instellen) ====
-OTP_SUBJECT = os.getenv("OTP_SUBJECT", "Je verificatiecode: {code}")
+# ==== OTP mail templates ====
+OTP_SUBJECT = os.getenv("OTP_SUBJECT", "Je verificatiecode")
 
 OTP_BODY_TEXT = os.getenv(
     "OTP_BODY_TEXT",
     (
-        "Hallo,\n\n"
-        "Je verificatiecode voor het Schade Dashboard is: {code}\n"
-        "Deze code is {minutes} minuten geldig.\n\n"
-        "PNR: {pnr}\n"
-        "Datum: {date}\n"
-        "---\n"
-        "Als jij dit niet was, negeer dan deze e-mail."
+        "Beste {name}\n\n"
+        "Je verificatiecode om in te loggen in schade is: {code}\n"
+        "Je hebt {minutes} min om in te loggen.\n\n"
+        "Succes,\n"
+        "#OneTeamGent"
     )
 )
 
 # Optioneel: HTML-versie. Laat leeg ("") als je enkel tekst wil.
-OTP_BODY_HTML = os.getenv(
-    "OTP_BODY_HTML",
-    ""
-    # voorbeeld (vervangen door eigen HTML indien gewenst):
-    # """
-    # <div style="font-family:Arial,sans-serif">
-    #   <h2>Je verificatiecode</h2>
-    #   <p>Code: <strong style="font-size:20px">{code}</strong></p>
-    #   <p>Geldig: {minutes} minuten</p>
-    #   <p><small>PNR: {pnr} — {date}</small></p>
-    #   <hr><p style="color:#666">Als jij dit niet was, negeer dan deze e-mail.</p>
-    # </div>
-    # """
-)
+OTP_BODY_HTML = os.getenv("OTP_BODY_HTML", "")
+
+
+
+def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = None) -> None:
+    if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
+        raise RuntimeError("SMTP-configuratie ontbreekt in mail.env")
+
+    msg = EmailMessage()
+    msg["From"] = EMAIL_FROM
+    msg["To"] = to_addr
+    msg["Subject"] = subject
+
+    # Alt-tekst + (optioneel) HTML
+    msg.set_content(body_text)
+    if html:
+        msg.add_alternative(html, subtype="html")
+
+    use_ssl = (
+        str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
+        or int(SMTP_PORT) == 465
+    )
+    if use_ssl:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as server:
+            if SMTP_USER and SMTP_PASS:
+                server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls(context=ssl.create_default_context())
+            if SMTP_USER and SMTP_PASS:
+                server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
 
 
 
