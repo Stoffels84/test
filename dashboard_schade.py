@@ -824,63 +824,69 @@ with locatie_tab:
                                 st.markdown(prefix + "❌ Geen geldige of aanwezige link")
 
 # ========= TAB 4: Opzoeken =========
+# ========= TAB 4: Opzoeken =========
 with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
     zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
 
-    dn_in = re.findall(r"\d+", str(zoek))
-    dn_in = dn_in[0] if dn_in else ""
+    # puur cijfers uit de input halen
+    dn_hits = re.findall(r"\d+", str(zoek))
+    pnr = dn_hits[0] if dn_hits else ""
 
-    if not dn_in:
+    if not pnr:
         st.info("Geef een personeelsnummer in om resultaten te zien.")
+        st.stop()
+
+    # Resultaten binnen huidige filters (voor teller & tabel)
+    res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
+    # Fallback buiten filters om naam/coach toch te tonen
+    res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
+
+    # Naam en teamcoach bepalen (eerst uit gefilterde data, anders uit volledige/Excel)
+    if not res.empty:
+        naam_disp = res["volledige naam_disp"].iloc[0]
+        teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+    elif not res_all.empty:
+        naam_disp = res_all["volledige naam_disp"].iloc[0]
+        teamcoach_disp = res_all["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res_all.columns else "onbekend"
     else:
-        if "dienstnummer" not in df.columns:
-            st.error("Kolom 'dienstnummer' ontbreekt in de data.")
-        else:
-            res = df[df["dienstnummer"].astype(str).str.strip() == dn_in].copy()
+        naam_disp = (excel_info.get(pnr, {}) or {}).get("naam") or ""
+        teamcoach_disp = (excel_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
 
-            if res.empty:
-                st.warning(f"Geen resultaten gevonden voor personeelsnr **{dn_in}**.")
-            else:
-                naam_chauffeur = res["volledige naam_disp"].iloc[0]
-                naam_teamcoach = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+    # Tekst zoals in screenshot: "11236 Baert Freddy"
+    naam_label = f"{pnr} {naam_disp}".strip()
 
-                st.markdown(f"**👤 Chauffeur:** {naam_chauffeur}")
-                st.markdown(f"**🧑‍💼 Teamcoach:** {naam_teamcoach}")
-                st.markdown("---")
+    st.markdown(f"**👤 Chauffeur:** {naam_label}")
+    st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
+    st.markdown("---")
 
-                st.metric("Aantal schadegevallen", len(res))
+    st.metric("Aantal schadegevallen", len(res))
 
-                heeft_link = "Link" in res.columns
-                res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
+    if res.empty:
+        st.caption("Geen schadegevallen binnen de huidige filters.")
+    else:
+        # Sorteren en link kolom maken
+        res = res.sort_values("Datum", ascending=False).copy()
+        heeft_link = "Link" in res.columns
+        res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
 
-                toon_kol = ["Datum", "Locatie_disp"]
-                if heeft_link:
-                    toon_kol.append("URL")
+        kol = ["Datum", "Locatie_disp"]
+        if heeft_link:
+            kol.append("URL")
 
-                res = res.sort_values("Datum", ascending=False)
-
-                if heeft_link:
-                    st.dataframe(
-                        res[toon_kol],
-                        column_config={
-                            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                            "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                            "URL": st.column_config.LinkColumn("Link", display_text="🔗 openen")
-                        },
-                        use_container_width=True,
-                    )
-                else:
-                    st.dataframe(
-                        res[toon_kol],
-                        column_config={
-                            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                            "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                        },
-                        use_container_width=True,
-                    )
-
+        # Tabel zoals in screenshot (linktekst = 'openen')
+        st.dataframe(
+            res[kol],
+            column_config={
+                "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                **({"URL": st.column_config.LinkColumn("Link", display_text="openen")} if heeft_link else {})
+            },
+            use_container_width=True,
+            # Zet eventueel hide_index=True als je de linker index niet wilt zien
+            # hide_index=True,
+        )
 
 # ========= TAB 5: Coaching =========
 with coaching_tab:
