@@ -6,38 +6,20 @@ import smtplib
 import ssl
 import hashlib
 from email.message import EmailMessage
-from datetime import datetime, timedelta
-
-import streamlit as st
+from datetime import datetime
 import pandas as pd
-import matplotlib.pyplot as plt
-from io import BytesIO
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-import tempfile
-from streamlit_autorefresh import st_autorefresh
+import streamlit as st
 
-# ========= Instellingen =========
-plt.rcParams["figure.dpi"] = 150
-st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
-
-# 🔄 Auto-refresh: herlaad de pagina elk uur
-st_autorefresh(interval=3600 * 1000, key="data_refresh")
-
-# =========================================
-# Config & helpers (kopieer dit blok)
-# =========================================
-
-# ---- mail.env laden (met fallback zonder python-dotenv) ----
+# =========================
+# mail.env laden
+# =========================
 def _load_env(path: str = "mail.env") -> None:
     try:
         from dotenv import load_dotenv  # type: ignore
         load_dotenv(path)
         return
     except Exception:
-        pass  # geen python-dotenv -> simpele parser
+        pass
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             for raw in f:
@@ -49,42 +31,50 @@ def _load_env(path: str = "mail.env") -> None:
 
 _load_env("mail.env")
 
-# ---- SMTP instellingen ----
+# =========================
+# SMTP instellingen
+# =========================
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "").strip()
 SMTP_PASS = os.getenv("SMTP_PASS", "").strip()
 EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER or "").strip()
 
-# ---- OTP instellingen ----
-OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))               # aantal cijfers
+# =========================
+# OTP instellingen
+# =========================
+OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))
 OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))   # 10 min
 OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))
 
-# ---- Allowed e-maildomein (login/OTP restrictie) ----
+# =========================
+# Domeinlogica
+# =========================
 def _extract_domain(addr: str) -> str:
     try:
         return addr.split("@", 1)[1].lower()
     except Exception:
         return ""
 
-ALLOWED_EMAIL_DOMAIN = (
-    os.getenv("ALLOWED_EMAIL_DOMAIN", "").strip().lower()
-    or _extract_domain(EMAIL_FROM or SMTP_USER or "")
-)
+ALLOWED_EMAIL_DOMAINS = [
+    d.strip().lower()
+    for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",")
+    if d.strip()
+]
+if not ALLOWED_EMAIL_DOMAINS:
+    d = _extract_domain(EMAIL_FROM or SMTP_USER or "")
+    ALLOWED_EMAIL_DOMAINS = [d] if d else []
 
 def _is_allowed_email(addr: str) -> bool:
-    """True als het adres in het toegelaten domein valt, of als er geen restrictie is."""
-    if not ALLOWED_EMAIL_DOMAIN:
+    if not ALLOWED_EMAIL_DOMAINS:
         return True
-    try:
-        return addr.strip().lower().endswith("@" + ALLOWED_EMAIL_DOMAIN)
-    except Exception:
-        return False
+    a = addr.strip().lower()
+    return any(a.endswith("@" + d) for d in ALLOWED_EMAIL_DOMAINS)
 
-# ---- Helpers ----
+# =========================
+# Helpers
+# =========================
 def _mask_email(addr: str) -> str:
-    """Masker e-mail voor weergave (privacy)."""
     try:
         local, dom = addr.split("@", 1)
         if len(local) <= 2:
@@ -96,21 +86,16 @@ def _mask_email(addr: str) -> str:
         return addr
 
 def _gen_otp(n: int | None = None) -> str:
-    """Genereer numerieke OTP-code."""
     if n is None:
         n = OTP_LENGTH
-    digits = "0123456789"
-    return "".join(secrets.choice(digits) for _ in range(n))
+    return "".join(secrets.choice("0123456789") for _ in range(n))
 
 def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 def _send_email(to_addr: str, subject: str, body: str) -> None:
-    """Verzend e-mail via SMTP. Ondersteunt STARTTLS (587) en SSL (465)."""
     if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
-        raise RuntimeError(
-            "SMTP-configuratie ontbreekt: stel SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/EMAIL_FROM in (mail.env)."
-        )
+        raise RuntimeError("SMTP-configuratie ontbreekt in mail.env")
 
     msg = EmailMessage()
     msg["From"] = EMAIL_FROM
@@ -122,7 +107,6 @@ def _send_email(to_addr: str, subject: str, body: str) -> None:
         str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
         or int(SMTP_PORT) == 465
     )
-
     if use_ssl:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as server:
             if SMTP_USER and SMTP_PASS:
@@ -135,80 +119,105 @@ def _send_email(to_addr: str, subject: str, body: str) -> None:
                 server.login(SMTP_USER, SMTP_PASS)
             server.send_message(msg)
 
-# =========================================
-# EINDE kopieerblok
-# =========================================
-
-
-
-
-# ========= Data helpers (gedeeld met hoofd-app) =========
+# =========================
+# Contact mapping
+# =========================
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_contact_map(path="schade met macro.xlsm") -> dict:
-    """Leest tabblad 'contact' uit xlsm en maakt een mapping pnr -> email.
-    - Kolom A: personeelsnummer (PNR)
-    - Kolom C: e-mail
-    Naam van het blad is case-insensitive (contact/Contact/...)
-    """
     try:
         xls = pd.ExcelFile(path)
     except Exception as e:
-        st.error(f"Kon '{path}' niet openen voor contactgegevens: {e}")
+        st.error(f"Kon '{path}' niet openen: {e}")
         st.stop()
 
-    # Vind 'contact' blad (case-insensitive)
-    sheet = None
-    for nm in xls.sheet_names:
-        if str(nm).strip().lower() == "contact":
-            sheet = nm
-            break
+    sheet = next((nm for nm in xls.sheet_names if str(nm).strip().lower() == "contact"), None)
     if sheet is None:
-        st.error("Tabblad 'contact' niet gevonden in het schadebestand.")
+        st.error("Tabblad 'contact' niet gevonden.")
         st.stop()
 
     dfc = pd.read_excel(xls, sheet_name=sheet, header=0)
     if dfc.empty:
         return {}
 
-    # Probeer kolomnamen te herkennen, val terug op posities A/C
     cols_lower = [str(c).strip().lower() for c in dfc.columns]
-    try:
-        if "personeelsnummer" in cols_lower:
-            col_pnr = dfc.columns[cols_lower.index("personeelsnummer")]
-        elif "dienstnummer" in cols_lower:
-            col_pnr = dfc.columns[cols_lower.index("dienstnummer")]
-        else:
-            col_pnr = dfc.columns[0]  # kolom A
-        if "email" in cols_lower:
-            col_mail = dfc.columns[cols_lower.index("email")]
-        elif "e-mail" in cols_lower:
-            col_mail = dfc.columns[cols_lower.index("e-mail")]
-        else:
-            col_mail = dfc.columns[2]  # kolom C
-    except Exception:
-        # Fallback: posities 0 en 2
-        col_pnr = dfc.columns[0]
-        col_mail = dfc.columns[2] if len(dfc.columns) >= 3 else dfc.columns[1]
+    col_pnr = dfc.columns[0]
+    col_mail = dfc.columns[2] if len(dfc.columns) >= 3 else dfc.columns[1]
+    if "personeelsnummer" in cols_lower:
+        col_pnr = dfc.columns[cols_lower.index("personeelsnummer")]
+    elif "dienstnummer" in cols_lower:
+        col_pnr = dfc.columns[cols_lower.index("dienstnummer")]
+    if "email" in cols_lower:
+        col_mail = dfc.columns[cols_lower.index("email")]
+    elif "e-mail" in cols_lower:
+        col_mail = dfc.columns[cols_lower.index("e-mail")]
 
     mapping = {}
     for _, row in dfc.iterrows():
         p = str(row.get(col_pnr, "")).strip()
         m = str(row.get(col_mail, "")).strip().lower()
-        if not p:
+        if not p or "@" not in m:
             continue
-        # Extract alleen digits voor PNR
-        m_pnr = re.findall(r"\d+", p)
-        if not m_pnr:
+        digits = re.findall(r"\d+", p)
+        if not digits:
             continue
-        pnr = m_pnr[0]
-        if not m or "@" not in m:
-            continue
-        if ALLOWED_EMAIL_DOMAIN and not m.endswith("@" + ALLOWED_EMAIL_DOMAIN):
-            # sla entries met andere domeinen over (optioneel)
-            continue
-        # Neem eerste voorkomens (of overschrijf; maakt niet veel uit)
-        mapping[pnr] = m
+        mapping[digits[0]] = m
     return mapping
+
+# =========================
+# Login flow
+# =========================
+def login_gate():
+    st.title("🔐 Login")
+    contacts = load_contact_map()
+
+    if "otp" not in st.session_state:
+        st.session_state.otp = {"pnr": None, "email": None, "hash": None, "expires": 0, "last_sent": 0, "sent": False}
+
+    otp = st.session_state.otp
+    pnr_input = st.text_input("Personeelsnummer", value=otp.get("pnr") or "")
+    want_code = st.button("📨 Verstuur code")
+
+    pnr_digits = "".join(re.findall(r"\d", pnr_input or ""))
+
+    if want_code:
+        if not pnr_digits:
+            st.error("Geen geldig PNR.")
+        elif pnr_digits not in contacts:
+            st.error("Onbekend PNR.")
+        else:
+            email = contacts[pnr_digits]
+            if not _is_allowed_email(email):
+                st.error(f"E-mailadres {email} is niet toegestaan.")
+            else:
+                code = _gen_otp()
+                st.session_state.otp.update({
+                    "pnr": pnr_digits,
+                    "email": email,
+                    "hash": _hash_code(code),
+                    "expires": time.time() + OTP_TTL_SECONDS,
+                    "last_sent": time.time(),
+                    "sent": True,
+                })
+                body = f"Je verificatiecode is: {code}\n\nGeldig {OTP_TTL_SECONDS//60} minuten."
+                try:
+                    _send_email(email, "OTP-code", body)
+                    st.success(f"Code verzonden naar {_mask_email(email)}")
+                except Exception as e:
+                    st.error(f"Kon geen mail sturen: {e}")
+
+    if otp.get("sent"):
+        code_in = st.text_input("Verificatiecode", max_chars=OTP_LENGTH)
+        if st.button("Inloggen"):
+            if time.time() > otp["expires"]:
+                st.error("Code verlopen.")
+            elif _hash_code(code_in.strip()) != otp["hash"]:
+                st.error("Ongeldige code.")
+            else:
+                st.session_state.authenticated = True
+                st.session_state.user_pnr = otp["pnr"]
+                st.session_state.user_email = otp["email"]
+                st.success("✅ Ingelogd")
+
 
 
 # ========= Hoofd-app functies =========
