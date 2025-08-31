@@ -94,7 +94,6 @@ def _beoordeling_emoji(rate: str) -> str:
         return "🔴 "
     return ""  # geen beoordeling bekend
 
-
 def badge_van_chauffeur(naam: str) -> str:
     """
     Bepaalt de badges voor een chauffeur:
@@ -104,22 +103,13 @@ def badge_van_chauffeur(naam: str) -> str:
     dn = naam_naar_dn(naam)
     if not dn:
         return ""
-
     sdn = str(dn).strip()
     info = excel_info.get(sdn, {})
     beoordeling = info.get("beoordeling")
     status_excel = info.get("status")  # "Voltooid" of "Coaching"
-
-    # Kleur op basis van beoordeling
     kleur = _beoordeling_emoji(beoordeling)
-
-    # Lopen coaching?
     lopend = (status_excel == "Coaching") or (sdn in coaching_ids)
-
-    # Combineer: kleur eerst, dan zwart als lopend
     return f"{kleur}{'⚫ ' if lopend else ''}"
-
-
 
 # ========= Coachingslijst inlezen (incl. naam/teamcoach uit Excel) =========
 @st.cache_data(show_spinner=False)
@@ -136,7 +126,6 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     ids_geel, ids_blauw = set(), set()
     total_geel_rows, total_blauw_rows = 0, 0
     excel_info = {}
-
     try:
         xls = pd.ExcelFile(pad)
     except Exception as e:
@@ -168,7 +157,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         kol_vn    = next((k for k in voornaam_keys if k in dfc.columns), None)
         kol_an    = next((k for k in achternaam_keys if k in dfc.columns), None)
         kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
-        kol_rate  = next((k for k in rating_keys if k in dfc.columns), None)  # alleen aanwezig in "Voltooide coachings"
+        kol_rate  = next((k for k in rating_keys if k in dfc.columns), None)  # alleen in 'Voltooide coachings'
 
         if kol_pnr is None:
             return ids, total_rows
@@ -187,11 +176,9 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
             if pd.isna(pnr):
                 continue
 
-            # 1) Probeer Voornaam + Achternaam (waarbij 'naam' als achternaam geldt)
             vn = str(dfc[kol_vn].iloc[i]).strip() if kol_vn else ""
             an = str(dfc[kol_an].iloc[i]).strip() if kol_an else ""
 
-            # 2) Als beide leeg zijn, val terug op één kolom met volledige naam (indien aanwezig)
             if not (vn or an):
                 full = str(dfc[kol_full].iloc[i]).strip() if kol_full else ""
                 naam = full if full.lower() not in {"nan", "none", ""} else None
@@ -209,22 +196,19 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
             if tc:   info["teamcoach"] = tc
             info["status"] = status_label
 
-            # Beoordeling meenemen (alleen zinvol/aanwezig bij 'Voltooid')
             if kol_rate and status_label == "Voltooid":
                 raw_rate = str(dfc[kol_rate].iloc[i]).strip().lower()
                 if raw_rate and raw_rate not in {"nan", "none", ""}:
-                    # Normaliseer naar vaste set
                     mapping = {
                         "zeer goed": "zeer goed",
                         "goed": "goed",
                         "voldoende": "voldoende",
                         "slecht": "slecht",
                         "zeer slecht": "zeer slecht",
-                        # evt. toleranter maken:
                         "zeergoed": "zeer goed",
                         "zeerslecht": "zeer slecht",
                     }
-                    info["beoordeling"] = mapping.get(raw_rate, raw_rate)  # onbekende waarde blijft zichtbaar
+                    info["beoordeling"] = mapping.get(raw_rate, raw_rate)
             excel_info[pnr] = info
 
         return ids, total_rows
@@ -239,7 +223,63 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
 
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
 
+# ========= DATA LADEN & VOORBEREIDEN (SNEL) =========
+def _clean_display_series(s: pd.Series) -> pd.Series:
+    """Vectorized 'safe_name' zonder Python-loops."""
+    s = s.astype("string").str.strip()
+    bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
+    return s.mask(bad, "onbekend")
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
+    # 1) Inlezen + kolommen trimmen
+    df_raw = pd.read_excel(path, sheet_name=sheet)
+    df_raw.columns = df_raw.columns.str.strip()
+
+    # 2) Datum robuust + filteren op geldige datums
+    d1 = pd.to_datetime(df_raw["Datum"], errors="coerce", dayfirst=True)
+    need_retry = d1.isna()
+    if need_retry.any():
+        d2 = pd.to_datetime(df_raw.loc[need_retry, "Datum"], errors="coerce", dayfirst=False)
+        d1.loc[need_retry] = d2
+    df_raw["Datum"] = d1
+    df_ok = df_raw[df_raw["Datum"].notna()].copy()
+
+    # 3) Strings strippen (vectorized)
+    for col in ("volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"):
+        if col in df_ok.columns:
+            df_ok[col] = df_ok[col].astype("string").str.strip()
+
+    # 4) Afgeleide velden
+    df_ok["dienstnummer"] = (
+        df_ok["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
+    )
+    df_ok["KwartaalP"] = df_ok["Datum"].dt.to_period("Q")
+    df_ok["Kwartaal"]  = df_ok["KwartaalP"].astype(str)
+
+    # 5) Display-kolommen
+    df_ok["volledige naam_disp"] = _clean_display_series(df_ok["volledige naam"])
+    df_ok["teamcoach_disp"]      = _clean_display_series(df_ok["teamcoach"])
+    df_ok["Locatie_disp"]        = _clean_display_series(df_ok["Locatie"])
+    df_ok["BusTram_disp"]        = _clean_display_series(df_ok["Bus/ Tram"])
+
+    # 6) Optielijsten + datumbereik
+    options = {
+        "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
+        "locatie":   sorted(df_ok["Locatie_disp"].dropna().unique().tolist()),
+        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),
+        "kwartaal":  sorted(df_ok["KwartaalP"].dropna().astype(str).unique().tolist()),
+        "min_datum": df_ok["Datum"].min().normalize(),
+        "max_datum": df_ok["Datum"].max().normalize(),
+    }
+    return df_ok, options
+
+@st.cache_data
+def df_to_csv_bytes(d: pd.DataFrame) -> bytes:
+    return d.to_csv(index=False).encode("utf-8")
+
+# === laad + prepare (cached) ===
+df, options = load_schade_prepared()
 
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = load_excel("chauffeurs.xlsx")
@@ -260,7 +300,6 @@ elif "wachtwoord" in gebruikers_df.columns:
 for c in ["rol", "dienstnummer", "laatste login"]:
     if c in gebruikers_df.columns:
         kol_map[c] = c
-
 gebruikers_df = gebruikers_df.rename(columns=kol_map)
 
 # Vereisten check
@@ -322,37 +361,6 @@ else:
     else:
         naam = str(ingelogde_info["gebruikersnaam"]).strip()
 
-# ========= Data laden =========
-raw = load_excel("schade met macro.xlsm", sheet_name="BRON").copy()
-raw.columns = raw.columns.str.strip()
-
-# -- parse datums robuust
-raw["Datum"] = _parse_excel_dates(raw["Datum"])
-
-# -- normaliseer relevante kolommen (als string; nog NIET filteren op leeg)
-for col in ["volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"]:
-    if col in raw.columns:
-        raw[col] = raw[col].astype("string").str.strip()
-
-# --- df_for_options: ALLE rijen met geldige datum (voor kwartaal-lijst)
-df_for_options = raw[raw["Datum"].notna()].copy()
-df_for_options["KwartaalP"] = df_for_options["Datum"].dt.to_period("Q")
-
-# --- df: analyses (alleen datums moeten geldig zijn; lege velden worden 'onbekend')
-df = raw[raw["Datum"].notna()].copy()
-
-# Display-kolommen met 'onbekend'
-df["volledige naam_disp"] = df["volledige naam"].apply(safe_name)
-df["teamcoach_disp"]      = df["teamcoach"].apply(safe_name)
-df["Locatie_disp"]        = df["Locatie"].apply(safe_name)
-df["BusTram_disp"]        = df["Bus/ Tram"].apply(safe_name)
-
-# Overige afgeleiden
-dn = df["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False)
-df["dienstnummer"] = dn.astype("string").str.strip()
-df["KwartaalP"]    = df["Datum"].dt.to_period("Q")
-df["Kwartaal"]     = df["KwartaalP"].astype(str)
-
 # ========= Coachingslijst =========
 gecoachte_ids, coaching_ids, totaal_voltooid_rijen, totaal_lopend_rijen, excel_info, coach_warn = lees_coachingslijst()
 if coach_warn:
@@ -366,19 +374,17 @@ df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 st.title("📊 Schadegevallen Dashboard")
 st.caption("🟢 = goede beoordeling · 🟠 = voldoende · 🔴 = slecht/zeer slecht · ⚫ = lopende coaching")
 
-
-
 # ========= Query params presets =========
 qp = st.query_params  # Streamlit 1.32+
 
 def _clean_list(values, allowed):
     return [v for v in (values or []) if v in allowed]
 
-# Opties (komen uit display-kolommen zodat 'onbekend' selecteerbaar is)
-teamcoach_options = sorted(df["teamcoach_disp"].dropna().unique().tolist())
-locatie_options   = sorted(df["Locatie_disp"].dropna().unique().tolist())
-voertuig_options  = sorted(df["BusTram_disp"].dropna().unique().tolist())
-kwartaal_options  = sorted(df_for_options["KwartaalP"].dropna().astype(str).unique().tolist())
+# Opties (uit de caching 'options')
+teamcoach_options = options["teamcoach"]
+locatie_options   = options["locatie"]
+voertuig_options  = options["voertuig"]
+kwartaal_options  = options["kwartaal"]
 
 # Prefs uit URL
 pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
@@ -423,8 +429,8 @@ with st.sidebar:
         date_from = sel_periods_idx.start_time.min().normalize()
         date_to   = sel_periods_idx.end_time.max().normalize()
     else:
-        date_from = df["Datum"].min().normalize()
-        date_to   = df["Datum"].max().normalize()
+        date_from = options["min_datum"]
+        date_to   = options["max_datum"]
 
     if st.button("🔄 Reset filters"):
         st.query_params.clear()
@@ -456,7 +462,7 @@ if df_filtered.empty:
 st.metric("Totaal aantal schadegevallen", len(df_filtered))
 st.download_button(
     "⬇️ Download gefilterde data (CSV)",
-    df_filtered.to_csv(index=False).encode("utf-8"),
+    df_to_csv_bytes(df_filtered),  # gecachete bytes
     file_name=f"schade_filtered_{datetime.today().strftime('%Y%m%d')}.csv",
     mime="text/csv",
     help="Exporteer de huidige selectie inclusief datumfilter."
@@ -578,6 +584,7 @@ if generate_pdf:
             os.remove(chart_path)
         except Exception:
             pass
+
 
 # ========= TAB 1: Chauffeur =========
 with chauffeur_tab:
