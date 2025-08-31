@@ -1089,4 +1089,13 @@ with coaching_tab:
         if df_no_coach.empty:
             st.caption("Geen resultaten.")
             st.caption(f"PNR's met >{drempel_schades} schades vóór uitsluiting: {len(pnrs_meer_dan)}")
-            st.caption(f"Uitgesloten door coaching (lopend/voltooid): {len(pnrs_meer_dan & set_coa_
+            st.caption(f"Uitgesloten door coaching (lopend/voltooid): {len(pnrs_meer_dan & set_coaching_all)}")
+        else:
+            st.dataframe(df_no_coach, use_container_width=True)
+            st.download_button(
+                "⬇️ Download CSV",
+                df_no_coach.to_csv(index=False).encode("utf-8"),
+                file_name=f"meerdan_{drempel_schades}_schades_niet_in_coaching_of_voltooid.csv",
+                mime="text/csv",
+                key="dl_more_schades_no_coaching_final"
+            )
