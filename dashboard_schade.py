@@ -26,66 +26,93 @@ st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
 # 🔄 Auto-refresh: herlaad de pagina elk uur
 st_autorefresh(interval=3600 * 1000, key="data_refresh")
 
-# ========= mail.env laden =========
-def _load_env(path: str):
-    """Laad key=value uit bestand in os.environ (fallback als python-dotenv niet beschikbaar is)."""
+# =========================================
+# Config & helpers (kopieer dit blok)
+# =========================================
+import os
+import secrets
+import smtplib
+import ssl
+import hashlib
+from email.message import EmailMessage
+
+# ---- mail.env laden (met fallback zonder python-dotenv) ----
+def _load_env(path: str = "mail.env") -> None:
     try:
         from dotenv import load_dotenv  # type: ignore
         load_dotenv(path)
+        return
     except Exception:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                for raw in f:
-                    line = raw.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if "=" in line:
-                        k, v = line.split("=", 1)
-                        os.environ.setdefault(k.strip(), v.strip())
+        pass  # geen python-dotenv -> simpele parser
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
 
 _load_env("mail.env")
 
-# ========= SMTP instellingen =========
-SMTP_HOST = os.getenv("SMTP_HOST", "mail.delijn-teambuiling.be")
+# ---- SMTP instellingen ----
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "no-reply@delijn-teambuiling.be")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER)
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASS = os.getenv("SMTP_PASS", "").strip()
+EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER or "").strip()
 
-# ========= OTP instellingen =========
-OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))              # aantal cijfers
-OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))  # 10 min geldig
-OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))  # minimaal 60s tussen verzenden
+# ---- OTP instellingen ----
+OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))               # aantal cijfers
+OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))   # 10 min
+OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))
 
-# ========= Helpers =========
+# ---- Allowed e-maildomein (login/OTP restrictie) ----
+def _extract_domain(addr: str) -> str:
+    try:
+        return addr.split("@", 1)[1].lower()
+    except Exception:
+        return ""
+
+ALLOWED_EMAIL_DOMAIN = (
+    os.getenv("ALLOWED_EMAIL_DOMAIN", "").strip().lower()
+    or _extract_domain(EMAIL_FROM or SMTP_USER or "")
+)
+
+def _is_allowed_email(addr: str) -> bool:
+    """True als het adres in het toegelaten domein valt, of als er geen restrictie is."""
+    if not ALLOWED_EMAIL_DOMAIN:
+        return True
+    try:
+        return addr.strip().lower().endswith("@" + ALLOWED_EMAIL_DOMAIN)
+    except Exception:
+        return False
+
+# ---- Helpers ----
 def _mask_email(addr: str) -> str:
     """Masker e-mail voor weergave (privacy)."""
     try:
         local, dom = addr.split("@", 1)
         if len(local) <= 2:
-            masked = local[0] + "*"
+            masked = local[:1] + "*"
         else:
             masked = local[0] + "*" * (len(local) - 2) + local[-1]
         return f"{masked}@{dom}"
     except Exception:
         return addr
 
-
 def _gen_otp(n: int | None = None) -> str:
-    """Genereer een numerieke OTP-code."""
+    """Genereer numerieke OTP-code."""
     if n is None:
         n = OTP_LENGTH
     digits = "0123456789"
     return "".join(secrets.choice(digits) for _ in range(n))
 
-
 def _hash_code(code: str) -> str:
-    """Hash de OTP voor opslag in sessie."""
     return hashlib.sha256(code.encode()).hexdigest()
 
-
 def _send_email(to_addr: str, subject: str, body: str) -> None:
-    """Verzend een e-mail via SMTP (STARTTLS of SSL)."""
+    """Verzend e-mail via SMTP. Ondersteunt STARTTLS (587) en SSL (465)."""
     if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
         raise RuntimeError(
             "SMTP-configuratie ontbreekt: stel SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/EMAIL_FROM in (mail.env)."
@@ -103,18 +130,21 @@ def _send_email(to_addr: str, subject: str, body: str) -> None:
     )
 
     if use_ssl:
-        # Direct SSL (poort 465)
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as server:
             if SMTP_USER and SMTP_PASS:
                 server.login(SMTP_USER, SMTP_PASS)
             server.send_message(msg)
     else:
-        # STARTTLS (poort 587)
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls(context=ssl.create_default_context())
             if SMTP_USER and SMTP_PASS:
                 server.login(SMTP_USER, SMTP_PASS)
             server.send_message(msg)
+
+# =========================================
+# EINDE kopieerblok
+# =========================================
+
 
 
 
