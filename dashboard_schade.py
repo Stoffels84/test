@@ -1057,29 +1057,35 @@ def run_dashboard():
     with coaching_tab:
         try:
             st.subheader("🎯 Coaching – vergelijkingen")
+
+            # Verzamel sets (unieke P-nrs) uit coachingslijst
             set_lopend_all   = set(map(str, st.session_state.get("coaching_ids", set())))
             set_voltooid_all = set(st.session_state.get("excel_info", {}).keys())
 
-            # =========================
-            # NIEUW: extra KPI's
-            # =========================
+            # ===== KPI's: unieke bestuurders (coachingslijst)
             tot_lopend_uniek   = len(set_lopend_all)
             tot_voltooid_uniek = len(set_voltooid_all)
 
             c0a, c0b = st.columns(2)
-            c0a.metric("🔵 Totaal lopend (coachingslijst)", tot_lopend_uniek)
+            c0a.metric("🔵 Totaal lopend (coachingslijst)",   tot_lopend_uniek)
             c0b.metric("🟡 Totaal voltooid (coachingslijst)", tot_voltooid_uniek)
 
-            # KPI’s binnen de schadelijst (zoals voorheen)
+            # ===== NIEUW: KPI's ruwe rijen uit Excel (incl. dubbels)
+            # Beschikbaar uit lees_coachingslijst(): total_geel = voltooid, total_blauw = lopend
+            r1, r2 = st.columns(2)
+            r1.metric("🧾 Voltooid – ruwe rijen (coachingslijst)", total_geel)
+            r2.metric("🧾 Lopend – ruwe rijen (coachingslijst)",   total_blauw)
+
+            # ===== KPI's: doorsnede met (gefilterde) schadelijst
             pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
-            c1, c2 = st.columns(2)
-            c1.metric("🔵 Lopend (in schadelijst)", len(pnrs_schade_sel & set_lopend_all))
-            c2.metric("🟡 Voltooid (in schadelijst)", len(pnrs_schade_sel & set_voltooid_all))
+            s1, s2 = st.columns(2)
+            s1.metric("🔵 Lopend (in schadelijst)",   len(pnrs_schade_sel & set_lopend_all))
+            s2.metric("🟡 Voltooid (in schadelijst)", len(pnrs_schade_sel & set_voltooid_all))
 
             st.markdown("---")
             st.markdown("## 🔎 Vergelijking schadelijst ↔ Coachingslijst")
 
-            # statusfilter
+            # Keuze welke status je wil vergelijken
             status_keuze = st.radio(
                 "Welke status vergelijken?",
                 options=["Lopend","Voltooid","Beide"],
@@ -1097,6 +1103,7 @@ def run_dashboard():
             coach_niet_in_schade = set_coach_sel - pnrs_schade_sel
             schade_niet_in_coach = pnrs_schade_sel - set_coach_sel
 
+            # Helpers
             def _naam(p):
                 ex_info = st.session_state.get("excel_info", {})
                 nm = (ex_info.get(p, {}) or {}).get("naam")
@@ -1123,7 +1130,7 @@ def run_dashboard():
                 } for p in sorted(map(str, pnrs_set))]
                 return pd.DataFrame(rows).sort_values(["Naam"]).reset_index(drop=True)
 
-            # Tabellen
+            # Tabellen + downloads
             with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(coach_niet_in_schade)})", expanded=False):
                 df_a = _make_table(coach_niet_in_schade)
                 st.dataframe(df_a, use_container_width=True) if not df_a.empty else st.caption("Geen resultaten.")
@@ -1150,9 +1157,16 @@ def run_dashboard():
 
             st.markdown("---")
             st.markdown("## 🚩 schades en niet in *Coaching* of *Voltooid*")
-            gebruik_filters_s = st.checkbox("Tel schades binnen huidige filters (uit = volledige dataset)", value=False, key="more_schades_use_filters")
+            gebruik_filters_s = st.checkbox(
+                "Tel schades binnen huidige filters (uit = volledige dataset)",
+                value=False,
+                key="more_schades_use_filters"
+            )
             df_basis_s = df_filtered if gebruik_filters_s else df
-            thr = st.number_input("Toon bestuurders met méér dan ... schades", min_value=1, value=2, step=1, key="more_schades_threshold")
+            thr = st.number_input(
+                "Toon bestuurders met méér dan ... schades",
+                min_value=1, value=2, step=1, key="more_schades_threshold"
+            )
             pnr_counts = df_basis_s["dienstnummer"].dropna().astype(str).value_counts()
             pnrs_meer_dan = set(pnr_counts[pnr_counts > thr].index)
             set_coaching_all = set_lopend_all | set_voltooid_all
@@ -1161,10 +1175,16 @@ def run_dashboard():
             rows = [{
                 "Dienstnr": p,
                 "Naam": f"{badge_van_chauffeur(f'{p} - {_naam(p)}')}{_naam(p)}",
-                "Schades": int(pnr_counts.get(p,0)),
+                "Schades": int(pnr_counts.get(p, 0)),
                 "Status (coachinglijst)": "Niet aangevraagd",
-            } for p in sorted(result_set, key=lambda x: (-pnr_counts.get(x,0), x))]
-            df_no_coach = pd.DataFrame(rows).sort_values(["Schades","Naam"], ascending=[False,True]).reset_index(drop=True) if rows else pd.DataFrame(columns=["Dienstnr","Naam","Schades","Status (coachinglijst)"])
+            } for p in sorted(result_set, key=lambda x: (-pnr_counts.get(x, 0), x))]
+            df_no_coach = (
+                pd.DataFrame(rows)
+                  .sort_values(["Schades","Naam"], ascending=[False,True])
+                  .reset_index(drop=True)
+                if rows else
+                pd.DataFrame(columns=["Dienstnr","Naam","Schades","Status (coachinglijst)"])
+            )
 
             with st.expander(f"🟥 > {thr} schades en niet in coaching/voltooid ({len(result_set)})", expanded=True):
                 if df_no_coach.empty:
@@ -1184,6 +1204,7 @@ def run_dashboard():
         except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
+
 
 
 def main():
