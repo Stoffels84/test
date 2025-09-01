@@ -659,24 +659,6 @@ def get_teamcoach_email(teamcoach_name: str) -> str | None:
 
 
 
-    use_ssl = (
-        str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
-        or int(SMTP_PORT) == 465
-    )
-    if use_ssl:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as server:
-            if SMTP_USER and SMTP_PASS:
-                server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls(context=ssl.create_default_context())
-            if SMTP_USER and SMTP_PASS:
-                server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
-
-
-
 # ========= Dashboard =========
 # ========= Dashboard =========
 def run_dashboard():
