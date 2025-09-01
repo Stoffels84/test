@@ -1062,20 +1062,18 @@ def run_dashboard():
             set_lopend_all   = set(map(str, st.session_state.get("coaching_ids", set())))
             set_voltooid_all = set(st.session_state.get("excel_info", {}).keys())
 
-            # ===== KPI's: unieke bestuurders (coachingslijst) — Lopend links, Voltooid rechts
-            tot_lopend_uniek   = len(set_lopend_all)
+            # ===== KPI's: UNIEK (coachingslijst)
+            # Verwijderd: "Totaal lopend (coachingslijst)"
+            # We tonen enkel nog 'Totaal voltooid (coachingslijst)'
             tot_voltooid_uniek = len(set_voltooid_all)
+            st.metric("🟡 Totaal voltooid (coachingslijst)", tot_voltooid_uniek)
 
-            k1, k2 = st.columns(2)
-            k1.metric("🔵 Totaal lopend (coachingslijst)",   tot_lopend_uniek)
-            k2.metric("🟡 Totaal voltooid (coachingslijst)", tot_voltooid_uniek)
-
-            # ===== KPI's: ruwe rijen uit Excel (incl. dubbels) — GEWISSELD: Lopend links, Voltooid rechts
+            # ===== KPI's: RUWE RIJEN uit Excel (incl. dubbels) — Lopend links, Voltooid rechts
             r1, r2 = st.columns(2)
             r1.metric("🧾 Lopend – ruwe rijen (coachingslijst)",   total_blauw)
             r2.metric("🧾 Voltooid – ruwe rijen (coachingslijst)", total_geel)
 
-            # ===== KPI's: doorsnede met (gefilterde) schadelijst — Lopend links, Voltooid rechts
+            # ===== KPI's: DOORSNEDE met (gefilterde) schadelijst — Lopend links, Voltooid rechts
             pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
             s1, s2 = st.columns(2)
             s1.metric("🔵 Lopend (in schadelijst)",   len(pnrs_schade_sel & set_lopend_all))
@@ -1180,30 +1178,7 @@ def run_dashboard():
             df_no_coach = (
                 pd.DataFrame(rows)
                   .sort_values(["Schades","Naam"], ascending=[False,True])
-                  .reset_index(drop=True)
-                if rows else
-                pd.DataFrame(columns=["Dienstnr","Naam","Schades","Status (coachinglijst)"])
-            )
-
-            with st.expander(f"🟥 > {thr} schades en niet in coaching/voltooid ({len(result_set)})", expanded=True):
-                if df_no_coach.empty:
-                    st.caption("Geen resultaten.")
-                    st.caption(f"PNR's >{thr} vóór uitsluiting: {len(pnrs_meer_dan)}")
-                    st.caption(f"Uitgesloten door coaching/voltooid: {len(pnrs_meer_dan & set_coaching_all)}")
-                else:
-                    st.dataframe(df_no_coach, use_container_width=True)
-                    st.download_button(
-                        "⬇️ Download CSV",
-                        df_no_coach.to_csv(index=False).encode("utf-8"),
-                        file_name=f"meerdan_{thr}_schades_niet_in_coaching_voltooid.csv",
-                        mime="text/csv",
-                        key="dl_more_schades_no_coaching"
-                    )
-
-        except Exception as e:
-            st.error("Er ging iets mis in het Coaching-tab.")
-            st.exception(e)
-
+                  .reset_in_
 
 
 
