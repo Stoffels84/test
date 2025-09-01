@@ -537,21 +537,22 @@ def login_gate():
 # ========= Dashboard =========
 def run_dashboard():
     # Sidebar header + logout
-with st.sidebar:
-    display_name = st.session_state.get("user_name") or st.session_state.get("user_pnr") or "—"
-    display_pnr  = st.session_state.get("user_pnr", "—")
-    user_email   = st.session_state.get("user_email", "?")
+    with st.sidebar:
+        display_name = st.session_state.get("user_name") or st.session_state.get("user_pnr") or "—"
+        display_pnr  = st.session_state.get("user_pnr", "—")
+        user_email   = st.session_state.get("user_email", "?")
 
-    # Toon enkel naam:
-    st.success(f"Ingelogd als {display_name}\n{_mask_email(user_email)}")
+        # Toon enkel naam
+        st.success(f"Ingelogd als {display_name}\n{_mask_email(user_email)}")
 
-    # Wil je ook het PNR in beeld? Vervang de regel hierboven door:
-    # st.success(f"Ingelogd als {display_name} ({display_pnr})\n{_mask_email(user_email)}")
+        # Wil je ook het PNR tonen? Gebruik deze regel i.p.v. hierboven:
+        # st.success(f"Ingelogd als {display_name} ({display_pnr})\n{_mask_email(user_email)}")
 
-    if st.button("🚪 Uitloggen"):
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        st.rerun()
+        if st.button("🚪 Uitloggen"):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
+
 
 
     # Data laden
