@@ -659,76 +659,94 @@ def run_dashboard():
     _detail_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_filtered.columns]
 
     # ===== Tab 1: Chauffeur =====
-    with chauffeur_tab:
-        st.subheader("📂 Schadegevallen per chauffeur")
-        grp = (
-            df_filtered.groupby("volledige naam", as_index=False)
-                       .size()
-                       .rename(columns={"size": "aantal", "volledige naam": "chauffeur_raw"})
-                       .sort_values("aantal", ascending=False)
-                       .reset_index(drop=True)
-        )
-        if grp.empty:
-            st.info("Geen schadegevallen binnen de huidige filters.")
-        else:
-            totaal_schades = int(grp["aantal"].sum())
-            aantal_ch = int(grp.shape[0])
+# ===== Tab 1: Chauffeur =====
+with chauffeur_tab:
+    st.subheader("📂 Schadegevallen per chauffeur")
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric("Aantal chauffeurs (met schade)", aantal_ch)
-                man_ch = st.number_input("Handmatig aantal chauffeurs", min_value=1, value=max(1, aantal_ch), step=1, key="chf_manual_count")
-            c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
-            c3.metric("Totaal aantal schades", totaal_schades)
+    grp = (
+        df_filtered.groupby("volledige naam")
+        .size()
+        .reset_index(name="aantal")
+        .rename(columns={"volledige naam": "chauffeur_raw"})
+        .sort_values("aantal", ascending=False)
+        .reset_index(drop=True)
+    )
 
-            step = 5
-            max_val = int(grp["aantal"].max())
-            edges = list(range(0, max_val + step, step))
-            if edges[-1] < max_val:
-                edges.append(max_val + step)
-            grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
+    if grp.empty:
+        st.info("Geen schadegevallen binnen de huidige filters.")
+    else:
+        totaal_schades = int(grp["aantal"].sum())
+        aantal_ch = int(grp.shape[0])
 
-            _idx_by_name = df_filtered.groupby("volledige naam", sort=False).indices
-
-                .groupby("volledige naam")["index"]
-                .apply(list)
-                .to_dict()
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Aantal chauffeurs (met schade)", aantal_ch)
+            man_ch = st.number_input(
+                "Handmatig aantal chauffeurs",
+                min_value=1,
+                value=max(1, aantal_ch),
+                step=1,
+                key="chf_manual_count"
             )
+        c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
+        c3.metric("Totaal aantal schades", totaal_schades)
 
-            for interval, g in grp.groupby("interval", sort=False):
-                if g.empty or pd.isna(interval):
-                    continue
-                left, right = int(interval.left), int(interval.right)
-                low = max(1, left + 1)
-                with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
-                    g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
+        # verdeling in intervallen
+        step = 5
+        max_val = int(grp["aantal"].max())
+        edges = list(range(0, max_val + step, step))
+        if edges[-1] < max_val:
+            edges.append(max_val + step)
+        grp["interval"] = pd.cut(
+            grp["aantal"], bins=edges, right=True, include_lowest=True
+        )
 
-                    out_lines = []
-                    for raw, aantal in zip(g["chauffeur_raw"].tolist(), g["aantal"].tolist()):
-                        disp = _name_disp_map.get(raw, raw)
-                        badge = badge_van_chauffeur(raw)
-                        out_lines.append(f"**{badge}{disp}** — {int(aantal)} schadegevallen")
+        # veilige index mapping (positie-indexen)
+        _idx_by_name = df_filtered.groupby("volledige naam", sort=False).indices
 
-                        idxs = _idx_by_name.get(raw, [])
-                        if not idxs:
-                            continue
-                        details = df_filtered.iloc[idxs][_detail_cols].sort_values("Datum")
-                        det_lines = []
-                        _has_link = "Link" in details.columns
-                        for r in details.itertuples(index=False):
-                            _datum = getattr(r, "Datum", pd.NaT)
-                            datum_str = _datum.strftime("%d-%m-%Y") if pd.notna(_datum) else "onbekend"
-                            voertuig   = getattr(r, "BusTram_disp", "onbekend")
-                            loc        = getattr(r, "Locatie_disp", "onbekend")
-                            coach      = getattr(r, "teamcoach_disp", "onbekend")
-                            link_val   = getattr(r, "Link", None) if _has_link else None
-                            link_url   = extract_url(link_val) if _has_link else None
-                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                            det_lines.append(prefix + (f"[🔗 openen]({link_url})" if link_url else "❌ geen link"))
-                        if det_lines:
-                            st.markdown("\n\n".join(det_lines), unsafe_allow_html=True)
-                    if out_lines:
-                        st.markdown("\n\n".join(out_lines))
+        # display kolommen
+        _detail_cols = [
+            c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]
+            if c in df_filtered.columns
+        ]
+        _name_disp_map = (
+            df_filtered[["volledige naam", "volledige naam_disp"]]
+            .dropna()
+            .drop_duplicates(subset=["volledige naam"])
+            .set_index("volledige naam")["volledige naam_disp"]
+            .to_dict()
+        )
+
+        # output per interval
+        for interval, g in grp.groupby("interval", sort=False):
+            if g.empty or pd.isna(interval):
+                continue
+            left, right = int(interval.left), int(interval.right)
+            low = max(1, left + 1)
+
+            with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
+                g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
+
+                for _, row in g.iterrows():
+                    raw  = str(row["chauffeur_raw"])
+                    disp = _name_disp_map.get(raw, raw)
+                    badge = badge_van_chauffeur(raw)
+                    st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
+
+                    idxs = _idx_by_name.get(raw, [])
+                    if not idxs:
+                        continue
+
+                    details = df_filtered.iloc[idxs][_detail_cols].sort_values("Datum")
+                    for _, r in details.iterrows():
+                        datum_str = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
+                        voertuig   = r.get("BusTram_disp", "onbekend")
+                        loc        = r.get("Locatie_disp", "onbekend")
+                        coach      = r.get("teamcoach_disp", "onbekend")
+                        link_val   = r.get("Link")
+                        link_url   = extract_url(link_val) if pd.notna(link_val) else None
+                        prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                        st.markdown(prefix + (f"[🔗 openen]({link_url})" if link_url else "❌ geen link"), unsafe_allow_html=True)
 
     # ===== Tab 2: Voertuig =====
     with voertuig_tab:
