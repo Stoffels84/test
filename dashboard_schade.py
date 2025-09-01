@@ -818,8 +818,6 @@ def run_dashboard():
         help="Exporteer de huidige selectie inclusief datumfilter."
     )
 
-    # ===== PDF export + mail in sidebar =====
-    pdf_export_sidebar(df_filtered, df)
 
     # ===== Tabs aanmaken =====
     chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
