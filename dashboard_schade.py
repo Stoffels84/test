@@ -688,8 +688,8 @@ def run_dashboard():
                 edges.append(max_val + step)
             grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
 
-            _idx_by_name = (
-                df_filtered.reset_index()[["index", "volledige naam"]]
+            _idx_by_name = df_filtered.groupby("volledige naam", sort=False).indices
+
                 .groupby("volledige naam")["index"]
                 .apply(list)
                 .to_dict()
