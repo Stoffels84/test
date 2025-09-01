@@ -537,14 +537,22 @@ def login_gate():
 # ========= Dashboard =========
 def run_dashboard():
     # Sidebar header + logout
-    with st.sidebar:
-        user_pnr = st.session_state.get("user_pnr", "?")
-        user_email = st.session_state.get("user_email", "?")
-        st.success(f"Ingelogd als {user_pnr}\n{_mask_email(user_email)}")
-        if st.button("🚪 Uitloggen"):
-            for k in list(st.session_state.keys()):
-                del st.session_state[k]
-            st.rerun()
+with st.sidebar:
+    display_name = st.session_state.get("user_name") or st.session_state.get("user_pnr") or "—"
+    display_pnr  = st.session_state.get("user_pnr", "—")
+    user_email   = st.session_state.get("user_email", "?")
+
+    # Toon enkel naam:
+    st.success(f"Ingelogd als {display_name}\n{_mask_email(user_email)}")
+
+    # Wil je ook het PNR in beeld? Vervang de regel hierboven door:
+    # st.success(f"Ingelogd als {display_name} ({display_pnr})\n{_mask_email(user_email)}")
+
+    if st.button("🚪 Uitloggen"):
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.rerun()
+
 
     # Data laden
     df, options = load_schade_prepared()
@@ -966,7 +974,7 @@ def run_dashboard():
                     "Locatie_disp": st.column_config.TextColumn("Locatie")
                 }
                 if heeft_link:
-                    column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+                    column_config["URL"] = st.column_config.LinkColumn("Link", _text="openen")
                 st.dataframe(res[kol], column_config=column_config, use_container_width=True)
 
     # ========= TAB 5: Coaching =========
