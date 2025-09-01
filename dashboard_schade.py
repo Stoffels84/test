@@ -1171,11 +1171,30 @@ def run_dashboard():
             } for p in sorted(result_set, key=lambda x: (-pnr_counts.get(x, 0), x))]
             df_no_coach = (
                 pd.DataFrame(rows)
-                  .sort_values(["Schades","Naam"],_
+                  .sort_values(["Schades","Naam"], ascending=[False,True])
+                  .reset_index(drop=True)
+                if rows else
+                pd.DataFrame(columns=["Dienstnr","Naam","Schades","Status (coachinglijst)"])
+            )
 
+            with st.expander(f"🟥 > {thr} schades en niet in coaching/voltooid ({len(result_set)})", expanded=True):
+                if df_no_coach.empty:
+                    st.caption("Geen resultaten.")
+                    st.caption(f"PNR's >{thr} vóór uitsluiting: {len(pnrs_meer_dan)}")
+                    st.caption(f"Uitgesloten door coaching/voltooid: {len(pnrs_meer_dan & set_coaching_all)}")
+                else:
+                    st.dataframe(df_no_coach, use_container_width=True)
+                    st.download_button(
+                        "⬇️ Download CSV",
+                        df_no_coach.to_csv(index=False).encode("utf-8"),
+                        file_name=f"meerdan_{thr}_schades_niet_in_coaching_voltooid.csv",
+                        mime="text/csv",
+                        key="dl_more_schades_no_coaching"
+                    )
+
+        except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
-
 
 
 def main():
