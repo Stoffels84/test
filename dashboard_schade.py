@@ -815,25 +815,28 @@ def run_dashboard():
     mask_date = (df_filtered["Datum"] >= start) & (df_filtered["Datum"] < end)
     df_filtered = df_filtered.loc[mask_date]
 
+    # --- na het bepalen van df_filtered + datumfilter ---
     if df_filtered.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
         st.stop()
 
-st.metric("Totaal aantal schadegevallen", len(df_filtered))
-st.download_button(
-    "⬇️ Download gefilterde data (CSV)",
-    df_to_csv_bytes(df_filtered),
-    file_name=f"schade_filtered_{datetime.today().strftime('%Y%m%d')}.csv",
-    mime="text/csv",
-    help="Exporteer de huidige selectie inclusief datumfilter."
-)
+    # Metrics + export CSV
+    st.metric("Totaal aantal schadegevallen", len(df_filtered))
+    st.download_button(
+        "⬇️ Download gefilterde data (CSV)",
+        df_to_csv_bytes(df_filtered),
+        file_name=f"schade_filtered_{datetime.today().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        help="Exporteer de huidige selectie inclusief datumfilter."
+    )
 
-# >>> hier toevoegen <<<
-pdf_export_sidebar(df_filtered, df)
+    # PDF export + mail in de sidebar
+    pdf_export_sidebar(df_filtered, df)
 
-chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
-)
+    # Tabs (moeten binnen run_dashboard blijven)
+    chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+        ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+    )
 
 
 
