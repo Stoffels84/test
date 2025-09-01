@@ -6,19 +6,10 @@ import secrets
 import smtplib
 import ssl
 import hashlib
-import tempfile
-from io import BytesIO
 from email.message import EmailMessage
 from datetime import datetime
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-
-# PDF (ReportLab)
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
 
 # =========================
 # .env / mail.env laden
@@ -682,32 +673,6 @@ def get_teamcoach_email(teamcoach_name: str) -> str | None:
     return None
 
 
-def _send_email_with_attachment(
-    to_addr: str,
-    subject: str,
-    body_text: str,
-    attachment_bytes: bytes,
-    attachment_filename: str,
-    html: str | None = None,
-) -> None:
-    """Stuur e-mail met een PDF-bijlage."""
-    if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
-        raise RuntimeError("SMTP-configuratie ontbreekt in mail.env")
-
-    msg = EmailMessage()
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to_addr
-    msg["Subject"] = subject
-    msg.set_content(body_text)
-    if html:
-        msg.add_alternative(html, subtype="html")
-
-    msg.add_attachment(
-        attachment_bytes,
-        maintype="application",
-        subtype="pdf",
-        filename=attachment_filename,
-    )
 
     use_ssl = (
         str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
