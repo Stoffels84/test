@@ -405,7 +405,12 @@ def login_gate():
     st.title("🔐 Beveiligde toegang")
     st.caption("Log in met je personeelsnummer. Je ontvangt een verificatiecode per e-mail.")
 
-    contacts = load_contact_map()
+    # Contacten laden (tabblad 'contact' uit 'schade met macro.xlsm')
+    try:
+        contacts = load_contact_map()
+    except Exception as e:
+        st.error(str(e))
+        st.stop()
 
     if "otp" not in st.session_state:
         st.session_state.otp = {
@@ -455,10 +460,9 @@ def login_gate():
                                 "sent": True,
                             })
 
-                            # Templated mail
                             minutes = OTP_TTL_SECONDS // 60
                             now_str = datetime.now().strftime("%d-%m-%Y %H:%M")
-                            naam = _resolve_name_for_pnr(pnr_digits, contacts) or (rec.get("name") if isinstance(rec, dict) else None) or "collega"
+                            naam = (rec.get("name") if isinstance(rec, dict) else None) or "collega"
 
                             subject = OTP_SUBJECT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
                             body_text = OTP_BODY_TEXT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
@@ -505,10 +509,20 @@ def login_gate():
             elif _hash_code(code_in.strip()) != otp.get("hash"):
                 st.error("Ongeldige code.")
             else:
+                # ======= SUCCES ======= #
+                # Haal naam uit contacts (voor we OTP resetten)
+                rec = contacts.get(otp.get("pnr"))
+                user_name = None
+                if isinstance(rec, dict):
+                    user_name = (rec.get("name") or "").strip()
+
+                # Sla gegevens op voor de sessie
                 st.session_state.authenticated = True
-                st.session_state.user_pnr = otp.get("pnr")
+                st.session_state.user_pnr   = otp.get("pnr")
                 st.session_state.user_email = otp.get("email")
-                # wis gevoelige data
+                st.session_state.user_name  = user_name or otp.get("pnr")  # fallback naar PNR als er geen naam is
+
+                # Wis gevoelige OTP-data
                 st.session_state.otp = {
                     "pnr": None,
                     "email": None,
@@ -518,6 +532,7 @@ def login_gate():
                     "sent": False,
                 }
                 st.rerun()
+
 
 # ========= Dashboard =========
 def run_dashboard():
