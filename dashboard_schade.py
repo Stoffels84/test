@@ -1058,17 +1058,11 @@ def run_dashboard():
         try:
             st.subheader("🎯 Coaching – vergelijkingen")
 
-            # Verzamel sets (unieke P-nrs) uit coachingslijst
+            # Sets met unieke P-nrs uit coachingslijst
             set_lopend_all   = set(map(str, st.session_state.get("coaching_ids", set())))
             set_voltooid_all = set(st.session_state.get("excel_info", {}).keys())
 
-            # ===== KPI's: UNIEK (coachingslijst)
-            # Verwijderd: "Totaal lopend (coachingslijst)"
-            # We tonen enkel nog 'Totaal voltooid (coachingslijst)'
-            tot_voltooid_uniek = len(set_voltooid_all)
-            st.metric("🟡 Totaal voltooid (coachingslijst)", tot_voltooid_uniek)
-
-            # ===== KPI's: RUWE RIJEN uit Excel (incl. dubbels) — Lopend links, Voltooid rechts
+            # ===== KPI's: RUWE RIJEN (uit Excel, incl. dubbels) — Lopend links, Voltooid rechts
             r1, r2 = st.columns(2)
             r1.metric("🧾 Lopend – ruwe rijen (coachingslijst)",   total_blauw)
             r2.metric("🧾 Voltooid – ruwe rijen (coachingslijst)", total_geel)
@@ -1177,28 +1171,8 @@ def run_dashboard():
             } for p in sorted(result_set, key=lambda x: (-pnr_counts.get(x, 0), x))]
             df_no_coach = (
                 pd.DataFrame(rows)
-                  .sort_values(["Schades","Naam"], ascending=[False,True])
-                  .reset_index(drop=True)
-                if rows else
-                pd.DataFrame(columns=["Dienstnr","Naam","Schades","Status (coachinglijst)"])
-            )
+                  .sort_values(["Schades","Naam"],_
 
-            with st.expander(f"🟥 > {thr} schades en niet in coaching/voltooid ({len(result_set)})", expanded=True):
-                if df_no_coach.empty:
-                    st.caption("Geen resultaten.")
-                    st.caption(f"PNR's >{thr} vóór uitsluiting: {len(pnrs_meer_dan)}")
-                    st.caption(f"Uitgesloten door coaching/voltooid: {len(pnrs_meer_dan & set_coaching_all)}")
-                else:
-                    st.dataframe(df_no_coach, use_container_width=True)
-                    st.download_button(
-                        "⬇️ Download CSV",
-                        df_no_coach.to_csv(index=False).encode("utf-8"),
-                        file_name=f"meerdan_{thr}_schades_niet_in_coaching_voltooid.csv",
-                        mime="text/csv",
-                        key="dl_more_schades_no_coaching"
-                    )
-
-        except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
 
