@@ -658,7 +658,7 @@ def run_dashboard():
     )
     _detail_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_filtered.columns]
 
-    # ===== Tab 1: Chauffeur =====
+
 # ===== Tab 1: Chauffeur =====
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
