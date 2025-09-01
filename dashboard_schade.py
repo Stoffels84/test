@@ -1108,3 +1108,14 @@ def run_dashboard():
         except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
+
+def main():
+    st.set_page_config(page_title="Schade Dashboard", page_icon="📊", layout="wide")
+    if not st.session_state.get("authenticated"):
+        login_gate()
+        return
+    run_dashboard()
+
+if __name__ == "__main__":
+    main()
+
