@@ -1095,7 +1095,7 @@ def run_dashboard():
                                        file_name="schade_zonder_coaching.csv", mime="text/csv", key="dl_schade_not_coach")
 
             st.markdown("---")
-            st.markdown("## 🚩 >N schades en niet in *Coaching* of *Voltooid*")
+            st.markdown("## 🚩 schades en niet in *Coaching* of *Voltooid*")
             gebruik_filters_s = st.checkbox("Tel schades binnen huidige filters (uit = volledige dataset)", value=False, key="more_schades_use_filters")
             df_basis_s = df_filtered if gebruik_filters_s else df
             thr = st.number_input("Toon bestuurders met méér dan ... schades", min_value=1, value=2, step=1, key="more_schades_threshold")
