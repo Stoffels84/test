@@ -1062,21 +1062,20 @@ def run_dashboard():
             set_lopend_all   = set(map(str, st.session_state.get("coaching_ids", set())))
             set_voltooid_all = set(st.session_state.get("excel_info", {}).keys())
 
-            # ===== KPI's: unieke bestuurders (coachingslijst)
+            # ===== KPI's: unieke bestuurders (coachingslijst) — Lopend links, Voltooid rechts
             tot_lopend_uniek   = len(set_lopend_all)
             tot_voltooid_uniek = len(set_voltooid_all)
 
-            c0a, c0b = st.columns(2)
-            c0a.metric("🔵 Totaal lopend (coachingslijst)",   tot_lopend_uniek)
-            c0b.metric("🟡 Totaal voltooid (coachingslijst)", tot_voltooid_uniek)
+            k1, k2 = st.columns(2)
+            k1.metric("🔵 Totaal lopend (coachingslijst)",   tot_lopend_uniek)
+            k2.metric("🟡 Totaal voltooid (coachingslijst)", tot_voltooid_uniek)
 
-            # ===== NIEUW: KPI's ruwe rijen uit Excel (incl. dubbels)
-            # Beschikbaar uit lees_coachingslijst(): total_geel = voltooid, total_blauw = lopend
+            # ===== KPI's: ruwe rijen uit Excel (incl. dubbels) — GEWISSELD: Lopend links, Voltooid rechts
             r1, r2 = st.columns(2)
-            r1.metric("🧾 Voltooid – ruwe rijen (coachingslijst)", total_geel)
-            r2.metric("🧾 Lopend – ruwe rijen (coachingslijst)",   total_blauw)
+            r1.metric("🧾 Lopend – ruwe rijen (coachingslijst)",   total_blauw)
+            r2.metric("🧾 Voltooid – ruwe rijen (coachingslijst)", total_geel)
 
-            # ===== KPI's: doorsnede met (gefilterde) schadelijst
+            # ===== KPI's: doorsnede met (gefilterde) schadelijst — Lopend links, Voltooid rechts
             pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
             s1, s2 = st.columns(2)
             s1.metric("🔵 Lopend (in schadelijst)",   len(pnrs_schade_sel & set_lopend_all))
