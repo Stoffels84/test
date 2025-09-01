@@ -837,137 +837,142 @@ def run_dashboard():
 st.markdown("---")
 st.sidebar.subheader("📄 PDF Export per teamcoach")
 
-pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", teamcoach_options)
+# Maak de keuzelijst uit de huidige gefilterde data
+if "teamcoach_disp" in df_filtered.columns:
+    teamcoach_options_local = sorted(df_filtered["teamcoach_disp"].dropna().unique().tolist())
+else:
+    teamcoach_options_local = []
 
-# automatisch e-mailadres ophalen o.b.v. NAAM uit tabblad 'contact'
-auto_mail = get_email_by_name_from_contact(pdf_coach) or ""
-to_email = st.sidebar.text_input("E-mailadres ontvanger", value=auto_mail, placeholder="coach@delijn.be")
+if not teamcoach_options_local:
+    st.sidebar.info("Geen teamcoaches gevonden binnen de huidige selectie.")
+else:
+    pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", teamcoach_options_local)
 
-send_and_mail = st.sidebar.button("Genereer en mail")
+    # automatisch e-mailadres ophalen via tabblad 'contact' (A=PNR, B=Naam, C=Mail)
+    auto_mail = get_email_by_name_from_contact(pdf_coach) or ""
+    to_email = st.sidebar.text_input("E-mailadres ontvanger", value=auto_mail, placeholder="coach@delijn.be")
 
+    send_and_mail = st.sidebar.button("Genereer en mail")
 
-if send_and_mail:
-    # Bouw de dataset voor deze coach
-    kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp"]
-    if "Link" in df.columns:
-        kolommen_pdf.append("Link")
+    if send_and_mail:
+        # ---- dataset voor gekozen coach
+        kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp"]
+        if "Link" in df.columns:
+            kolommen_pdf.append("Link")
 
-    schade_pdf = df_filtered[df_filtered["teamcoach_disp"] == pdf_coach][kolommen_pdf].copy()
-    schade_pdf = schade_pdf.sort_values(by="Datum")
+        schade_pdf = df_filtered[df_filtered["teamcoach_disp"] == pdf_coach][kolommen_pdf].copy()
+        schade_pdf = schade_pdf.sort_values(by="Datum")
 
-    # Genereer PDF in geheugen (BytesIO)
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    elements = []
+        # ---- bouw PDF in geheugen
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = []
 
-    elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph(f"📅 Rapportdatum: {datetime.today().strftime('%d-%m-%Y')}", styles["Normal"]))
-    elements.append(Spacer(1, 12))
-
-    totaal = len(schade_pdf)
-    elements.append(Paragraph(f"📌 Totaal aantal schadegevallen: <b>{totaal}</b>", styles["Normal"]))
-    elements.append(Spacer(1, 12))
-
-    if not schade_pdf.empty:
-        eerste_datum = schade_pdf["Datum"].min().strftime("%d-%m-%Y")
-        laatste_datum = schade_pdf["Datum"].max().strftime("%d-%m-%Y")
-        elements.append(Paragraph("📊 Samenvatting:", styles["Heading2"]))
-        elements.append(Paragraph(f"- Periode: {eerste_datum} t/m {laatste_datum}", styles["Normal"]))
-        elements.append(Paragraph(f"- Unieke chauffeurs: {schade_pdf['volledige naam_disp'].nunique()}", styles["Normal"]))
-        elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie_disp'].nunique()}", styles["Normal"]))
+        elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
+        elements.append(Spacer(1, 12))
+        elements.append(Paragraph(f"📅 Rapportdatum: {datetime.today().strftime('%d-%m-%Y')}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
-        aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts()
-        elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
-        for nm, count in aantal_per_chauffeur.items():
-            elements.append(Paragraph(f"- {nm or 'onbekend'}: {count}", styles["Normal"]))
+        totaal = len(schade_pdf)
+        elements.append(Paragraph(f"📌 Totaal aantal schadegevallen: <b>{totaal}</b>", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
-        aantal_per_locatie = schade_pdf["Locatie_disp"].value_counts()
-        elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
-        for loc, count in aantal_per_locatie.items():
-            elements.append(Paragraph(f"- {loc or 'onbekend'}: {count}", styles["Normal"]))
-        elements.append(Spacer(1, 12))
+        if not schade_pdf.empty:
+            eerste_datum = schade_pdf["Datum"].min().strftime("%d-%m-%Y")
+            laatste_datum = schade_pdf["Datum"].max().strftime("%d-%m-%Y")
+            elements.append(Paragraph("📊 Samenvatting:", styles["Heading2"]))
+            elements.append(Paragraph(f"- Periode: {eerste_datum} t/m {laatste_datum}", styles["Normal"]))
+            elements.append(Paragraph(f"- Unieke chauffeurs: {schade_pdf['volledige naam_disp'].nunique()}", styles["Normal"]))
+            elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie_disp'].nunique()}", styles["Normal"]))
+            elements.append(Spacer(1, 12))
 
-    # Tabel met individuele records
-    elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
-    elements.append(Spacer(1, 6))
+            aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts()
+            elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
+            for nm, count in aantal_per_chauffeur.items():
+                elements.append(Paragraph(f"- {nm or 'onbekend'}: {count}", styles["Normal"]))
+            elements.append(Spacer(1, 12))
 
-    kol_head = ["Datum", "Chauffeur", "Voertuig", "Locatie"]
-    heeft_link = "Link" in schade_pdf.columns
-    if heeft_link:
-        kol_head.append("Link")
+            aantal_per_locatie = schade_pdf["Locatie_disp"].value_counts()
+            elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
+            for loc, count in aantal_per_locatie.items():
+                elements.append(Paragraph(f"- {loc or 'onbekend'}: {count}", styles["Normal"]))
+            elements.append(Spacer(1, 12))
 
-    tabel_data = [kol_head]
-    for _, row in schade_pdf.iterrows():
-        datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-        nm = row.get("volledige naam_disp", "onbekend")
-        voertuig = row.get("BusTram_disp","onbekend")
-        locatie = row.get("Locatie_disp","onbekend")
-        rij = [datum, nm, voertuig, locatie]
+        # Tabel met individuele records
+        elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
+        elements.append(Spacer(1, 6))
+
+        kol_head = ["Datum", "Chauffeur", "Voertuig", "Locatie"]
+        heeft_link = "Link" in schade_pdf.columns
         if heeft_link:
-            link = extract_url(row.get("Link"))
-            rij.append(link if link else "-")
-        tabel_data.append(rij)
+            kol_head.append("Link")
 
-    if len(tabel_data) > 1:
-        colw = [60, 150, 70, 130] + ([120] if heeft_link else [])
-        tbl = Table(tabel_data, repeatRows=1, colWidths=colw)
-        tbl.setStyle(TableStyle([
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-            ("ALIGN", (0,0), (-1,0), "CENTER"),
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("FONTSIZE", (0,0), (-1,-1), 8),
-            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.whitesmoke, colors.white]),
-        ]))
-        elements.append(tbl)
+        tabel_data = [kol_head]
+        for _, row in schade_pdf.iterrows():
+            datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+            nm = row.get("volledige naam_disp", "onbekend")
+            voertuig = row.get("BusTram_disp","onbekend")
+            locatie = row.get("Locatie_disp","onbekend")
+            rij = [datum, nm, voertuig, locatie]
+            if heeft_link:
+                link = extract_url(row.get("Link"))
+                rij.append(link if link else "-")
+            tabel_data.append(rij)
 
-    # PDF opbouwen
-    doc.build(elements)
-    buffer.seek(0)
-    pdf_bytes = buffer.read()
-    bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
+        if len(tabel_data) > 1:
+            colw = [60, 150, 70, 130] + ([120] if heeft_link else [])
+            tbl = Table(tabel_data, repeatRows=1, colWidths=colw)
+            tbl.setStyle(TableStyle([
+                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+                ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
+                ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+                ("ALIGN", (0,0), (-1,0), "CENTER"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("FONTSIZE", (0,0), (-1,-1), 8),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.whitesmoke, colors.white]),
+            ]))
+            elements.append(tbl)
 
-    # Valideer e-mailadres
-    to_email_clean = (to_email or "").strip()
-    if not to_email_clean:
-        st.sidebar.error("Geen e-mailadres ingevuld voor de ontvanger.")
-    elif not _is_allowed_email(to_email_clean):
-        st.sidebar.error(f"E-mailadres niet toegestaan volgens ALLOWED_EMAIL_DOMAINS: {to_email_clean}")
-    else:
-        try:
-            # Mail sturen met PDF als bijlage
-            subject = f"Schadeoverzicht – {pdf_coach}"
-            body_text = (
-                f"Beste {pdf_coach},\n\n"
-                "In de bijlage vind je het PDF-overzicht van de geselecteerde schadegevallen.\n\n"
-                "Vriendelijke groet,\n"
-                "Schade Dashboard"
-            )
-            _send_email_with_attachment(
-                to_addr=to_email_clean,
-                subject=subject,
-                body_text=body_text,
-                html=None,  # eventueel een nette HTML-body toevoegen
-                attachment_bytes=pdf_bytes,
-                attachment_filename=bestandsnaam,
-            )
-            st.sidebar.success(f"PDF gemaild naar {_mask_email(to_email_clean)}")
-        except Exception as e:
-            st.sidebar.error(f"Mailen mislukt: {e}")
+        doc.build(elements)
+        buffer.seek(0)
+        pdf_bytes = buffer.read()
+        bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
 
-    # Laat ook een downloadknop zien, voor de zekerheid
-    st.sidebar.download_button(
-        "📥 Download PDF",
-        data=pdf_bytes,
-        file_name=bestandsnaam,
-        mime="application/pdf",
-        key="dl_pdf_coach_mail_copy",
-    )
+        # ---- mailen
+        to_email_clean = (to_email or "").strip()
+        if not to_email_clean:
+            st.sidebar.error("Geen e-mailadres ingevuld voor de ontvanger.")
+        elif not _is_allowed_email(to_email_clean):
+            st.sidebar.error(f"E-mailadres niet toegestaan: {to_email_clean}")
+        else:
+            try:
+                subject = f"Schadeoverzicht – {pdf_coach}"
+                body_text = (
+                    f"Beste {pdf_coach},\n\n"
+                    "In de bijlage vind je het PDF-overzicht van de geselecteerde schadegevallen.\n\n"
+                    "Vriendelijke groet,\nSchade Dashboard"
+                )
+                _send_email_with_attachment(
+                    to_addr=to_email_clean,
+                    subject=subject,
+                    body_text=body_text,
+                    html=None,
+                    attachment_bytes=pdf_bytes,
+                    attachment_filename=bestandsnaam,
+                )
+                st.sidebar.success(f"PDF gemaild naar {_mask_email(to_email_clean)}")
+            except Exception as e:
+                st.sidebar.error(f"Mailen mislukt: {e}")
+
+        # optionele downloadknop
+        st.sidebar.download_button(
+            "📥 Download PDF",
+            data=pdf_bytes,
+            file_name=bestandsnaam,
+            mime="application/pdf",
+            key="dl_pdf_coach_mail_copy",
+        )
 
 
     # ========= TAB 1: Chauffeur =========
