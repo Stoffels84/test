@@ -1205,21 +1205,6 @@ def run_dashboard():
             st.exception(e)
 
 
-# zoek dubbele P-nrs in de lopende coachingslijst
-from collections import Counter
-
-counts_lopend = Counter(st.session_state.get("coaching_ids", []))
-dubbele_pnrs = [p for p, c in counts_lopend.items() if c > 1]
-
-if dubbele_pnrs:
-    st.markdown("### 🔁 Dubbele P-nrs in lopende coachingslijst")
-    st.write(dubbele_pnrs)
-
-
-
-
-
-
 
 
 def main():
