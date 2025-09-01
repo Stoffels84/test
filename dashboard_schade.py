@@ -139,6 +139,7 @@ def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = N
                 server.login(SMTP_USER, SMTP_PASS)
             server.send_message(msg)
 
+
 # =========================
 # Contact mapping
 # =========================
