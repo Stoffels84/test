@@ -12,7 +12,6 @@ from email.message import EmailMessage
 from datetime import datetime
 
 import pandas as pd
-import streamlit as st
 import matplotlib.pyplot as plt
 
 # PDF (ReportLab)
@@ -1176,4 +1175,19 @@ def run_dashboard():
         except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
+# ===== Entry point =====
+import streamlit as st
+
+def main():
+    st.set_page_config(page_title="Schade Dashboard", page_icon="📊", layout="wide")
+
+    # Eerst login; na succes het dashboard
+    if not st.session_state.get("authenticated"):
+        login_gate()
+        return  # stop hier; na succesvolle login gebeurt een st.rerun()
+
+    run_dashboard()
+
+if __name__ == "__main__":
+    main()
 
