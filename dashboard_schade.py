@@ -123,6 +123,25 @@ def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = N
     if html:
         msg.add_alternative(html, subtype="html")
 
+    use_ssl = (
+        str(os.getenv("SMTP_SSL", "")).strip().lower() in {"1", "true", "yes"}
+        or int(SMTP_PORT) == 465
+    )
+
+    ctx = ssl.create_default_context()
+    if use_ssl:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as server:
+            if SMTP_USER and SMTP_PASS:
+                server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls(context=ctx)
+            if SMTP_USER and SMTP_PASS:
+                server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
+
 
 # =========================
 # Contact mapping
