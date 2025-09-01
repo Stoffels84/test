@@ -954,27 +954,29 @@ def run_dashboard():
                                 st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
     # ===== Tab 4: Opzoeken =====
-  # ===== Tab 4: Opzoeken =====
+# ===== Tab 4: Opzoeken =====
 with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
+    # Invoer
     zoek = st.text_input(
         "Personeelsnummer (dienstnummer)",
         placeholder="bv. 41092",
-        key="zoek_pnr_input"
-    )
+        key="zoek_pnr_input",
+    ).strip()
 
-    m = re.findall(r"\d+", str(zoek).strip())
+    # Alleen digits houden
+    m = re.findall(r"\d+", zoek)
     pnr = m[0] if m else ""
 
     if not pnr:
         st.info("Geef een personeelsnummer in om resultaten te zien.")
     else:
-        # Gefilterde selectie (met filters) en volledige dataset
+        # Resultaten binnen filters en in volledige dataset
         res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
         res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
 
-        # Naam en teamcoach ophalen
+        # Naam + teamcoach afleiden
         if not res.empty:
             naam_disp = res["volledige naam_disp"].iloc[0]
             teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
@@ -989,10 +991,9 @@ with opzoeken_tab:
             teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
             naam_raw = naam_disp
 
-        # Naam opschonen
+        # Naam opruimen (eventuele "PNR - Naam" → "Naam")
         try:
-            s = str(naam_raw or "").strip()
-            naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", s)
+            naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", str(naam_raw or "").strip())
         except Exception:
             naam_clean = naam_disp
 
@@ -1021,38 +1022,43 @@ with opzoeken_tab:
             status_lbl, status_emoji = "Niet aangevraagd", "⚪"
             status_bron = "bron: Coachingslijst.xlsx"
 
-        # Header-info tonen
+        # Kop
         st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
         st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
         st.markdown(f"**🎯 Coachingstatus:** {status_emoji} {status_lbl}  \n*{status_bron}*")
         st.markdown("---")
 
-        # Aantal schadegevallen
-        st.metric("Aantal schadegevallen", len(res))
+        # KPI
+        st.metric("Aantal schadegevallen (binnen huidige filters)", len(res))
 
+        # Tabel
         if res.empty:
             st.caption("Geen schadegevallen binnen de huidige filters.")
         else:
             res = res.sort_values("Datum", ascending=False).copy()
+
+            # Link kolom robuust parsen en tonen als klikbare link
             heeft_link = "Link" in res.columns
-            res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
-
-            # Kolommen instellen
-            kol = ["Datum", "Locatie_disp"] + (["URL"] if heeft_link else [])
-            column_config = {
-                "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                "Locatie_disp": st.column_config.TextColumn("Locatie"),
-            }
             if heeft_link:
-                column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+                res["URL"] = res["Link"].apply(extract_url)
+                kol = ["Datum", "Locatie_disp", "URL"]
+                column_config = {
+                    "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                    "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                    "URL": st.column_config.LinkColumn("Link", display_text="openen"),
+                }
+            else:
+                kol = ["Datum", "Locatie_disp"]
+                column_config = {
+                    "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                    "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                }
 
-            # Tabel tonen
             st.dataframe(
                 res[kol],
                 column_config=column_config,
-                use_container_width=True
+                use_container_width=True,
             )
-
 
     # ===== Tab 5: Coaching =====
     with coaching_tab:
