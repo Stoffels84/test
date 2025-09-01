@@ -10,7 +10,7 @@ import tempfile
 from io import BytesIO
 from email.message import EmailMessage
 from datetime import datetime
-
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -1176,7 +1176,6 @@ def run_dashboard():
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
 # ===== Entry point =====
-import streamlit as st
 
 def main():
     st.set_page_config(page_title="Schade Dashboard", page_icon="📊", layout="wide")
