@@ -654,12 +654,18 @@ def main():
 if __name__ == "__main__":
     main()
 # ===== Tabs aanmaken (BLIJF binnen run_dashboard) =====
+
+
+# =========================
+# PLAATS DIT BINNEN run_dashboard(), NA df en df_filtered
+# =========================
+
+# ===== Tabs aanmaken (BLIJF binnen run_dashboard) =====
 chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
 )
 
 # --------- snelle helpers / precomputes (gelden voor meerdere tabs) ----------
-# Voor snelle display-opzoeking: map 'volledige naam' -> 'volledige naam_disp' (eerste voorkomen)
 _name_disp_map = (
     df_filtered[["volledige naam", "volledige naam_disp"]]
     .dropna()
@@ -667,7 +673,6 @@ _name_disp_map = (
     .set_index("volledige naam")["volledige naam_disp"]
     .to_dict()
 )
-# Voor details: minimale set kolommen die vaak gebruikt worden
 _detail_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_filtered.columns]
 
 # ===== Tab 1: Chauffeur =====
@@ -693,7 +698,6 @@ with chauffeur_tab:
         c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
         c3.metric("Totaal aantal schades", totaal_schades)
 
-        # Binning één keer bepalen
         step = 5
         max_val = int(grp["aantal"].max())
         edges = list(range(0, max_val + step, step))
@@ -701,9 +705,6 @@ with chauffeur_tab:
             edges.append(max_val + step)
         grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
 
-        # Voor sneller filteren op chauffeur_raw -> slice indexen precomputen
-        # (vermijdt herhaaldelijke df_filtered.loc[...] evaluaties)
-        # Maak een index over 'volledige naam'
         _idx_by_name = (
             df_filtered.reset_index()[["index", "volledige naam"]]
             .groupby("volledige naam")["index"]
@@ -719,26 +720,19 @@ with chauffeur_tab:
             with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
                 g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
 
-                # Bouw output in memory (minder Streamlit render-loops)
                 out_lines = []
                 for raw, aantal in zip(g["chauffeur_raw"].tolist(), g["aantal"].tolist()):
                     disp = _name_disp_map.get(raw, raw)
                     badge = badge_van_chauffeur(raw)
                     out_lines.append(f"**{badge}{disp}** — {int(aantal)} schadegevallen")
 
-                    # Haal details via index-lijst (sneller dan boolean mask .loc telkens)
                     idxs = _idx_by_name.get(raw, [])
                     if not idxs:
                         continue
-                    details = (
-                        df_filtered.iloc[idxs][ _detail_cols ]
-                        .sort_values("Datum")
-                    )
-                    # Maak detailregels in 1x
+                    details = df_filtered.iloc[idxs][_detail_cols].sort_values("Datum")
                     det_lines = []
                     _has_link = "Link" in details.columns
                     for r in details.itertuples(index=False):
-                        # r volgorde komt overeen met _detail_cols
                         _datum = getattr(r, "Datum", pd.NaT)
                         datum_str = _datum.strftime("%d-%m-%Y") if pd.notna(_datum) else "onbekend"
                         voertuig   = getattr(r, "BusTram_disp", "onbekend")
@@ -772,7 +766,6 @@ with voertuig_tab:
             st.markdown("---")
             st.subheader("📂 Details per voertuigtype")
 
-            # Precompute per voertuig de indexen (sneller dan telkens masken)
             _idx_by_voertuig = (
                 df_filtered.reset_index()[["index", "BusTram_disp"]]
                 .groupby("BusTram_disp")["index"]
@@ -824,8 +817,6 @@ with locatie_tab:
             with col_top2:
                 expand_all = st.checkbox("Alles openklappen", value=False, key="loc_expand_all")
 
-            # Aggregaties: 1x berekenen
-            dienstnummer_s = work["dienstnummer"].astype(str)
             agg = (
                 work.groupby("Locatie_disp", as_index=False)
                     .agg(Schades=("dienstnummer", "size"),
@@ -858,7 +849,6 @@ with locatie_tab:
                 st.markdown("---")
                 st.subheader("📊 Samenvatting per locatie")
                 agg_view = agg.copy()
-                # Periode-string vectorized
                 _d_ok = agg_view["Eerste"].notna() & agg_view["Laatste"].notna()
                 agg_view["Periode"] = "—"
                 agg_view.loc[_d_ok, "Periode"] = agg_view.loc[_d_ok, "Eerste"].dt.strftime("%d-%m-%Y") + " – " + agg_view.loc[_d_ok, "Laatste"].dt.strftime("%d-%m-%Y")
@@ -877,7 +867,6 @@ with locatie_tab:
                 st.markdown("---")
                 st.subheader("📂 Schadegevallen per locatie")
 
-                # Precompute indexen per locatie voor snelle slicing
                 _idx_by_loc = (
                     work.reset_index()[["index", "Locatie_disp"]]
                     .groupby("Locatie_disp")["index"]
@@ -914,25 +903,17 @@ with locatie_tab:
 # ===== Tab 4: Opzoeken =====
 with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
-
-    # Invoer
-    zoek = st.text_input(
-        "Personeelsnummer (dienstnummer)",
-        placeholder="bv. 41092",
-        key="zoek_pnr_input"
-    )
+    zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092", key="zoek_pnr_input")
     m = re.findall(r"\d+", str(zoek or "").strip())
     pnr = m[0] if m else ""
 
     if not pnr:
         st.info("Geef een personeelsnummer in om resultaten te zien.")
     else:
-        # Resultaten binnen huidige filters en in volledige dataset
         _pnr_str = str(pnr)
         res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == _pnr_str].copy()
         res_all = df[df["dienstnummer"].astype(str).str.strip() == _pnr_str].copy()
 
-        # Naam + teamcoach bepalen
         if not res.empty:
             naam_disp = res["volledige naam_disp"].iloc[0]
             teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
@@ -947,7 +928,6 @@ with opzoeken_tab:
             teamcoach_disp = (ex_info.get(_pnr_str, {}) or {}).get("teamcoach") or "onbekend"
             naam_raw = naam_disp
 
-        # Naam opschonen (pnr en streepje verwijderen als aanwezig)
         try:
             s = str(naam_raw or "").strip()
             naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", s)
@@ -956,7 +936,6 @@ with opzoeken_tab:
 
         chauffeur_label = f"{_pnr_str} {naam_clean}".strip() if naam_clean else str(_pnr_str)
 
-        # Coachingstatus bepalen
         set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
         set_voltooid = set(map(str, st.session_state.get("excel_info", {}).keys()))
         if _pnr_str in set_lopend:
@@ -978,16 +957,12 @@ with opzoeken_tab:
             status_lbl, status_emoji = "Niet aangevraagd", "⚪"
             status_bron = "bron: Coachingslijst.xlsx"
 
-        # Header tonen
         st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
         st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
         st.markdown(f"**🎯 Coachingstatus:** {status_emoji} {status_lbl}  \n*{status_bron}*")
         st.markdown("---")
-
-        # Aantal schadegevallen binnen huidige filters
         st.metric("Aantal schadegevallen", int(len(res)))
 
-        # Tabel met schadegevallen (binnen filters)
         if res.empty:
             st.caption("Geen schadegevallen binnen de huidige filters.")
         else:
@@ -1004,27 +979,20 @@ with opzoeken_tab:
             if heeft_link:
                 column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
 
-            st.dataframe(
-                res[kol],
-                column_config=column_config,
-                use_container_width=True
-            )
+            st.dataframe(res[kol], column_config=column_config, use_container_width=True)
 
 # ===== Tab 5: Coaching =====
 with coaching_tab:
     try:
         st.subheader("🎯 Coaching – vergelijkingen")
 
-        # Sets met unieke P-nrs uit coachingslijst
         set_lopend_all   = set(map(str, st.session_state.get("coaching_ids", set())))
         set_voltooid_all = set(map(str, st.session_state.get("excel_info", {}).keys()))
 
-        # KPI's: RUWE RIJEN (Excel)
         r1, r2 = st.columns(2)
         r1.metric("🧾 Lopend – ruwe rijen (coachingslijst)",   total_blauw)
         r2.metric("🧾 Voltooid – ruwe rijen (coachingslijst)", total_geel)
 
-        # KPI's: DOORSNEDE met (gefilterde) schadelijst
         pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
         s1, s2 = st.columns(2)
         s1.metric("🔵 Lopend (in schadelijst)",   len(pnrs_schade_sel & set_lopend_all))
@@ -1033,7 +1001,6 @@ with coaching_tab:
         st.markdown("---")
         st.markdown("## 🔎 Vergelijking schadelijst ↔ Coachingslijst")
 
-        # Keuze status
         status_keuze = st.radio(
             "Welke status vergelijken?",
             options=["Lopend","Voltooid","Beide"],
@@ -1051,7 +1018,6 @@ with coaching_tab:
         coach_niet_in_schade = set_coach_sel - pnrs_schade_sel
         schade_niet_in_coach = pnrs_schade_sel - set_coach_sel
 
-        # Helpers (ongewijzigd qua gedrag)
         def _naam(p):
             ex_info = st.session_state.get("excel_info", {})
             nm = (ex_info.get(p, {}) or {}).get("naam")
@@ -1071,7 +1037,6 @@ with coaching_tab:
         def _make_table(pnrs_set):
             if not pnrs_set:
                 return pd.DataFrame(columns=["Dienstnr","Naam","Status (coachinglijst)"])
-            # Bouw rijen met minimale Python-werk; sorteer op naam
             pnrs_sorted = sorted(map(str, pnrs_set))
             _names = [_naam(p) for p in pnrs_sorted]
             _badges = [badge_van_chauffeur(f"{p} - {n}") for p, n in zip(pnrs_sorted, _names)]
@@ -1083,7 +1048,6 @@ with coaching_tab:
             })
             return df_out.sort_values(["Naam"]).reset_index(drop=True)
 
-        # Tabellen + downloads
         with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(coach_niet_in_schade)})", expanded=False):
             df_a = _make_table(coach_niet_in_schade)
             st.dataframe(df_a, use_container_width=True) if not df_a.empty else st.caption("Geen resultaten.")
