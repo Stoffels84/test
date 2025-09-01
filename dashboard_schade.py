@@ -652,26 +652,26 @@ def run_dashboard():
 # TABS (plaats binnen run_dashboard na df en df_filtered)
 # =========================
 
-# Precomputes voor meerdere tabs
+    # Precomputes voor meerdere tabs
     _name_disp_map = (
     df_filtered[["volledige naam", "volledige naam_disp"]]
     .dropna()
     .drop_duplicates(subset=["volledige naam"])
     .set_index("volledige naam")["volledige naam_disp"]
     .to_dict()
-)
-_detail_cols = [
+    )
+    _detail_cols = [
     c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]
     if c in df_filtered.columns
-]
+    ]
 
-# Tabs aanmaken
-chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+    # Tabs aanmaken
+    chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
-)
+    )
 
-# ===== Tab 1: Chauffeur =====
-with chauffeur_tab:
+    # ===== Tab 1: Chauffeur =====
+    with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
     grp = (
