@@ -653,7 +653,7 @@ def run_dashboard():
 # =========================
 
 # Precomputes voor meerdere tabs
-_name_disp_map = (
+    _name_disp_map = (
     df_filtered[["volledige naam", "volledige naam_disp"]]
     .dropna()
     .drop_duplicates(subset=["volledige naam"])
