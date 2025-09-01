@@ -1053,11 +1053,49 @@ def run_dashboard():
                 )
 
     # ===== Tab 5: Coaching =====
+    # ===== Tab 5: Coaching =====
     with coaching_tab:
         try:
             st.subheader("🎯 Coaching – vergelijkingen")
             set_lopend_all   = set(map(str, st.session_state.get("coaching_ids", set())))
             set_voltooid_all = set(st.session_state.get("excel_info", {}).keys())
+
+            # =========================
+            # NIEUW: extra KPI's
+            # =========================
+            tot_lopend_uniek   = len(set_lopend_all)
+            tot_voltooid_uniek = len(set_voltooid_all)
+
+            c0a, c0b = st.columns(2)
+            c0a.metric("🔵 Totaal lopend (coachingslijst)", tot_lopend_uniek)
+            c0b.metric("🟡 Totaal voltooid (coachingslijst)", tot_voltooid_uniek)
+
+            # KPI’s binnen de schadelijst (zoals voorheen)
+            pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
+            c1, c2 = st.columns(2)
+            c1.metric("🔵 Lopend (in schadelijst)", len(pnrs_schade_sel & set_lopend_all))
+            c2.metric("🟡 Voltooid (in schadelijst)", len(pnrs_schade_sel & set_voltooid_all))
+
+            st.markdown("---")
+            st.markdown("## 🔎 Vergelijking schadelijst ↔ Coachingslijst")
+
+            # statusfilter
+            status_keuze = st.radio(
+                "Welke status vergelijken?",
+                options=["Lopend","Voltooid","Beide"],
+                index=0,
+                horizontal=True,
+                key="coach_status_select"
+            )
+            if status_keuze == "Lopend":
+                set_coach_sel = set_lopend_all
+            elif status_keuze == "Voltooid":
+                set_coach_sel = set_voltooid_all
+            else:
+                set_coach_sel = set_lopend_all | set_voltooid_all
+
+            coach_niet_in_schade = set_coach_sel - pnrs_schade_sel
+            schade_niet_in_coach = pnrs_schade_sel - set_coach_sel
 
             def _naam(p):
                 ex_info = st.session_state.get("excel_info", {})
@@ -1075,25 +1113,6 @@ def run_dashboard():
                 if in_v: return "Voltooid"
                 return "Niet aangevraagd"
 
-            pnrs_schade_sel = set(df_filtered["dienstnummer"].dropna().astype(str))
-            c1, c2 = st.columns(2)
-            c1.metric("🔵 Lopend (in schadelijst)", len(pnrs_schade_sel & set_lopend_all))
-            c2.metric("🟡 Voltooid (in schadelijst)", len(pnrs_schade_sel & set_voltooid_all))
-
-            st.markdown("---")
-            st.markdown("## 🔎 Vergelijking schadelijst ↔ Coachingslijst")
-
-            status_keuze = st.radio("Welke status vergelijken?", options=["Lopend","Voltooid","Beide"], index=0, horizontal=True, key="coach_status_select")
-            if status_keuze == "Lopend":
-                set_coach_sel = set_lopend_all
-            elif status_keuze == "Voltooid":
-                set_coach_sel = set_voltooid_all
-            else:
-                set_coach_sel = set_lopend_all | set_voltooid_all
-
-            coach_niet_in_schade = set_coach_sel - pnrs_schade_sel
-            schade_niet_in_coach = pnrs_schade_sel - set_coach_sel
-
             def _make_table(pnrs_set):
                 if not pnrs_set:
                     return pd.DataFrame(columns=["Dienstnr","Naam","Status (coachinglijst)"])
@@ -1104,19 +1123,30 @@ def run_dashboard():
                 } for p in sorted(map(str, pnrs_set))]
                 return pd.DataFrame(rows).sort_values(["Naam"]).reset_index(drop=True)
 
+            # Tabellen
             with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(coach_niet_in_schade)})", expanded=False):
                 df_a = _make_table(coach_niet_in_schade)
                 st.dataframe(df_a, use_container_width=True) if not df_a.empty else st.caption("Geen resultaten.")
                 if not df_a.empty:
-                    st.download_button("⬇️ Download CSV (coaching ∧ ¬schade)", df_a.to_csv(index=False).encode("utf-8"),
-                                       file_name="coaching_zonder_schade.csv", mime="text/csv", key="dl_coach_not_schade")
+                    st.download_button(
+                        "⬇️ Download CSV (coaching ∧ ¬schade)",
+                        df_a.to_csv(index=False).encode("utf-8"),
+                        file_name="coaching_zonder_schade.csv",
+                        mime="text/csv",
+                        key="dl_coach_not_schade"
+                    )
 
             with st.expander(f"🟥 In schadelijst maar niet in Coachinglijst ({len(schade_niet_in_coach)})", expanded=False):
                 df_b = _make_table(schade_niet_in_coach)
                 st.dataframe(df_b, use_container_width=True) if not df_b.empty else st.caption("Geen resultaten.")
                 if not df_b.empty:
-                    st.download_button("⬇️ Download CSV (schade ∧ ¬coaching)", df_b.to_csv(index=False).encode("utf-8"),
-                                       file_name="schade_zonder_coaching.csv", mime="text/csv", key="dl_schade_not_coach")
+                    st.download_button(
+                        "⬇️ Download CSV (schade ∧ ¬coaching)",
+                        df_b.to_csv(index=False).encode("utf-8"),
+                        file_name="schade_zonder_coaching.csv",
+                        mime="text/csv",
+                        key="dl_schade_not_coach"
+                    )
 
             st.markdown("---")
             st.markdown("## 🚩 schades en niet in *Coaching* of *Voltooid*")
@@ -1143,14 +1173,18 @@ def run_dashboard():
                     st.caption(f"Uitgesloten door coaching/voltooid: {len(pnrs_meer_dan & set_coaching_all)}")
                 else:
                     st.dataframe(df_no_coach, use_container_width=True)
-                    st.download_button("⬇️ Download CSV",
+                    st.download_button(
+                        "⬇️ Download CSV",
                         df_no_coach.to_csv(index=False).encode("utf-8"),
                         file_name=f"meerdan_{thr}_schades_niet_in_coaching_voltooid.csv",
-                        mime="text/csv", key="dl_more_schades_no_coaching")
+                        mime="text/csv",
+                        key="dl_more_schades_no_coaching"
+                    )
 
         except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
+
 
 def main():
     st.set_page_config(page_title="Schade Dashboard", page_icon="📊", layout="wide")
