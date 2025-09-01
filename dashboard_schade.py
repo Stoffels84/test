@@ -695,15 +695,20 @@ def get_teamcoach_email(teamcoach_name: str) -> str | None:
 # ========= Dashboard =========
 def run_dashboard():
     # ===== Sidebar: user-info + logout =====
-    with st.sidebar:
-        display_name = st.session_state.get("user_name") or st.session_state.get("user_pnr") or "—"
-        # user_email   = st.session_state.get("user_email", "?")  # <- niet meer nodig voor weergave
-       st.success(f"Ingelogd als {display_name}")
+# ===== Sidebar: user-info + logout =====
+        with st.sidebar:
+            display_name = (
+                st.session_state.get("user_name")
+                or st.session_state.get("user_pnr")
+                or "—"
+            )
+            st.success(f"Ingelogd als {display_name}")
 
-        if st.button("🚪 Uitloggen"):
-            for k in list(st.session_state.keys()):
-                del st.session_state[k]
-            st.rerun()
+            if st.button("🚪 Uitloggen"):
+                for k in list(st.session_state.keys()):
+                    del st.session_state[k]
+                st.rerun()
+
 
 
     # ===== Data laden =====
