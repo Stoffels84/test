@@ -762,7 +762,6 @@ def run_dashboard():
     if df_filtered.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
         st.stop()
-
     # ===== KPI + CSV export =====
     st.metric("Totaal aantal schadegevallen", len(df_filtered))
     st.download_button(
@@ -773,9 +772,10 @@ def run_dashboard():
         help="Exporteer de huidige selectie inclusief datumfilter."
     )
 
-chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
-)
+    # ===== Tabs aanmaken (BLIJF binnen run_dashboard) =====
+    chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+        ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+    )
 
 
     # ===== Tab 1: Chauffeur =====
