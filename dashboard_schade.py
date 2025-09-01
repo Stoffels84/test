@@ -954,57 +954,54 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
                                 st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
 # ===== Tab 4: Opzoeken =====
-# ===== Tab 4: Opzoeken =====
 with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
-    # Input
+    # invoer
     zoek = st.text_input(
         "Personeelsnummer (dienstnummer)",
         placeholder="bv. 41092",
         key="zoek_pnr_input",
     ).strip()
 
-    # Alleen digits houden
+    # enkel cijfers overhouden
     m = re.findall(r"\d+", zoek)
     pnr = m[0] if m else ""
 
     if not pnr:
         st.info("Geef een personeelsnummer in om resultaten te zien.")
     else:
-        # Resultaten binnen filters en in volledige dataset
+        # resultaten binnen de huidige filters en in de volledige dataset
         res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
         res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
 
-        # Naam & teamcoach bepalen
+        # naam + teamcoach bepalen
         if not res.empty:
             naam_disp = res["volledige naam_disp"].iloc[0]
-            teamcoach_disp = res.get("teamcoach_disp", pd.Series(["onbekend"])).iloc[0]
-            naam_raw = (res["volledige naam"].iloc[0]
-                        if "volledige naam" in res.columns else naam_disp)
+            teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+            naam_raw = res["volledige naam"].iloc[0] if "volledige naam" in res.columns else naam_disp
         elif not res_all.empty:
             naam_disp = res_all["volledige naam_disp"].iloc[0]
-            teamcoach_disp = res_all.get("teamcoach_disp", pd.Series(["onbekend"])).iloc[0]
-            naam_raw = (res_all["volledige naam"].iloc[0]
-                        if "volledige naam" in res_all.columns else naam_disp)
+            teamcoach_disp = res_all["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res_all.columns else "onbekend"
+            naam_raw = res_all["volledige naam"].iloc[0] if "volledige naam" in res_all.columns else naam_disp
         else:
             ex_info = st.session_state.get("excel_info", {})
             naam_disp = (ex_info.get(pnr, {}) or {}).get("naam") or ""
             teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
             naam_raw = naam_disp
 
-        # Naam opschonen
+        # naam opschonen (“12345 – Voornaam Achternaam” → “Voornaam Achternaam”)
         try:
-            naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", str(naam_raw or "").strip())
+            s = str(naam_raw or "").strip()
+            naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", s)
         except Exception:
             naam_clean = naam_disp
 
         chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
 
-        # Coachingstatus bepalen
+        # coachingstatus tonen
         set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
         set_voltooid = set(map(str, st.session_state.get("excel_info", {}).keys()))
-
         if pnr in set_lopend:
             status_lbl, status_emoji = "Lopend", "⚫"
             status_bron = "bron: Coaching (lopend)"
@@ -1024,36 +1021,32 @@ with opzoeken_tab:
             status_lbl, status_emoji = "Niet aangevraagd", "⚪"
             status_bron = "bron: Coachingslijst.xlsx"
 
-        # Header
         st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
         st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
         st.markdown(f"**🎯 Coachingstatus:** {status_emoji} {status_lbl}  \n*{status_bron}*")
         st.markdown("---")
 
-        # Aantal schades (binnen huidige filters)
+        # aantal schadegevallen binnen huidige filters
         st.metric("Aantal schadegevallen", len(res))
 
-        # Tabel tonen (alleen als er gefilterde resultaten zijn)
         if res.empty:
             st.caption("Geen schadegevallen binnen de huidige filters.")
         else:
+            # tabel met (optionele) klikbare link-kolom
             res = res.sort_values("Datum", ascending=False).copy()
             heeft_link = "Link" in res.columns
-            if heeft_link:
-                res["URL"] = res["Link"].apply(extract_url)
+            res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
 
             kol = ["Datum", "Locatie_disp"] + (["URL"] if heeft_link else [])
-
             column_config = {
                 "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
                 "Locatie_disp": st.column_config.TextColumn("Locatie"),
             }
             if heeft_link:
-                # Gebruik juiste argumentnaam voor Streamlit 1.32+: display_text
+                # Belangrijk: gebruik `display_text=` (niet `_text=`) om jouw fout te vermijden
                 column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
 
             st.dataframe(res[kol], column_config=column_config, use_container_width=True)
-
 
     # ===== Tab 5: Coaching =====
     with coaching_tab:
