@@ -841,12 +841,12 @@ def run_dashboard():
 
 
     # ========= PDF Export (per teamcoach) =========
-# ====== PDF export + mail: aparte functie ======
+# ====== PDF export + mail: alléén sidebar ======
 def pdf_export_sidebar(df_filtered: pd.DataFrame, df: pd.DataFrame, teamcoach_col: str = "teamcoach_disp"):
     st.markdown("---")
     st.sidebar.subheader("📄 PDF Export per teamcoach")
 
-    # Kieslijst opbouwen uit gefilterde data
+    # Keuzeopties
     if teamcoach_col in df_filtered.columns:
         teamcoach_options_local = sorted(df_filtered[teamcoach_col].dropna().unique().tolist())
     else:
@@ -858,16 +858,15 @@ def pdf_export_sidebar(df_filtered: pd.DataFrame, df: pd.DataFrame, teamcoach_co
 
     pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", teamcoach_options_local)
 
-    # E-mailadres automatisch uit tabblad 'contact' (A=PNR, B=Naam, C=Mail)
+    # E-mail uit tabblad 'contact' (A=PNR, B=Naam, C=Mail)
     auto_mail = get_email_by_name_from_contact(pdf_coach) or ""
     to_email = st.sidebar.text_input("E-mailadres ontvanger", value=auto_mail, placeholder="coach@delijn.be")
 
     send_and_mail = st.sidebar.button("Genereer en mail")
-
     if not send_and_mail:
         return
 
-    # ---- dataset voor gekozen coach
+    # Dataset voor gekozen coach
     kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp"]
     if "Link" in df.columns:
         kolommen_pdf.append("Link")
@@ -875,7 +874,7 @@ def pdf_export_sidebar(df_filtered: pd.DataFrame, df: pd.DataFrame, teamcoach_co
     schade_pdf = df_filtered[df_filtered[teamcoach_col] == pdf_coach][kolommen_pdf].copy()
     schade_pdf = schade_pdf.sort_values(by="Datum")
 
-    # ---- PDF bouwen in geheugen
+    # PDF opbouwen
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -897,36 +896,19 @@ def pdf_export_sidebar(df_filtered: pd.DataFrame, df: pd.DataFrame, teamcoach_co
         elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie_disp'].nunique()}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
-        # per chauffeur
-        aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts()
-        elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
-        for nm, count in aantal_per_chauffeur.items():
-            elements.append(Paragraph(f"- {nm or 'onbekend'}: {count}", styles["Normal"]))
-        elements.append(Spacer(1, 12))
-
-        # per locatie
-        aantal_per_locatie = schade_pdf["Locatie_disp"].value_counts()
-        elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
-        for loc, count in aantal_per_locatie.items():
-            elements.append(Paragraph(f"- {loc or 'onbekend'}: {count}", styles["Normal"]))
-        elements.append(Spacer(1, 12))
-
-    # tabel
-    elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
-    elements.append(Spacer(1, 6))
-    headers = ["Datum", "Chauffeur", "Voertuig", "Locatie"]
-    heeft_link = "Link" in schade_pdf.columns
-    if heeft_link:
-        headers.append("Link")
-    rows = [headers]
-    for _, r in schade_pdf.iterrows():
-        datum = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
-        rij = [datum, r.get("volledige naam_disp","onbekend"), r.get("BusTram_disp","onbekend"), r.get("Locatie_disp","onbekend")]
+        # tabel
+        headers = ["Datum", "Chauffeur", "Voertuig", "Locatie"]
+        heeft_link = "Link" in schade_pdf.columns
         if heeft_link:
-            rij.append(extract_url(r.get("Link")) or "-")
-        rows.append(rij)
+            headers.append("Link")
+        rows = [headers]
+        for _, r in schade_pdf.iterrows():
+            datum = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
+            rij = [datum, r.get("volledige naam_disp","onbekend"), r.get("BusTram_disp","onbekend"), r.get("Locatie_disp","onbekend")]
+            if heeft_link:
+                rij.append(extract_url(r.get("Link")) or "-")
+            rows.append(rij)
 
-    if len(rows) > 1:
         colw = [60, 150, 70, 130] + ([120] if heeft_link else [])
         tbl = Table(rows, repeatRows=1, colWidths=colw)
         tbl.setStyle(TableStyle([
@@ -945,7 +927,7 @@ def pdf_export_sidebar(df_filtered: pd.DataFrame, df: pd.DataFrame, teamcoach_co
     pdf_bytes = buffer.read()
     bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
 
-    # ---- mailen
+    # Mailen
     to_email_clean = (to_email or "").strip()
     if not to_email_clean:
         st.sidebar.error("Geen e-mailadres ingevuld voor de ontvanger.")
@@ -981,6 +963,7 @@ def pdf_export_sidebar(df_filtered: pd.DataFrame, df: pd.DataFrame, teamcoach_co
         mime="application/pdf",
         key="dl_pdf_coach_mail_copy",
     )
+
 
     # ========= TAB 1: Chauffeur =========
     with chauffeur_tab:
