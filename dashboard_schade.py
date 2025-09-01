@@ -819,18 +819,23 @@ def run_dashboard():
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
         st.stop()
 
-    st.metric("Totaal aantal schadegevallen", len(df_filtered))
-    st.download_button(
-        "⬇️ Download gefilterde data (CSV)",
-        df_to_csv_bytes(df_filtered),
-        file_name=f"schade_filtered_{datetime.today().strftime('%Y%m%d')}.csv",
-        mime="text/csv",
-        help="Exporteer de huidige selectie inclusief datumfilter."
-    )
+st.metric("Totaal aantal schadegevallen", len(df_filtered))
+st.download_button(
+    "⬇️ Download gefilterde data (CSV)",
+    df_to_csv_bytes(df_filtered),
+    file_name=f"schade_filtered_{datetime.today().strftime('%Y%m%d')}.csv",
+    mime="text/csv",
+    help="Exporteer de huidige selectie inclusief datumfilter."
+)
 
-    chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-        ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
-    )
+# >>> hier toevoegen <<<
+pdf_export_sidebar(df_filtered, df)
+
+chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+)
+
+
 
     # ========= PDF Export (per teamcoach) =========
 # ====== PDF export + mail: aparte functie ======
