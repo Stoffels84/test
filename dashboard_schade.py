@@ -770,13 +770,17 @@ def run_dashboard():
         help="Exporteer de huidige selectie inclusief datumfilter."
     )
 
+
+# zodra df_filtered klaar is:
+st.session_state["df_filtered"] = df_filtered
+
+
     # ===== Tabs aanmaken (BLIJF binnen run_dashboard) =====
 chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
 )
 
-# zodra df_filtered klaar is:
-st.session_state["df_filtered"] = df_filtered
+
 
 
 
