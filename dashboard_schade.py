@@ -775,6 +775,9 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
 )
 
+# zodra df_filtered klaar is:
+st.session_state["df_filtered"] = df_filtered
+
 
 
 # ===== Tab 1: Chauffeur =====
