@@ -896,25 +896,6 @@ def run_dashboard():
                                         unsafe_allow_html=True
                                     )
 
-    # ===== Tab 2: Voertuig (placeholder) =====
-    with voertuig_tab:
-        st.subheader("🚌 Schadegevallen per voertuig")
-        st.info("Inhoud voor dit tab komt hier.")
-
-    # ===== Tab 3: Locatie (placeholder) =====
-    with locatie_tab:
-        st.subheader("📍 Schadegevallen per locatie")
-        st.info("Inhoud voor dit tab komt hier.")
-
-    # ===== Tab 4: Opzoeken (placeholder) =====
-    with opzoeken_tab:
-        st.subheader("🔎 Opzoeken")
-        st.info("Inhoud voor dit tab komt hier.")
-
-    # ===== Tab 5: Coaching (placeholder) =====
-    with coaching_tab:
-        st.subheader("🎯 Coaching")
-        st.info("Inhoud voor dit tab komt hier.")
 
 
     # ===== Tab 2: Voertuig =====
@@ -1295,10 +1276,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-
-
-open_all = st.checkbox("Alles uitklappen in dit interval", value=False)
-with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=open_all):
-    ...
-    with st.expander(f"{badge}{disp} — {int(row['aantal'])} schadegevallen", expanded=open_all):
-        ...
