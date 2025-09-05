@@ -772,19 +772,17 @@ def run_dashboard():
 
 
 
-# --- Robuuste kolom-normalisatie + resolvers ---
-def _normalize_columns(df):
-    df = df.copy()
-    df.columns = (
-        df.columns.astype(str)
-        .str.normalize("NFKC")  # normaliseer unicode varianten
-        .str.strip()            # trim spaties
-        .str.lower()            # alles lower-case
-    )
-    return df
+# ===== Kolommen normaliseren =====
+# (doe dit direct na het maken van df_filtered en vóór je tabs)
+df_filtered = df_filtered.copy()
+df_filtered.columns = (
+    df_filtered.columns.astype(str)
+        .str.normalize("NFKC")  # verwijder rare unicode
+        .str.strip()            # spaties aan begin/eind weg
+        .str.lower()            # alles lowercase
+)
 
-df_filtered = _normalize_columns(df_filtered)
-
+# ===== Kolomnamen resolven =====
 def resolve_col(df, candidates):
     for c in candidates:
         if c in df.columns:
@@ -800,8 +798,7 @@ COL_NAAM_DISP = resolve_col(
     ["volledige naam_disp", "volledige_naam_disp", "naam_display", "displaynaam"]
 )
 
-
-# ===== Tabs + Chauffeur-tab (zelfstandig blok) =====
+# ===== Tabs =====
 chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
     ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
 )
@@ -809,16 +806,14 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
 # ===== Tab 1: Chauffeur =====
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
-    st.write("Kolommen:", list(df_filtered.columns))
-
 
     if not COL_NAAM:
         st.error(
-            "Kolom voor chauffeur ontbreekt in df_filtered. "
+            "Kon geen kolom voor chauffeur vinden in df_filtered. "
             f"Beschikbare kolommen: {list(df_filtered.columns)}"
         )
     else:
-        # 1) Groeperen en sorteren
+        # Groeperen en sorteren
         grp = (
             df_filtered
             .groupby(COL_NAAM, dropna=False)
@@ -831,7 +826,7 @@ with chauffeur_tab:
         if grp.empty:
             st.info("Geen schadegevallen binnen de huidige filters.")
         else:
-            # 2) Kenngetallen
+            # Kenngetallen
             totaal_schades = int(grp["aantal"].sum())
             aantal_ch = int(grp.shape[0])
 
@@ -843,7 +838,7 @@ with chauffeur_tab:
 
             st.markdown("---")
 
-            # 3) Displaynaam-map één keer opbouwen (ipv per rij filteren)
+            # Displaynamen mappen (indien kolom bestaat)
             if COL_NAAM_DISP:
                 disp_map = (
                     df_filtered[[COL_NAAM, COL_NAAM_DISP]]
@@ -855,7 +850,7 @@ with chauffeur_tab:
             else:
                 disp_map = {}
 
-            # 4) Badge veilig en gecachet ophalen
+            # Badge ophalen (veilig)
             from functools import lru_cache
 
             @lru_cache(maxsize=None)
@@ -866,13 +861,12 @@ with chauffeur_tab:
                 except Exception:
                     return ""
 
-            # 5) Lijst renderen
+            # Lijst renderen
             for _, row in grp.iterrows():
                 raw = str(row["chauffeur_raw"])
                 disp = disp_map.get(raw, raw)
                 badge = _badge_safe(raw)
                 st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
-
 
 
     # ===== Tab 2: Voertuig =====
