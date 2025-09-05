@@ -739,9 +739,7 @@ def run_dashboard():
             date_from = options["min_datum"]
             date_to   = options["max_datum"]
 
-        if st.button("🔄 Reset filters"):
-            st.query_params.clear()
-            st.rerun()
+
 
     # ===== Filter toepassen =====
     apply_quarters = bool(selected_kwartalen)
