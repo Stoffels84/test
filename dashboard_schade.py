@@ -777,10 +777,15 @@ def run_dashboard():
 
 
     # ===== Tab 1: Chauffeur =====
-with chauffeur_tab:
+# ---- Tabs aanmaken ----
+tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"])
+
+# =======================
+# TAB 1: Chauffeur
+# =======================
+with tabs[0]:
     st.subheader("📂 Schadegevallen per chauffeur")
 
-    # Groeperen per chauffeur
     grp = (
         df_filtered.groupby("volledige naam").size()
         .sort_values(ascending=False).reset_index(name="aantal")
@@ -806,10 +811,10 @@ with chauffeur_tab:
         c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
         c3.metric("Totaal aantal schades", totaal_schades)
 
-        # Optioneel: alles openklappen
+        # Optie om alle chauffeurs-accordeons open te klappen
         expand_all_chf = st.checkbox("Alles openklappen", value=False, key="chf_expand_all")
 
-        # Interval-bins maken (bijv. 1-5, 6-10, ...)
+        # Intervallen (1–5, 6–10, ...)
         step = 5
         max_val = int(grp["aantal"].max())
         edges = list(range(0, max_val + step, step))
@@ -827,12 +832,16 @@ with chauffeur_tab:
             with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
                 g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
                 for _, row in g.iterrows():
-                    raw  = str(row["chauffeur_raw"])
-                    disp = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"].iloc[0]
+                    raw = str(row["chauffeur_raw"])
+
+                    # Veilig de displaynaam ophalen met fallback
+                    disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
+                    disp = disp_series.iloc[0] if not disp_series.empty else raw
+
                     badge = badge_van_chauffeur(raw)
                     aantal = int(row["aantal"])
-
                     title = f"{badge}{disp} — {aantal} schadegevallen"
+
                     with st.expander(title, expanded=expand_all_chf):
                         subset_cols = [c for c in ["Datum","BusTram_disp","Locatie_disp","teamcoach_disp","Link"] if c in df_filtered.columns]
                         details = df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols].sort_values("Datum")
@@ -845,6 +854,7 @@ with chauffeur_tab:
                             link       = extract_url(r.get("Link")) if "Link" in details.columns else None
                             prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
                             st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
+
 
     # ===== Tab 2: Voertuig =====
     with voertuig_tab:
