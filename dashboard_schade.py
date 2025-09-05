@@ -785,26 +785,32 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
 # ===== Tab 1: Chauffeur =====
 # ------ Tabs aanmaken (één lijn) ------
 tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"])
-# zodra df_filtered klaar is:
-st.session_state["df_filtered"] = df_filtered
+
 # ======================================
 # TAB 1: Chauffeur  (gebruik tabs[0])
 # ======================================
+# -----------------------------
+# ná jouw filters + df_filtered
+# -----------------------------
+# if df_filtered.empty: ... st.stop()
+
+# Tabs aanmaken (blijft zoals je al had)
+chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+)
+
 # ===== Tab 1: Chauffeur =====
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
-    # Robuust: haal gefilterde dataset op uit session_state (fallback op df)
-    df_ch = st.session_state.get("df_filtered", df_filtered if 'df_filtered' in locals() else df)
-
     # Veiligheidscheck
-    if "volledige naam" not in df_ch.columns:
+    if "volledige naam" not in df_filtered.columns:
         st.warning("Kolom 'volledige naam' ontbreekt in de dataset.")
         st.stop()
 
     # Groeperen per chauffeur
     grp = (
-        df_ch.groupby("volledige naam").size()
+        df_filtered.groupby("volledige naam").size()
         .sort_values(ascending=False)
         .reset_index(name="aantal")
         .rename(columns={"volledige naam": "chauffeur_raw"})
@@ -831,14 +837,13 @@ with chauffeur_tab:
     c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, man_ch), 2))
     c3.metric("Totaal aantal schades", totaal_schades)
 
-    # Optie: alle chauffeur-accordeons standaard openen
+    # Alles-openklappen optie
     expand_all_chf = st.checkbox("Alles openklappen", value=False, key="chf_expand_all")
 
     # Intervallen (1–5, 6–10, …)
     step = 5
     max_val = int(grp["aantal"].max())
-    # edges: 0,5,10,... + vangnet als max exact op de rand valt
-    edges = list(range(0, ((max_val // step) + 2) * step, step))
+    edges = list(range(0, ((max_val // step) + 2) * step, step))  # vangnet
     grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
 
     # Per interval tonen
@@ -855,9 +860,11 @@ with chauffeur_tab:
                 raw = str(row["chauffeur_raw"])
 
                 # Displaynaam veilig ophalen met fallback
-                disp_series = df_ch.loc[df_ch["volledige naam"] == raw, "volledige naam_disp"] \
-                              if "volledige naam_disp" in df_ch.columns else pd.Series([], dtype="object")
-                disp = disp_series.iloc[0] if not disp_series.empty else raw
+                if "volledige naam_disp" in df_filtered.columns:
+                    disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
+                    disp = disp_series.iloc[0] if not disp_series.empty else raw
+                else:
+                    disp = raw
 
                 badge = badge_van_chauffeur(raw)
                 aantal = int(row["aantal"])
@@ -865,9 +872,9 @@ with chauffeur_tab:
 
                 # Accordeon per chauffeur
                 with st.expander(title, expanded=expand_all_chf):
-                    subset_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_ch.columns]
+                    subset_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_filtered.columns]
                     details = (
-                        df_ch.loc[df_ch["volledige naam"] == raw, subset_cols]
+                        df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols]
                         .sort_values("Datum")
                     )
 
