@@ -795,24 +795,24 @@ tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeke
 # if df_filtered.empty: ... st.stop()
 
 # Tabs aanmaken (blijft zoals je al had)
-chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
-)
 
+
+# ===== Tab 1: Chauffeur =====
 # ===== Tab 1: Chauffeur =====
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
     # Veiligheidscheck
-    if "volledige naam" not in df_filtered.columns:
-        st.warning("Kolom 'volledige naam' ontbreekt in de dataset.")
+    if df_filtered.empty or "volledige naam" not in df_filtered.columns:
+        st.info("Geen schadegevallen binnen de huidige filters.")
         st.stop()
 
     # Groeperen per chauffeur
     grp = (
-        df_filtered.groupby("volledige naam").size()
-        .sort_values(ascending=False)
+        df_filtered.groupby("volledige naam", dropna=False)
+        .size()
         .reset_index(name="aantal")
+        .sort_values("aantal", ascending=False)
         .rename(columns={"volledige naam": "chauffeur_raw"})
     )
 
@@ -832,18 +832,19 @@ with chauffeur_tab:
             min_value=1,
             value=max(1, aantal_ch),
             step=1,
-            key="chf_manual_count"
+            key="chf_manual_count",
         )
     c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, man_ch), 2))
     c3.metric("Totaal aantal schades", totaal_schades)
 
-    # Alles-openklappen optie
+    # Optie: alle chauffeur-accordeons standaard openen
     expand_all_chf = st.checkbox("Alles openklappen", value=False, key="chf_expand_all")
 
     # Intervallen (1–5, 6–10, …)
     step = 5
     max_val = int(grp["aantal"].max())
-    edges = list(range(0, ((max_val // step) + 2) * step, step))  # vangnet
+    # edges: 0,5,10,... en altijd > max
+    edges = list(range(0, ((max_val // step) + 2) * step, step))
     grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
 
     # Per interval tonen
@@ -861,7 +862,9 @@ with chauffeur_tab:
 
                 # Displaynaam veilig ophalen met fallback
                 if "volledige naam_disp" in df_filtered.columns:
-                    disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
+                    disp_series = df_filtered.loc[
+                        df_filtered["volledige naam"] == raw, "volledige naam_disp"
+                    ]
                     disp = disp_series.iloc[0] if not disp_series.empty else raw
                 else:
                     disp = raw
@@ -872,24 +875,35 @@ with chauffeur_tab:
 
                 # Accordeon per chauffeur
                 with st.expander(title, expanded=expand_all_chf):
-                    subset_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_filtered.columns]
-                    details = (
-                        df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols]
-                        .sort_values("Datum")
-                    )
+                    subset_cols = [
+                        c
+                        for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]
+                        if c in df_filtered.columns
+                    ]
+                    details = df_filtered.loc[
+                        df_filtered["volledige naam"] == raw, subset_cols
+                    ].copy()
+                    if "Datum" in details.columns:
+                        details = details.sort_values("Datum")
 
                     if details.empty:
                         st.caption("Geen rijen binnen je huidige filters.")
                     else:
                         for _, r in details.iterrows():
-                            datum_str = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
-                            voertuig   = r.get("BusTram_disp", "onbekend")
-                            loc        = r.get("Locatie_disp", "onbekend")
-                            coach      = r.get("teamcoach_disp", "onbekend")
-                            link       = extract_url(r.get("Link")) if "Link" in details.columns else None
+                            datum_str = (
+                                r["Datum"].strftime("%d-%m-%Y")
+                                if "Datum" in details.columns and pd.notna(r["Datum"])
+                                else "onbekend"
+                            )
+                            voertuig = r.get("BusTram_disp", "onbekend")
+                            loc = r.get("Locatie_disp", "onbekend")
+                            coach = r.get("teamcoach_disp", "onbekend")
+                            link = extract_url(r.get("Link")) if "Link" in details.columns else None
                             prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                            st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
-
+                            st.markdown(
+                                prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"),
+                                unsafe_allow_html=True,
+                            )
 
 
     
