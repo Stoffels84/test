@@ -780,12 +780,6 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
 
 
 
-
-
-# ===== Tab 1: Chauffeur =====
-# ------ Tabs aanmaken (één lijn) ------
-tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"])
-
 # ======================================
 # TAB 1: Chauffeur  (gebruik tabs[0])
 # ======================================
