@@ -769,100 +769,153 @@ def run_dashboard():
         help="Exporteer de huidige selectie inclusief datumfilter."
     )
 
-    # ===== Tabs aanmaken (BLIJF binnen run_dashboard) =====
+
+
+    # ===== Tabs aanmaken =====
     chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-        ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+        ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
     )
 
+    # ===== Tab 1: Chauffeur =====
+    with chauffeur_tab:
+        st.subheader("📂 Schadegevallen per chauffeur")
 
-# ===== Tab 1: Chauffeur =====
-with chauffeur_tab:
-    st.subheader("📂 Schadegevallen per chauffeur")
+        # Groeperen per chauffeur
+        if "volledige naam" not in df_filtered.columns:
+            st.error("Kolom 'volledige naam' ontbreekt in df_filtered.")
+            return
 
-    grp = (
-        df_filtered.groupby("volledige naam").size()
-        .sort_values(ascending=False).reset_index(name="aantal")
-        .rename(columns={"volledige naam": "chauffeur_raw"})
-    )
-
-    if grp.empty:
-        st.info("Geen schadegevallen binnen de huidige filters.")
-    else:
-        totaal_schades = int(grp["aantal"].sum())
-        aantal_ch = int(grp.shape[0])
-
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("Aantal chauffeurs (met schade)", aantal_ch)
-            man_ch = st.number_input(
-                "Handmatig aantal chauffeurs",
-                min_value=1,
-                value=max(1, aantal_ch),
-                step=1,
-                key="chf_manual_count"
-            )
-        c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
-        c3.metric("Totaal aantal schades", totaal_schades)
-
-        # Bepaal intervallen
-        step = 5
-        max_val = int(grp["aantal"].max())
-        edges = list(range(0, max_val + step, step))
-        if edges[-1] < max_val:
-            edges.append(max_val + step)
-        grp["interval"] = pd.cut(
-            grp["aantal"],
-            bins=edges,
-            right=True,
-            include_lowest=True
+        grp = (
+            df_filtered.groupby("volledige naam").size()
+            .sort_values(ascending=False)
+            .reset_index(name="aantal")
+            .rename(columns={"volledige naam": "chauffeur_raw"})
         )
 
-        # Loop over intervallen
-        for interval, g in grp.groupby("interval", sort=False):
-            if g.empty or pd.isna(interval):
-                continue
+        if grp.empty:
+            st.info("Geen schadegevallen binnen de huidige filters.")
+        else:
+            totaal_schades = int(grp["aantal"].sum())
+            aantal_ch = int(grp.shape[0])
 
-            left, right = int(interval.left), int(interval.right)
-            low = max(1, left + 1)
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Aantal chauffeurs (met schade)", aantal_ch)
+                man_ch = st.number_input(
+                    "Handmatig aantal chauffeurs",
+                    min_value=1,
+                    value=max(1, aantal_ch),
+                    step=1,
+                    key="chf_manual_count",
+                    help="Gebruik dit als de populatie groter is dan het aantal dat nu schades heeft."
+                )
+            c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, man_ch), 2))
+            c3.metric("Totaal aantal schades", totaal_schades)
 
-            # Interval-expander
-            with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
-                g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
+            # Intervallen bepalen (stap 5)
+            step = 5
+            max_val = int(grp["aantal"].max())
+            edges = list(range(0, max_val + step, step))
+            if edges[-1] < max_val:
+                edges.append(max_val + step)
 
-                # Loop per chauffeur binnen dit interval
-                for _, row in g.iterrows():
-                    raw = str(row["chauffeur_raw"])
-                    disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
-                    disp = disp_series.iloc[0] if not disp_series.empty else raw
-                    badge = badge_van_chauffeur(raw)
+            grp["interval"] = pd.cut(
+                grp["aantal"],
+                bins=edges,
+                right=True,
+                include_lowest=True
+            )
 
-                    # Chauffeur-expander
-                    with st.expander(
-                        f"{badge}{disp} — {int(row['aantal'])} schadegevallen",
-                        expanded=False,
-                        key=f"exp_ch_{low}_{right}_{raw}"
-                    ):
-                        subset_cols = [
-                            c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]
-                            if c in df_filtered.columns
-                        ]
-                        details = (
-                            df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols]
-                            .sort_values("Datum")
-                        )
+            # Loop over intervallen
+            for interval, g in grp.groupby("interval", sort=False):
+                if g.empty or pd.isna(interval):
+                    continue
 
-                        for _, r in details.iterrows():
-                            datum_str = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
-                            voertuig = r.get("BusTram_disp", "onbekend")
-                            loc = r.get("Locatie_disp", "onbekend")
-                            coach = r.get("teamcoach_disp", "onbekend")
-                            link = extract_url(r.get("Link")) if "Link" in details.columns else None
+                left, right = int(interval.left), int(interval.right)
+                low = max(1, left + 1)
 
-                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                            st.markdown(
-                                prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"),
-                                unsafe_allow_html=True
+                # Bovenste accordeon: interval
+                with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False, key=f"exp_int_{low}_{right}"):
+                    g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
+
+                    # Per chauffeur een eigen expander
+                    for _, row in g.iterrows():
+                        raw = str(row["chauffeur_raw"])
+
+                        # Displaynaam veilig ophalen
+                        if "volledige naam_disp" in df_filtered.columns:
+                            disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
+                            disp = disp_series.iloc[0] if not disp_series.empty else raw
+                        else:
+                            disp = raw
+
+                        # Badge helper (fallback naar lege string)
+                        try:
+                            badge = badge_van_chauffeur(raw) or ""
+                        except Exception:
+                            badge = ""
+
+                        # Key veilig maken
+                        slug = re.sub(r"[^a-zA-Z0-9_\-]+", "_", f"{low}_{right}_{raw}")[:100]
+
+                        with st.expander(
+                            f"{badge}{disp} — {int(row['aantal'])} schadegevallen",
+                            expanded=False,
+                            key=f"exp_ch_{slug}"
+                        ):
+                            subset_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_filtered.columns]
+                            details = (
+                                df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols]
+                                .sort_values("Datum") if "Datum" in subset_cols else
+                                df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols]
                             )
+
+                            if details.empty:
+                                st.write("Geen detailregels gevonden.")
+                            else:
+                                for _, r in details.iterrows():
+                                    datum_str = (
+                                        r["Datum"].strftime("%d-%m-%Y")
+                                        if ("Datum" in details.columns and pd.notna(r.get("Datum")))
+                                        else "onbekend"
+                                    )
+                                    voertuig = r.get("BusTram_disp", "onbekend")
+                                    loc      = r.get("Locatie_disp", "onbekend")
+                                    coach    = r.get("teamcoach_disp", "onbekend")
+
+                                    # Link extraheren via helper indien aanwezig
+                                    link_val = r.get("Link")
+                                    try:
+                                        link = extract_url(link_val) if "Link" in details.columns else None
+                                    except Exception:
+                                        link = None
+
+                                    prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                                    st.markdown(
+                                        prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"),
+                                        unsafe_allow_html=True
+                                    )
+
+    # ===== Tab 2: Voertuig (placeholder) =====
+    with voertuig_tab:
+        st.subheader("🚌 Schadegevallen per voertuig")
+        st.info("Inhoud voor dit tab komt hier.")
+
+    # ===== Tab 3: Locatie (placeholder) =====
+    with locatie_tab:
+        st.subheader("📍 Schadegevallen per locatie")
+        st.info("Inhoud voor dit tab komt hier.")
+
+    # ===== Tab 4: Opzoeken (placeholder) =====
+    with opzoeken_tab:
+        st.subheader("🔎 Opzoeken")
+        st.info("Inhoud voor dit tab komt hier.")
+
+    # ===== Tab 5: Coaching (placeholder) =====
+    with coaching_tab:
+        st.subheader("🎯 Coaching")
+        st.info("Inhoud voor dit tab komt hier.")
+
 
     # ===== Tab 2: Voertuig =====
     with voertuig_tab:
