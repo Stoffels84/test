@@ -8,6 +8,7 @@ import ssl
 import hashlib
 from email.message import EmailMessage
 from datetime import datetime
+
 import streamlit as st
 import pandas as pd
 
@@ -33,7 +34,7 @@ def _load_env(path: str = "mail.env") -> None:
 _load_env("mail.env")
 
 # =========================
-# SMTP instellingen
+# SMTP & OTP instellingen
 # =========================
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -41,16 +42,11 @@ SMTP_USER = os.getenv("SMTP_USER", "").strip()
 SMTP_PASS = os.getenv("SMTP_PASS", "").strip()
 EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER or "").strip()
 
-# =========================
-# OTP instellingen
-# =========================
 OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))
-OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))   # 10 min
+OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))
 OTP_RESEND_SECONDS = int(os.getenv("OTP_RESEND_SECONDS", "60"))
 
-# ==== OTP mail templates (enkel hier definiëren) ====
 OTP_SUBJECT = os.getenv("OTP_SUBJECT", "Je verificatiecode")
-
 OTP_BODY_TEXT = os.getenv(
     "OTP_BODY_TEXT",
     (
@@ -61,12 +57,10 @@ OTP_BODY_TEXT = os.getenv(
         "#OneTeamGent"
     )
 )
-
-# Optioneel: HTML-versie. Laat leeg ("") als je enkel tekst wil.
 OTP_BODY_HTML = os.getenv("OTP_BODY_HTML", "")
 
 # =========================
-# Domeinlogica
+# Domeinlogica / helpers
 # =========================
 def _extract_domain(addr: str) -> str:
     try:
@@ -89,9 +83,6 @@ def _is_allowed_email(addr: str) -> bool:
     a = addr.strip().lower()
     return any(a.endswith("@" + d) for d in ALLOWED_EMAIL_DOMAINS)
 
-# =========================
-# Helpers
-# =========================
 def _mask_email(addr: str) -> str:
     try:
         local, dom = addr.split("@", 1)
@@ -141,36 +132,24 @@ def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = N
                 server.login(SMTP_USER, SMTP_PASS)
             server.send_message(msg)
 
-
-
 # =========================
-# Contact mapping
+# Contact mapping (login)
 # =========================
 def load_contact_map() -> dict[str, dict]:
     """
-    Leest contactgegevens uit 'schade met macro.xlsm', tabblad 'contact':
-      Kolom A = personeelsnummer
-      Kolom B = naam
-      Kolom C = mailadres
-
-    Geeft mapping terug:
-      { "41092": {"email": "persoon@bedrijf.be", "name": "Voornaam Achternaam"} }
+    'schade met macro.xlsm' → tab 'contact'
+    A = personeelsnr, B = naam, C = e-mail
+    Return: { "41092": {"email": "...", "name": "..."} }
     """
     path = "schade met macro.xlsm"
     if not os.path.exists(path):
         raise RuntimeError("Bestand 'schade met macro.xlsm' niet gevonden in de projectmap.")
 
-    # Zoek het tabblad 'contact' (case-insensitive)
     xls = pd.ExcelFile(path)
-    sheet = None
-    for sh in xls.sheet_names:
-        if str(sh).strip().lower() == "contact":
-            sheet = sh
-            break
+    sheet = next((sh for sh in xls.sheet_names if str(sh).strip().lower() == "contact"), None)
     if sheet is None:
         raise RuntimeError("Tabblad 'contact' niet gevonden in 'schade met macro.xlsm'.")
 
-    # Lees kolommen A, B, C (zonder header)
     df = pd.read_excel(xls, sheet_name=sheet, header=None, usecols="A:C")
     if df.empty or df.shape[1] < 3:
         raise RuntimeError("Tabblad 'contact' bevat geen gegevens in kolommen A:C.")
@@ -187,59 +166,11 @@ def load_contact_map() -> dict[str, dict]:
         mapping[pnr] = {"email": email, "name": name}
 
     if not mapping:
-        raise RuntimeError("Geen geldige rijen gevonden in tabblad 'contact'. Controleer of kolom A personeelsnummer bevat en kolom C e-mailadressen.")
-
+        raise RuntimeError("Geen geldige rijen in tabblad 'contact'.")
     return mapping
-
-def _normalize_name(s: str) -> str:
-    # eenvoudige normalisatie voor naamvergelijking
-    return re.sub(r"\s+", " ", str(s or "").strip()).lower()
-
-@st.cache_data(show_spinner=False)
-def load_contact_name_email_map() -> dict[str, str]:
-    """
-    Leest 'schade met macro.xlsm' → tabblad 'contact'
-    A = personeelsnr, B = naam, C = mailadres
-    Returned: { normalized_naam: email }
-    """
-    path = "schade met macro.xlsm"
-    if not os.path.exists(path):
-        return {}
-    xls = pd.ExcelFile(path)
-
-    # vind exact 'contact' (case-insensitive)
-    sheet = None
-    for sh in xls.sheet_names:
-        if str(sh).strip().lower() == "contact":
-            sheet = sh
-            break
-    if sheet is None:
-        return {}
-
-    df = pd.read_excel(xls, sheet_name=sheet, header=None, usecols="A:C")
-    # kolommen: 0=PNR, 1=Naam, 2=Email
-    mapping: dict[str, str] = {}
-    for _, row in df.iterrows():
-        naam = str(row[1]).strip() if pd.notna(row[1]) else ""
-        email = str(row[2]).strip() if pd.notna(row[2]) else ""
-        if naam and email and email.lower() not in {"nan", "none", ""}:
-            mapping[_normalize_name(naam)] = email
-    return mapping
-
-def get_email_by_name_from_contact(naam: str) -> str | None:
-    """
-    Haal e-mail op op basis van NAAM uit tabblad 'contact'.
-    """
-    if not naam:
-        return None
-    name_map = load_contact_name_email_map()
-    return name_map.get(_normalize_name(naam))
-
-
-
 
 # =========================
-# Badge helpers / misc
+# Badge helpers
 # =========================
 def naam_naar_dn(naam: str) -> str | None:
     if pd.isna(naam):
@@ -250,12 +181,9 @@ def naam_naar_dn(naam: str) -> str | None:
 
 def _beoordeling_emoji(rate: str) -> str:
     r = (rate or "").strip().lower()
-    if r in {"zeer goed", "goed"}:
-        return "🟢 "
-    if r in {"voldoende"}:
-        return "🟠 "
-    if r in {"slecht", "onvoldoende", "zeer slecht"}:
-        return "🔴 "
+    if r in {"zeer goed", "goed"}: return "🟢 "
+    if r in {"voldoende"}:         return "🟠 "
+    if r in {"slecht", "onvoldoende", "zeer slecht"}: return "🔴 "
     return ""
 
 def badge_van_chauffeur(naam: str) -> str:
@@ -272,33 +200,15 @@ def badge_van_chauffeur(naam: str) -> str:
     return f"{kleur}{'⚫ ' if lopend else ''}"
 
 # =========================
-# Naam resolver voor mail
-# =========================
-def _resolve_name_for_pnr(pnr: str, contacts: dict) -> str | None:
-    v = contacts.get(pnr)
-    if isinstance(v, dict):
-        nm = str(v.get("name") or "").strip()
-        if nm:
-            return nm
-    return None  # Excel-fallback kun je toevoegen indien gewenst
-
-# =========================
-# CSV/PDF helpers
+# CSV helper
 # =========================
 @st.cache_data
 def df_to_csv_bytes(d: pd.DataFrame) -> bytes:
     return d.to_csv(index=False).encode("utf-8")
 
-def extract_url(x) -> str | None:
-    if pd.isna(x):
-        return None
-    s = str(x).strip()
-    if s.startswith(("http://", "https://")):
-        return s
-    m = re.search(r'HYPERLINK\(\s*"([^"]+)"', s, flags=re.IGNORECASE)
-    return m.group(1) if m else None
-
-# ========= Data laden =========
+# =========================
+# Data laden / voorbereiden
+# =========================
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
     df_raw = pd.read_excel(path, sheet_name=sheet)
@@ -429,7 +339,6 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
 
     s_geel  = vind_sheet(xls, "voltooide coachings")
     s_blauw = vind_sheet(xls, "coaching")
-
     if s_geel:
         ids_geel,  total_geel_rows  = lees_sheet(s_geel,  "Voltooid")
     if s_blauw:
@@ -438,32 +347,21 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
 
 # =========================
-# LOGIN FLOW (enkel deze versie)
+# LOGIN FLOW (korte versie)
 # =========================
 def login_gate():
     st.title("🔐 Beveiligde toegang")
     st.caption("Log in met je personeelsnummer. Je ontvangt een verificatiecode per e-mail.")
-
-    # Contacten laden (tabblad 'contact' uit 'schade met macro.xlsm')
     try:
         contacts = load_contact_map()
     except Exception as e:
-        st.error(str(e))
-        st.stop()
+        st.error(str(e)); st.stop()
 
     if "otp" not in st.session_state:
-        st.session_state.otp = {
-            "pnr": None,
-            "email": None,
-            "hash": None,
-            "expires": 0.0,
-            "last_sent": 0.0,
-            "sent": False,
-        }
-
+        st.session_state.otp = {"pnr":None,"email":None,"hash":None,"expires":0.0,"last_sent":0.0,"sent":False}
     otp = st.session_state.otp
 
-    col1, col2 = st.columns([3, 2])
+    col1, col2 = st.columns([3,2])
     with col1:
         pnr_input = st.text_input("Personeelsnummer", placeholder="bijv. 41092", value=otp.get("pnr") or "")
     with col2:
@@ -498,17 +396,13 @@ def login_gate():
                                 "last_sent": time.time(),
                                 "sent": True,
                             })
-
                             minutes = OTP_TTL_SECONDS // 60
                             now_str = datetime.now().strftime("%d-%m-%Y %H:%M")
                             naam = (rec.get("name") if isinstance(rec, dict) else None) or "collega"
-
                             subject = OTP_SUBJECT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
                             body_text = OTP_BODY_TEXT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
-
                             body_html_raw = (OTP_BODY_HTML or "").strip()
                             body_html = body_html_raw.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam) if body_html_raw else None
-
                             _send_email(email, subject, body_text, html=body_html)
                             st.success(f"Code verzonden naar {_mask_email(email)}. Vul de code hieronder in.")
                         except Exception as e:
@@ -517,29 +411,7 @@ def login_gate():
     if otp.get("sent"):
         with st.form("otp_form"):
             code_in = st.text_input("Verificatiecode", max_chars=OTP_LENGTH)
-            colf1, colf2, colf3 = st.columns([1,1,2])
-            with colf1:
-                submit = st.form_submit_button("Inloggen")
-            with colf2:
-                resend = st.form_submit_button("Opnieuw verzenden")
-            with colf3:
-                cancel = st.form_submit_button("Annuleren")
-
-        if cancel:
-            st.session_state.otp = {
-                "pnr": None,
-                "email": None,
-                "hash": None,
-                "expires": 0.0,
-                "last_sent": 0.0,
-                "sent": False,
-            }
-            st.rerun()
-
-        if resend:
-            st.session_state.otp["sent"] = False
-            st.rerun()
-
+            submit = st.form_submit_button("Inloggen")
         if submit:
             if not code_in or len(code_in.strip()) < 1:
                 st.error("Vul de code in.")
@@ -548,138 +420,18 @@ def login_gate():
             elif _hash_code(code_in.strip()) != otp.get("hash"):
                 st.error("Ongeldige code.")
             else:
-                # ======= SUCCES ======= #
-                # Haal naam uit contacts (voor we OTP resetten)
-                rec = contacts.get(otp.get("pnr"))
-                user_name = None
-                if isinstance(rec, dict):
-                    user_name = (rec.get("name") or "").strip()
-
-                # Sla gegevens op voor de sessie
                 st.session_state.authenticated = True
                 st.session_state.user_pnr   = otp.get("pnr")
                 st.session_state.user_email = otp.get("email")
-                st.session_state.user_name  = user_name or otp.get("pnr")  # fallback naar PNR als er geen naam is
-
-                # Wis gevoelige OTP-data
-                st.session_state.otp = {
-                    "pnr": None,
-                    "email": None,
-                    "hash": None,
-                    "expires": 0.0,
-                    "last_sent": 0.0,
-                    "sent": False,
-                }
+                st.session_state.user_name  = (load_contact_map().get(otp.get("pnr"), {}) or {}).get("name") or otp.get("pnr")
+                st.session_state.otp = {"pnr":None,"email":None,"hash":None,"expires":0.0,"last_sent":0.0,"sent":False}
                 st.rerun()
 
-def _parse_teamcoach_emails_from_env() -> dict[str, str]:
-    """
-    Lees TEAMCOACH_EMAILS uit .env.
-    Formaten die geaccepteerd worden (scheiden met komma of puntkomma):
-      - Naam=mail@domein.be
-      - "Naam <mail@domein.be>"
-      - mail@domein.be  (alleen nuttig als je verder zelf matcht)
-    Voorbeeld:
-      TEAMCOACH_EMAILS=Bart Van Der Beken=bart.vanderbeken@delijn.be;Ann Peeters <ann.peeters@delijn.be>
-    """
-    raw = (os.getenv("TEAMCOACH_EMAILS") or "").strip()
-    if not raw:
-        return {}
-    parts = [p.strip() for p in re.split(r"[;,]", raw) if p.strip()]
-    out: dict[str, str] = {}
-    for p in parts:
-        # "Naam <mail>"
-        m = re.match(r'^(?P<name>.+?)\s*<(?P<mail>[^>]+)>$', p)
-        if m:
-            out[m.group("name").strip().lower()] = m.group("mail").strip()
-            continue
-        # "Naam=mail"
-        if "=" in p:
-            name, mail = p.split("=", 1)
-            out[name.strip().lower()] = mail.strip()
-            continue
-        # "mail" (zonder naam) -> overslaan (geen mapping mogelijk)
-    return out
-
-
-def _parse_teamcoach_emails_from_excel() -> dict[str, str]:
-    """
-    Optionele bron: een Excel met teamcoach -> e-mail.
-    Ondersteunt:
-      - teamcoach_emails.xlsx (kolommen: Teamcoach, Email)
-      - in 'schade met macro.xlsm': een tabblad 'teamcoach_emails' of 'coaches'
-        met kolommen (Teamcoach/Coach, Email/Mail)
-    Niet verplicht; wordt alleen gebruikt als aanwezig.
-    """
-    out: dict[str, str] = {}
-
-    # 1) Los bestand
-    if os.path.exists("teamcoach_emails.xlsx"):
-        try:
-            dfe = pd.read_excel("teamcoach_emails.xlsx")
-            cols = [c.strip().lower() for c in dfe.columns]
-            dfe.columns = cols
-            col_n = next((c for c in ["teamcoach", "coach", "naam", "name"] if c in cols), None)
-            col_e = next((c for c in ["email", "mail", "e-mail", "e-mailadres"] if c in cols), None)
-            if col_n and col_e:
-                for _, r in dfe.iterrows():
-                    nm = str(r[col_n]).strip()
-                    em = str(r[col_e]).strip()
-                    if nm and em and em.lower() not in {"nan","none",""}:
-                        out[nm.lower()] = em
-        except Exception:
-            pass
-
-    # 2) Tabblad in schadebestand
-    if os.path.exists("schade met macro.xlsm"):
-        try:
-            xls = pd.ExcelFile("schade met macro.xlsm")
-            cand = None
-            for sh in xls.sheet_names:
-                s = str(sh).strip().lower()
-                if s in {"teamcoach_emails", "coaches"}:
-                    cand = sh; break
-            if cand:
-                dfe = pd.read_excel(xls, sheet_name=cand)
-                cols = [c.strip().lower() for c in dfe.columns]
-                dfe.columns = cols
-                col_n = next((c for c in ["teamcoach", "coach", "naam", "name"] if c in cols), None)
-                col_e = next((c for c in ["email", "mail", "e-mail", "e-mailadres"] if c in cols), None)
-                if col_n and col_e:
-                    for _, r in dfe.iterrows():
-                        nm = str(r[col_n]).strip()
-                        em = str(r[col_e]).strip()
-                        if nm and em and em.lower() not in {"nan","none",""}:
-                            out[nm.lower()] = em
-        except Exception:
-            pass
-
-    return out
-
-
-def get_teamcoach_email(teamcoach_name: str) -> str | None:
-    """
-    Resolve e-mailadres van een teamcoach via:
-      1) TEAMCOACH_EMAILS in .env
-      2) optionele Excel-bronnen (zie functie hierboven)
-    """
-    if not teamcoach_name:
-        return None
-    key = teamcoach_name.strip().lower()
-    # .env
-    env_map = _parse_teamcoach_emails_from_env()
-    if key in env_map:
-        return env_map[key]
-    # Excel
-    xls_map = _parse_teamcoach_emails_from_excel()
-    if key in xls_map:
-        return xls_map[key]
-    return None
-
-
-# ========= Dashboard =========
+# =========================
+# DASHBOARD (t/m 1e tab)
+# =========================
 def run_dashboard():
-    # ===== Sidebar: user-info + logout =====
+    # Sidebar: user-info + logout
     with st.sidebar:
         display_name = (
             st.session_state.get("user_name")
@@ -687,29 +439,24 @@ def run_dashboard():
             or "—"
         )
         st.success(f"Ingelogd als {display_name}")
-
         if st.button("🚪 Uitloggen"):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
 
-    # ===== Data laden =====
+    # Data laden
     df, options = load_schade_prepared()
     gecoachte_ids, coaching_ids, total_geel, total_blauw, excel_info, coach_warn = lees_coachingslijst()
     st.session_state["coaching_ids"] = coaching_ids
     st.session_state["excel_info"]   = excel_info
 
-    # extra kolommen
-    df["gecoacht_geel"]  = df["dienstnummer"].astype(str).isin(gecoachte_ids)
-    df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
-
-    # ===== Titel =====
+    # Titel + caption
     st.title("📊 Schadegevallen Dashboard")
     st.caption("🟢 goed · 🟠 voldoende · 🔴 slecht/zeer slecht · ⚫ lopende coaching")
     if coach_warn:
         st.sidebar.warning(f"⚠️ {coach_warn}")
 
-    # ===== Filters in sidebar =====
+    # Filters in sidebar
     def _ms_all(label, options, all_label, key):
         opts = [all_label] + options
         picked = st.sidebar.multiselect(label, opts, default=[all_label], key=key)
@@ -723,7 +470,6 @@ def run_dashboard():
     with st.sidebar:
         st.image("logo.png", use_container_width=True)
         st.header("🔍 Filters")
-
         selected_teamcoaches = _ms_all("Teamcoach", teamcoach_options, "— Alle teamcoaches —", "flt_tc")
         selected_locaties    = _ms_all("Locatie",   locatie_options,   "— Alle locaties —",   "flt_loc")
         selected_voertuigen  = _ms_all("Voertuig",  voertuig_options,  "— Alle voertuigen —", "flt_vt")
@@ -737,8 +483,7 @@ def run_dashboard():
             date_from = options["min_datum"]
             date_to   = options["max_datum"]
 
-
-    # ===== Filter toepassen =====
+    # Filter toepassen
     apply_quarters = bool(selected_kwartalen)
     sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if apply_quarters else None
 
@@ -749,7 +494,6 @@ def run_dashboard():
         & (df["KwartaalP"].isin(sel_periods) if apply_quarters else True)
     )
     df_filtered = df.loc[mask].copy()
-
     start = pd.to_datetime(date_from)
     end   = pd.to_datetime(date_to) + pd.Timedelta(days=1)
     df_filtered = df_filtered[(df_filtered["Datum"] >= start) & (df_filtered["Datum"] < end)]
@@ -757,7 +501,8 @@ def run_dashboard():
     if df_filtered.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
         st.stop()
-    # ===== KPI + CSV export =====
+
+    # KPI + CSV export
     st.metric("Totaal aantal schadegevallen", len(df_filtered))
     st.download_button(
         "⬇️ Download gefilterde data (CSV)",
@@ -767,53 +512,46 @@ def run_dashboard():
         help="Exporteer de huidige selectie inclusief datumfilter."
     )
 
+    # ===== Kolommen normaliseren (licht) =====
+    df_filtered = df_filtered.copy()
+    df_filtered.columns = (
+        df_filtered.columns.astype(str)
+            .str.normalize("NFKC")  # unicode varianten
+            .str.strip()            # trim
+    )
 
+    # ===== Kolomnamen resolven (chauffeur) =====
+    def resolve_col(df_in: pd.DataFrame, candidates: list[str]) -> str | None:
+        for c in candidates:
+            if c in df_in.columns:
+                return c
+        return None
 
+    COL_NAAM = resolve_col(
+        df_filtered,
+        ["volledige naam", "volledige_naam", "chauffeur", "chauffeur naam", "naam", "volledigenaam"]
+    )
+    COL_NAAM_DISP = resolve_col(
+        df_filtered,
+        ["volledige naam_disp", "volledige_naam_disp", "naam_display", "displaynaam"]
+    )
 
+    # ===== Tabs (vanaf hier stoppen we voor jouw vraag) =====
+    chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+        ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+    )
 
+    # ===== Tab 1: Chauffeur =====
+    with chauffeur_tab:
+        st.subheader("📂 Schadegevallen per chauffeur")
 
-# ===== Kolommen normaliseren =====
-# (doe dit direct na het maken van df_filtered en vóór je tabs)
-df_filtered = df_filtered.copy()
-df_filtered.columns = (
-    df_filtered.columns.astype(str)
-        .str.normalize("NFKC")  # verwijder rare unicode
-        .str.strip()            # spaties aan begin/eind weg
-        .str.lower()            # alles lowercase
-)
+        if not COL_NAAM:
+            st.error(
+                "Kon geen kolom voor chauffeur vinden in df_filtered. "
+                f"Beschikbare kolommen: {list(df_filtered.columns)}"
+            )
+            return
 
-# ===== Kolomnamen resolven =====
-def resolve_col(df, candidates):
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
-COL_NAAM = resolve_col(
-    df_filtered,
-    ["volledige naam", "volledige_naam", "chauffeur", "chauffeur naam", "naam", "volledigenaam"]
-)
-COL_NAAM_DISP = resolve_col(
-    df_filtered,
-    ["volledige naam_disp", "volledige_naam_disp", "naam_display", "displaynaam"]
-)
-
-# ===== Tabs =====
-chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-    ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
-)
-
-# ===== Tab 1: Chauffeur =====
-with chauffeur_tab:
-    st.subheader("📂 Schadegevallen per chauffeur")
-
-    if not COL_NAAM:
-        st.error(
-            "Kon geen kolom voor chauffeur vinden in df_filtered. "
-            f"Beschikbare kolommen: {list(df_filtered.columns)}"
-        )
-    else:
-        # Groeperen en sorteren
         grp = (
             df_filtered
             .groupby(COL_NAAM, dropna=False)
@@ -825,48 +563,67 @@ with chauffeur_tab:
 
         if grp.empty:
             st.info("Geen schadegevallen binnen de huidige filters.")
+            return
+
+        totaal_schades = int(grp["aantal"].sum())
+        aantal_ch = int(grp.shape[0])
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Aantal chauffeurs (met schade)", aantal_ch)
+        c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, aantal_ch), 2))
+        c3.metric("Totaal aantal schades", totaal_schades)
+
+        st.markdown("---")
+
+        # Displaynamen mappen (indien kolom bestaat)
+        if COL_NAAM_DISP and COL_NAAM_DISP in df_filtered.columns:
+            disp_map = (
+                df_filtered[[COL_NAAM, COL_NAAM_DISP]]
+                .dropna()
+                .drop_duplicates()
+                .set_index(COL_NAAM)[COL_NAAM_DISP]
+                .to_dict()
+            )
         else:
-            # Kenngetallen
-            totaal_schades = int(grp["aantal"].sum())
-            aantal_ch = int(grp.shape[0])
+            disp_map = {}
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric("Aantal chauffeurs (met schade)", aantal_ch)
-            c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, aantal_ch), 2))
-            c3.metric("Totaal aantal schades", totaal_schades)
+        from functools import lru_cache
+        @lru_cache(maxsize=None)
+        def _badge_safe(raw):
+            try:
+                b = badge_van_chauffeur(raw)
+                return b or ""
+            except Exception:
+                return ""
 
-            st.markdown("---")
+        for _, row in grp.iterrows():
+            raw = str(row["chauffeur_raw"])
+            disp = disp_map.get(raw, raw)
+            badge = _badge_safe(raw)
+            st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
 
-            # Displaynamen mappen (indien kolom bestaat)
-            if COL_NAAM_DISP:
-                disp_map = (
-                    df_filtered[[COL_NAAM, COL_NAAM_DISP]]
-                    .dropna()
-                    .drop_duplicates()
-                    .set_index(COL_NAAM)[COL_NAAM_DISP]
-                    .to_dict()
-                )
-            else:
-                disp_map = {}
+# =========================
+# main
+# =========================
+def main():
+    st.set_page_config(page_title="Schade Dashboard", page_icon="📊", layout="wide")
+    if not st.session_state.get("authenticated"):
+        login_gate()
+        return
+    run_dashboard()
 
-            # Badge ophalen (veilig)
-            from functools import lru_cache
+if __name__ == "__main__":
+    main()
 
-            @lru_cache(maxsize=None)
-            def _badge_safe(raw):
-                try:
-                    b = badge_van_chauffeur(raw)
-                    return b or ""
-                except Exception:
-                    return ""
 
-            # Lijst renderen
-            for _, row in grp.iterrows():
-                raw = str(row["chauffeur_raw"])
-                disp = disp_map.get(raw, raw)
-                badge = _badge_safe(raw)
-                st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
+
+
+
+
+
+
+
 
 
     # ===== Tab 2: Voertuig =====
