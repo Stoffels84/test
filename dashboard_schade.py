@@ -776,12 +776,15 @@ def run_dashboard():
         ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
     )
 
-    # ===== Tab 1: Chauffeur =====
-# ===== Tab 1: Chauffeur =====
+# ===== Tabs + Chauffeur-tab (zelfstandig blok) =====
+chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+    ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+)
+
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
-    # Groeperen per chauffeur
+    # Veiligheidscheck
     if "volledige naam" not in df_filtered.columns:
         st.error("Kolom 'volledige naam' ontbreekt in df_filtered.")
     else:
@@ -811,21 +814,16 @@ with chauffeur_tab:
             c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, man_ch), 2))
             c3.metric("Totaal aantal schades", totaal_schades)
 
-            # Intervallen bepalen (stapgrootte 5)
+            # Intervallen bepalen
             step = 5
             max_val = int(grp["aantal"].max())
             edges = list(range(0, max_val + step, step))
             if edges[-1] < max_val:
                 edges.append(max_val + step)
 
-            grp["interval"] = pd.cut(
-                grp["aantal"],
-                bins=edges,
-                right=True,
-                include_lowest=True
-            )
+            grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
 
-            # Loop over intervallen
+            # ===== Dubbele accordeon =====
             for interval, g in grp.groupby("interval", sort=False):
                 if g.empty or pd.isna(interval):
                     continue
@@ -833,28 +831,25 @@ with chauffeur_tab:
                 left, right = int(interval.left), int(interval.right)
                 low = max(1, left + 1)
 
-                # Interval-expander
+                # Interval-accordeon
                 with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
                     g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
 
-                    # Per chauffeur een expander
+                    # Chauffeur-accordeon binnen interval
                     for _, row in g.iterrows():
                         raw = str(row["chauffeur_raw"])
 
-                        # Displaynaam ophalen
                         if "volledige naam_disp" in df_filtered.columns:
                             disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
                             disp = disp_series.iloc[0] if not disp_series.empty else raw
                         else:
                             disp = raw
 
-                        # Badge ophalen (fallback naar lege string)
                         try:
                             badge = badge_van_chauffeur(raw) or ""
                         except Exception:
                             badge = ""
 
-                        # Chauffeur-expander
                         with st.expander(f"{badge}{disp} — {int(row['aantal'])} schadegevallen", expanded=False):
                             subset_cols = [c for c in ["Datum","BusTram_disp","Locatie_disp","teamcoach_disp","Link"] if c in df_filtered.columns]
                             details = (
@@ -875,18 +870,13 @@ with chauffeur_tab:
                                     voertuig = r.get("BusTram_disp", "onbekend")
                                     loc      = r.get("Locatie_disp", "onbekend")
                                     coach    = r.get("teamcoach_disp", "onbekend")
-
-                                    # Link extraheren
                                     try:
                                         link = extract_url(r.get("Link")) if "Link" in details.columns else None
                                     except Exception:
                                         link = None
 
                                     prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                                    st.markdown(
-                                        prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"),
-                                        unsafe_allow_html=True
-                                    )
+                                    st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
 
     # ===== Tab 2: Voertuig =====
