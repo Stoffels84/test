@@ -541,10 +541,7 @@ with chauffeur_tab:
         df_filtered
         ["volledige naam", "volledige_naam", "chauffeur", "chauffeur naam", "naam", "volledigenaam"]
     )
-    COL_NAAM_DISP = resolve_col(
-        df_filtered,
-        ["volledige naam_disp", "volledige_naam_disp", "naam_display", "displaynaam"]
-    )
+
 
     if not COL_NAAM:
         st.error(
