@@ -677,8 +677,6 @@ def get_teamcoach_email(teamcoach_name: str) -> str | None:
     return None
 
 
-
-# ========= Dashboard =========
 # ========= Dashboard =========
 def run_dashboard():
     # ===== Sidebar: user-info + logout =====
@@ -811,6 +809,8 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
 # ===== Tab 1: Chauffeur =====
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
+    st.write("Kolommen:", list(df_filtered.columns))
+
 
     if not COL_NAAM:
         st.error(
