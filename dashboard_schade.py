@@ -899,7 +899,7 @@ with tabs[0]:
     
     # ===== Tab 2: Voertuig =====
 with tabs[1]:
-    with voertuig_tab:
+    st.subheader("🚘 Schadegevallen per voertuigtype")
         st.subheader("🚘 Schadegevallen per voertuigtype")
         if "BusTram_disp" not in df_filtered.columns:
             st.info("Kolom voor voertuigtype niet gevonden.")
@@ -932,8 +932,9 @@ with tabs[1]:
                             st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
     # ===== Tab 3: Locatie =====
-    with tabs[2]
-    with locatie_tab:
+with tabs[2]:
+    st.subheader("📍 Schadegevallen per locatie")
+
         st.subheader("📍 Schadegevallen per locatie")
         if "Locatie_disp" not in df_filtered.columns:
             st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
@@ -1024,8 +1025,8 @@ with tabs[1]:
                                 st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
     # ===== Tab 4: Opzoeken =====
-    with tabs[3]:
-    with opzoeken_tab:
+with tabs[3]:
+    st.subheader("🔎 Opzoeken op personeelsnummer")
         st.subheader("🔎 Opzoeken op personeelsnummer")
 
         # Invoer
@@ -1125,8 +1126,8 @@ with tabs[1]:
 
     # ===== Tab 5: Coaching =====
     # ===== Tab 5: Coaching =====
-    with tabs[4]:
-    with coaching_tab:
+with tabs[4]:
+    st.subheader("🎯 Coaching – vergelijkingen")
         try:
             st.subheader("🎯 Coaching – vergelijkingen")
 
