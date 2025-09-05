@@ -789,38 +789,39 @@ tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeke
 # ======================================
 # TAB 1: Chauffeur  (gebruik tabs[0])
 # ======================================
-# -----------------------------
-# ná jouw filters + df_filtered
-# -----------------------------
-# if df_filtered.empty: ... st.stop()
-
-# Tabs aanmaken (blijft zoals je al had)
-
 
 # ===== Tab 1: Chauffeur =====
 # ===== Tab 1: Chauffeur =====
-with chauffeur_tab:
+with tabs[0]:
     st.subheader("📂 Schadegevallen per chauffeur")
 
-    # Veiligheidscheck
-    if df_filtered.empty or "volledige naam" not in df_filtered.columns:
+    # --- VEILIGE DATAREF: gebruik df_filtered als beschikbaar, anders df, anders lege DF ---
+    try:
+        dfx = df_filtered
+    except Exception:
+        try:
+            dfx = df
+        except Exception:
+            dfx = pd.DataFrame()
+
+    # Als er geen data is, netjes stoppen
+    if dfx.empty or "volledige naam" not in dfx.columns:
         st.info("Geen schadegevallen binnen de huidige filters.")
         st.stop()
 
-    # Groeperen per chauffeur
+    # --- Groeperen per chauffeur ---
     grp = (
-        df_filtered.groupby("volledige naam", dropna=False)
-        .size()
-        .reset_index(name="aantal")
-        .sort_values("aantal", ascending=False)
-        .rename(columns={"volledige naam": "chauffeur_raw"})
+        dfx.groupby("volledige naam", dropna=False)
+           .size()
+           .reset_index(name="aantal")
+           .sort_values("aantal", ascending=False)
+           .rename(columns={"volledige naam": "chauffeur_raw"})
     )
-
     if grp.empty:
         st.info("Geen schadegevallen binnen de huidige filters.")
         st.stop()
 
-    # KPI's
+    # --- KPI's ---
     totaal_schades = int(grp["aantal"].sum())
     aantal_ch = int(grp.shape[0])
 
@@ -837,17 +838,16 @@ with chauffeur_tab:
     c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, man_ch), 2))
     c3.metric("Totaal aantal schades", totaal_schades)
 
-    # Optie: alle chauffeur-accordeons standaard openen
+    # --- Optie: alle chauffeur-accordeons standaard openen ---
     expand_all_chf = st.checkbox("Alles openklappen", value=False, key="chf_expand_all")
 
-    # Intervallen (1–5, 6–10, …)
+    # --- Intervallen (1–5, 6–10, …) ---
     step = 5
     max_val = int(grp["aantal"].max())
-    # edges: 0,5,10,... en altijd > max
-    edges = list(range(0, ((max_val // step) + 2) * step, step))
+    edges = list(range(0, ((max_val // step) + 2) * step, step))  # altijd > max
     grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
 
-    # Per interval tonen
+    # --- Per interval tonen ---
     for interval, g in grp.groupby("interval", sort=False):
         if g.empty or pd.isna(interval):
             continue
@@ -861,10 +861,8 @@ with chauffeur_tab:
                 raw = str(row["chauffeur_raw"])
 
                 # Displaynaam veilig ophalen met fallback
-                if "volledige naam_disp" in df_filtered.columns:
-                    disp_series = df_filtered.loc[
-                        df_filtered["volledige naam"] == raw, "volledige naam_disp"
-                    ]
+                if "volledige naam_disp" in dfx.columns:
+                    disp_series = dfx.loc[dfx["volledige naam"] == raw, "volledige naam_disp"]
                     disp = disp_series.iloc[0] if not disp_series.empty else raw
                 else:
                     disp = raw
@@ -876,13 +874,10 @@ with chauffeur_tab:
                 # Accordeon per chauffeur
                 with st.expander(title, expanded=expand_all_chf):
                     subset_cols = [
-                        c
-                        for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]
-                        if c in df_filtered.columns
+                        c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]
+                        if c in dfx.columns
                     ]
-                    details = df_filtered.loc[
-                        df_filtered["volledige naam"] == raw, subset_cols
-                    ].copy()
+                    details = dfx.loc[dfx["volledige naam"] == raw, subset_cols].copy()
                     if "Datum" in details.columns:
                         details = details.sort_values("Datum")
 
@@ -892,7 +887,7 @@ with chauffeur_tab:
                         for _, r in details.iterrows():
                             datum_str = (
                                 r["Datum"].strftime("%d-%m-%Y")
-                                if "Datum" in details.columns and pd.notna(r["Datum"])
+                                if "Datum" in details.columns and pd.notna(r.get("Datum"))
                                 else "onbekend"
                             )
                             voertuig = r.get("BusTram_disp", "onbekend")
@@ -904,6 +899,7 @@ with chauffeur_tab:
                                 prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"),
                                 unsafe_allow_html=True,
                             )
+
 
 
     
