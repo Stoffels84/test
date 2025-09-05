@@ -779,6 +779,7 @@ tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeke
 
 
 
+
 # ======================================
 # TAB 1: Chauffeur  (gebruik tabs[0])
 # ======================================
@@ -897,6 +898,7 @@ with tabs[0]:
 
     
     # ===== Tab 2: Voertuig =====
+with tabs[1]:
     with voertuig_tab:
         st.subheader("🚘 Schadegevallen per voertuigtype")
         if "BusTram_disp" not in df_filtered.columns:
@@ -930,6 +932,7 @@ with tabs[0]:
                             st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
     # ===== Tab 3: Locatie =====
+    with tabs[2]
     with locatie_tab:
         st.subheader("📍 Schadegevallen per locatie")
         if "Locatie_disp" not in df_filtered.columns:
@@ -1021,6 +1024,7 @@ with tabs[0]:
                                 st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
     # ===== Tab 4: Opzoeken =====
+    with tabs[3]:
     with opzoeken_tab:
         st.subheader("🔎 Opzoeken op personeelsnummer")
 
@@ -1121,6 +1125,7 @@ with tabs[0]:
 
     # ===== Tab 5: Coaching =====
     # ===== Tab 5: Coaching =====
+    with tabs[4]:
     with coaching_tab:
         try:
             st.subheader("🎯 Coaching – vergelijkingen")
