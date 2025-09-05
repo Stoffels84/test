@@ -780,7 +780,7 @@ def run_dashboard():
 # =======================
 # TAB 1: Chauffeur
 # =======================
-    with Chauffeur_tab:
+    with voertuig_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
     grp = (
