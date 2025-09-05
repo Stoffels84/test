@@ -771,8 +771,6 @@ def run_dashboard():
     )
 
 
-# zodra df_filtered klaar is:
-st.session_state["df_filtered"] = df_filtered
 
 
     # ===== Tabs aanmaken (BLIJF binnen run_dashboard) =====
@@ -787,7 +785,8 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
 # ===== Tab 1: Chauffeur =====
 # ------ Tabs aanmaken (één lijn) ------
 tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"])
-
+# zodra df_filtered klaar is:
+st.session_state["df_filtered"] = df_filtered
 # ======================================
 # TAB 1: Chauffeur  (gebruik tabs[0])
 # ======================================
