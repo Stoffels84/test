@@ -777,14 +777,14 @@ def run_dashboard():
     )
 
     # ===== Tab 1: Chauffeur =====
-    with chauffeur_tab:
-        st.subheader("📂 Schadegevallen per chauffeur")
+# ===== Tab 1: Chauffeur =====
+with chauffeur_tab:
+    st.subheader("📂 Schadegevallen per chauffeur")
 
-        # Groeperen per chauffeur
-        if "volledige naam" not in df_filtered.columns:
-            st.error("Kolom 'volledige naam' ontbreekt in df_filtered.")
-            return
-
+    # Groeperen per chauffeur
+    if "volledige naam" not in df_filtered.columns:
+        st.error("Kolom 'volledige naam' ontbreekt in df_filtered.")
+    else:
         grp = (
             df_filtered.groupby("volledige naam").size()
             .sort_values(ascending=False)
@@ -806,13 +806,12 @@ def run_dashboard():
                     min_value=1,
                     value=max(1, aantal_ch),
                     step=1,
-                    key="chf_manual_count",
-                    help="Gebruik dit als de populatie groter is dan het aantal dat nu schades heeft."
+                    key="chf_manual_count"
                 )
             c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, man_ch), 2))
             c3.metric("Totaal aantal schades", totaal_schades)
 
-            # Intervallen bepalen (stap 5)
+            # Intervallen bepalen (stapgrootte 5)
             step = 5
             max_val = int(grp["aantal"].max())
             edges = list(range(0, max_val + step, step))
@@ -834,36 +833,30 @@ def run_dashboard():
                 left, right = int(interval.left), int(interval.right)
                 low = max(1, left + 1)
 
-                # Bovenste accordeon: interval
-                with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False, key=f"exp_int_{low}_{right}"):
+                # Interval-expander
+                with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
                     g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
 
-                    # Per chauffeur een eigen expander
+                    # Per chauffeur een expander
                     for _, row in g.iterrows():
                         raw = str(row["chauffeur_raw"])
 
-                        # Displaynaam veilig ophalen
+                        # Displaynaam ophalen
                         if "volledige naam_disp" in df_filtered.columns:
                             disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
                             disp = disp_series.iloc[0] if not disp_series.empty else raw
                         else:
                             disp = raw
 
-                        # Badge helper (fallback naar lege string)
+                        # Badge ophalen (fallback naar lege string)
                         try:
                             badge = badge_van_chauffeur(raw) or ""
                         except Exception:
                             badge = ""
 
-                        # Key veilig maken
-                        slug = re.sub(r"[^a-zA-Z0-9_\-]+", "_", f"{low}_{right}_{raw}")[:100]
-
-                        with st.expander(
-                            f"{badge}{disp} — {int(row['aantal'])} schadegevallen",
-                            expanded=False,
-                            key=f"exp_ch_{slug}"
-                        ):
-                            subset_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_filtered.columns]
+                        # Chauffeur-expander
+                        with st.expander(f"{badge}{disp} — {int(row['aantal'])} schadegevallen", expanded=False):
+                            subset_cols = [c for c in ["Datum","BusTram_disp","Locatie_disp","teamcoach_disp","Link"] if c in df_filtered.columns]
                             details = (
                                 df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols]
                                 .sort_values("Datum") if "Datum" in subset_cols else
@@ -883,10 +876,9 @@ def run_dashboard():
                                     loc      = r.get("Locatie_disp", "onbekend")
                                     coach    = r.get("teamcoach_disp", "onbekend")
 
-                                    # Link extraheren via helper indien aanwezig
-                                    link_val = r.get("Link")
+                                    # Link extraheren
                                     try:
-                                        link = extract_url(link_val) if "Link" in details.columns else None
+                                        link = extract_url(r.get("Link")) if "Link" in details.columns else None
                                     except Exception:
                                         link = None
 
@@ -895,7 +887,6 @@ def run_dashboard():
                                         prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"),
                                         unsafe_allow_html=True
                                     )
-
 
 
     # ===== Tab 2: Voertuig =====
