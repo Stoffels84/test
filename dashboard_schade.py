@@ -775,56 +775,94 @@ def run_dashboard():
     )
 
 
-    # ===== Tab 1: Chauffeur =====
-    with chauffeur_tab:
-        st.subheader("📂 Schadegevallen per chauffeur")
-        grp = (
-            df_filtered.groupby("volledige naam").size()
-            .sort_values(ascending=False).reset_index(name="aantal")
-            .rename(columns={"volledige naam": "chauffeur_raw"})
+# ===== Tab 1: Chauffeur =====
+with chauffeur_tab:
+    st.subheader("📂 Schadegevallen per chauffeur")
+
+    grp = (
+        df_filtered.groupby("volledige naam").size()
+        .sort_values(ascending=False).reset_index(name="aantal")
+        .rename(columns={"volledige naam": "chauffeur_raw"})
+    )
+
+    if grp.empty:
+        st.info("Geen schadegevallen binnen de huidige filters.")
+    else:
+        totaal_schades = int(grp["aantal"].sum())
+        aantal_ch = int(grp.shape[0])
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Aantal chauffeurs (met schade)", aantal_ch)
+            man_ch = st.number_input(
+                "Handmatig aantal chauffeurs",
+                min_value=1,
+                value=max(1, aantal_ch),
+                step=1,
+                key="chf_manual_count"
+            )
+        c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
+        c3.metric("Totaal aantal schades", totaal_schades)
+
+        # Bepaal intervallen
+        step = 5
+        max_val = int(grp["aantal"].max())
+        edges = list(range(0, max_val + step, step))
+        if edges[-1] < max_val:
+            edges.append(max_val + step)
+        grp["interval"] = pd.cut(
+            grp["aantal"],
+            bins=edges,
+            right=True,
+            include_lowest=True
         )
-        if grp.empty:
-            st.info("Geen schadegevallen binnen de huidige filters.")
-        else:
-            totaal_schades = int(grp["aantal"].sum())
-            aantal_ch = int(grp.shape[0])
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric("Aantal chauffeurs (met schade)", aantal_ch)
-                man_ch = st.number_input("Handmatig aantal chauffeurs", min_value=1, value=max(1, aantal_ch), step=1, key="chf_manual_count")
-            c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
-            c3.metric("Totaal aantal schades", totaal_schades)
+        # Loop over intervallen
+        for interval, g in grp.groupby("interval", sort=False):
+            if g.empty or pd.isna(interval):
+                continue
 
-            step = 5
-            max_val = int(grp["aantal"].max())
-            edges = list(range(0, max_val + step, step))
-            if edges[-1] < max_val:
-                edges.append(max_val + step)
-            grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
+            left, right = int(interval.left), int(interval.right)
+            low = max(1, left + 1)
 
-            for interval, g in grp.groupby("interval", sort=False):
-                if g.empty or pd.isna(interval):
-                    continue
-                left, right = int(interval.left), int(interval.right)
-                low = max(1, left + 1)
-                with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
-                    g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
-                    for _, row in g.iterrows():
-                        raw  = str(row["chauffeur_raw"])
-                        disp = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"].iloc[0]
-                        badge = badge_van_chauffeur(raw)
-                        st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
-                        subset_cols = [c for c in ["Datum","BusTram_disp","Locatie_disp","teamcoach_disp","Link"] if c in df_filtered.columns]
-                        details = df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols].sort_values("Datum")
+            # Interval-expander
+            with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
+                g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
+
+                # Loop per chauffeur binnen dit interval
+                for _, row in g.iterrows():
+                    raw = str(row["chauffeur_raw"])
+                    disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
+                    disp = disp_series.iloc[0] if not disp_series.empty else raw
+                    badge = badge_van_chauffeur(raw)
+
+                    # Chauffeur-expander
+                    with st.expander(
+                        f"{badge}{disp} — {int(row['aantal'])} schadegevallen",
+                        expanded=False,
+                        key=f"exp_ch_{low}_{right}_{raw}"
+                    ):
+                        subset_cols = [
+                            c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]
+                            if c in df_filtered.columns
+                        ]
+                        details = (
+                            df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols]
+                            .sort_values("Datum")
+                        )
+
                         for _, r in details.iterrows():
                             datum_str = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
-                            voertuig   = r.get("BusTram_disp","onbekend")
-                            loc        = r.get("Locatie_disp","onbekend")
-                            coach      = r.get("teamcoach_disp","onbekend")
-                            link       = extract_url(r.get("Link")) if "Link" in details.columns else None
+                            voertuig = r.get("BusTram_disp", "onbekend")
+                            loc = r.get("Locatie_disp", "onbekend")
+                            coach = r.get("teamcoach_disp", "onbekend")
+                            link = extract_url(r.get("Link")) if "Link" in details.columns else None
+
                             prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                            st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
+                            st.markdown(
+                                prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"),
+                                unsafe_allow_html=True
+                            )
 
     # ===== Tab 2: Voertuig =====
     with voertuig_tab:
