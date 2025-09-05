@@ -520,21 +520,7 @@ def run_dashboard():
             .str.strip()            # trim
     )
 
-    # ===== Kolomnamen resolven (chauffeur) =====
-    def resolve_col(df_in: pd.DataFrame, candidates: list[str]) -> str | None:
-        for c in candidates:
-            if c in df_in.columns:
-                return c
-        return None
 
-    COL_NAAM = resolve_col(
-        df_filtered,
-        ["volledige naam", "volledige_naam", "chauffeur", "chauffeur naam", "naam", "volledigenaam"]
-    )
-    COL_NAAM_DISP = resolve_col(
-        df_filtered,
-        ["volledige naam_disp", "volledige_naam_disp", "naam_display", "displaynaam"]
-    )
 
    # ===== Tabs =====
 chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
