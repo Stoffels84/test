@@ -777,9 +777,6 @@ def run_dashboard():
 
 
     # ===== Tab 1: Chauffeur =====
-# ---- Tabs aanmaken ----
-tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"])
-
 # =======================
 # TAB 1: Chauffeur
 # =======================
