@@ -1294,3 +1294,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+open_all = st.checkbox("Alles uitklappen in dit interval", value=False)
+with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=open_all):
+    ...
+    with st.expander(f"{badge}{disp} — {int(row['aantal'])} schadegevallen", expanded=open_all):
+        ...
