@@ -538,7 +538,7 @@ with chauffeur_tab:
                 return c
         return None
     COL_NAAM = resolve_col(
-        df_filtered,
+        df_filtered
         ["volledige naam", "volledige_naam", "chauffeur", "chauffeur naam", "naam", "volledigenaam"]
     )
     COL_NAAM_DISP = resolve_col(
