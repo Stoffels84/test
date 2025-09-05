@@ -784,79 +784,98 @@ tabs = st.tabs(["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeke
 # ======================================
 # TAB 1: Chauffeur  (gebruik tabs[0])
 # ======================================
-with tabs[0]:
+# ===== Tab 1: Chauffeur =====
+with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
+    # Robuust: haal gefilterde dataset op uit session_state (fallback op df)
+    df_ch = st.session_state.get("df_filtered", df_filtered if 'df_filtered' in locals() else df)
+
+    # Veiligheidscheck
+    if "volledige naam" not in df_ch.columns:
+        st.warning("Kolom 'volledige naam' ontbreekt in de dataset.")
+        st.stop()
+
+    # Groeperen per chauffeur
     grp = (
-        df_filtered.groupby("volledige naam").size()
-        .sort_values(ascending=False).reset_index(name="aantal")
+        df_ch.groupby("volledige naam").size()
+        .sort_values(ascending=False)
+        .reset_index(name="aantal")
         .rename(columns={"volledige naam": "chauffeur_raw"})
     )
 
     if grp.empty:
         st.info("Geen schadegevallen binnen de huidige filters.")
-    else:
-        totaal_schades = int(grp["aantal"].sum())
-        aantal_ch = int(grp.shape[0])
+        st.stop()
 
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("Aantal chauffeurs (met schade)", aantal_ch)
-            man_ch = st.number_input(
-                "Handmatig aantal chauffeurs",
-                min_value=1,
-                value=max(1, aantal_ch),
-                step=1,
-                key="chf_manual_count"
-            )
-        c2.metric("Gemiddeld aantal schades", round(totaal_schades / man_ch, 2))
-        c3.metric("Totaal aantal schades", totaal_schades)
+    # KPI's
+    totaal_schades = int(grp["aantal"].sum())
+    aantal_ch = int(grp.shape[0])
 
-        expand_all_chf = st.checkbox("Alles openklappen", value=False, key="chf_expand_all")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Aantal chauffeurs (met schade)", aantal_ch)
+        man_ch = st.number_input(
+            "Handmatig aantal chauffeurs",
+            min_value=1,
+            value=max(1, aantal_ch),
+            step=1,
+            key="chf_manual_count"
+        )
+    c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, man_ch), 2))
+    c3.metric("Totaal aantal schades", totaal_schades)
 
-        # Intervallen (1–5, 6–10, …)
-        step = 5
-        max_val = int(grp["aantal"].max())
-        edges = list(range(0, max_val + step, step))
-        if edges[-1] < max_val:
-            edges.append(max_val + step)
-        grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
+    # Optie: alle chauffeur-accordeons standaard openen
+    expand_all_chf = st.checkbox("Alles openklappen", value=False, key="chf_expand_all")
 
-        # Per interval tonen
-        for interval, g in grp.groupby("interval", sort=False):
-            if g.empty or pd.isna(interval):
-                continue
-            left, right = int(interval.left), int(interval.right)
-            low = max(1, left + 1)
+    # Intervallen (1–5, 6–10, …)
+    step = 5
+    max_val = int(grp["aantal"].max())
+    # edges: 0,5,10,... + vangnet als max exact op de rand valt
+    edges = list(range(0, ((max_val // step) + 2) * step, step))
+    grp["interval"] = pd.cut(grp["aantal"], bins=edges, right=True, include_lowest=True)
 
-            with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
-                g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
-                for _, row in g.iterrows():
-                    raw = str(row["chauffeur_raw"])
+    # Per interval tonen
+    for interval, g in grp.groupby("interval", sort=False):
+        if g.empty or pd.isna(interval):
+            continue
+        left, right = int(interval.left), int(interval.right)
+        low = max(1, left + 1)
 
-                    # Veilige displaynaam met fallback
-                    disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
-                    disp = disp_series.iloc[0] if not disp_series.empty else raw
+        with st.expander(f"{low} t/m {right} schades ({len(g)} chauffeurs)", expanded=False):
+            g = g.sort_values("aantal", ascending=False).reset_index(drop=True)
 
-                    badge = badge_van_chauffeur(raw)
-                    aantal = int(row["aantal"])
-                    title = f"{badge}{disp} — {aantal} schadegevallen"
+            for _, row in g.iterrows():
+                raw = str(row["chauffeur_raw"])
 
-                    with st.expander(title, expanded=expand_all_chf):
-                        subset_cols = [c for c in ["Datum","BusTram_disp","Locatie_disp","teamcoach_disp","Link"] if c in df_filtered.columns]
-                        details = df_filtered.loc[df_filtered["volledige naam"] == raw, subset_cols].sort_values("Datum")
+                # Displaynaam veilig ophalen met fallback
+                disp_series = df_ch.loc[df_ch["volledige naam"] == raw, "volledige naam_disp"] \
+                              if "volledige naam_disp" in df_ch.columns else pd.Series([], dtype="object")
+                disp = disp_series.iloc[0] if not disp_series.empty else raw
 
-                        if details.empty:
-                            st.caption("Geen rijen binnen je huidige filters.")
-                        else:
-                            for _, r in details.iterrows():
-                                datum_str = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
-                                voertuig   = r.get("BusTram_disp","onbekend")
-                                loc        = r.get("Locatie_disp","onbekend")
-                                coach      = r.get("teamcoach_disp","onbekend")
-                                link       = extract_url(r.get("Link")) if "Link" in details.columns else None
-                                prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                                st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
+                badge = badge_van_chauffeur(raw)
+                aantal = int(row["aantal"])
+                title = f"{badge}{disp} — {aantal} schadegevallen"
+
+                # Accordeon per chauffeur
+                with st.expander(title, expanded=expand_all_chf):
+                    subset_cols = [c for c in ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if c in df_ch.columns]
+                    details = (
+                        df_ch.loc[df_ch["volledige naam"] == raw, subset_cols]
+                        .sort_values("Datum")
+                    )
+
+                    if details.empty:
+                        st.caption("Geen rijen binnen je huidige filters.")
+                    else:
+                        for _, r in details.iterrows():
+                            datum_str = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
+                            voertuig   = r.get("BusTram_disp", "onbekend")
+                            loc        = r.get("Locatie_disp", "onbekend")
+                            coach      = r.get("teamcoach_disp", "onbekend")
+                            link       = extract_url(r.get("Link")) if "Link" in details.columns else None
+                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                            st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
 
 
