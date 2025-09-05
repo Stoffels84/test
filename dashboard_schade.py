@@ -771,6 +771,38 @@ def run_dashboard():
 
 
 
+
+
+
+# --- Robuuste kolom-normalisatie + resolvers ---
+def _normalize_columns(df):
+    df = df.copy()
+    df.columns = (
+        df.columns.astype(str)
+        .str.normalize("NFKC")  # normaliseer unicode varianten
+        .str.strip()            # trim spaties
+        .str.lower()            # alles lower-case
+    )
+    return df
+
+df_filtered = _normalize_columns(df_filtered)
+
+def resolve_col(df, candidates):
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+COL_NAAM = resolve_col(
+    df_filtered,
+    ["volledige naam", "volledige_naam", "chauffeur", "chauffeur naam", "naam", "volledigenaam"]
+)
+COL_NAAM_DISP = resolve_col(
+    df_filtered,
+    ["volledige naam_disp", "volledige_naam_disp", "naam_display", "displaynaam"]
+)
+
+
 # ===== Tabs + Chauffeur-tab (zelfstandig blok) =====
 chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
     ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
@@ -780,20 +812,26 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
 with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
-    if "volledige naam" not in df_filtered.columns:
-        st.error("Kolom 'volledige naam' ontbreekt in df_filtered.")
+    if not COL_NAAM:
+        st.error(
+            "Kolom voor chauffeur ontbreekt in df_filtered. "
+            f"Beschikbare kolommen: {list(df_filtered.columns)}"
+        )
     else:
-        # Groeperen en sorteren
+        # 1) Groeperen en sorteren
         grp = (
-            df_filtered.groupby("volledige naam").size()
+            df_filtered
+            .groupby(COL_NAAM, dropna=False)
+            .size()
             .sort_values(ascending=False)
             .reset_index(name="aantal")
-            .rename(columns={"volledige naam": "chauffeur_raw"})
+            .rename(columns={COL_NAAM: "chauffeur_raw"})
         )
 
         if grp.empty:
             st.info("Geen schadegevallen binnen de huidige filters.")
         else:
+            # 2) Kenngetallen
             totaal_schades = int(grp["aantal"].sum())
             aantal_ch = int(grp.shape[0])
 
@@ -805,24 +843,36 @@ with chauffeur_tab:
 
             st.markdown("---")
 
-            # Lijst tonen van hoog naar laag
+            # 3) Displaynaam-map één keer opbouwen (ipv per rij filteren)
+            if COL_NAAM_DISP:
+                disp_map = (
+                    df_filtered[[COL_NAAM, COL_NAAM_DISP]]
+                    .dropna()
+                    .drop_duplicates()
+                    .set_index(COL_NAAM)[COL_NAAM_DISP]
+                    .to_dict()
+                )
+            else:
+                disp_map = {}
+
+            # 4) Badge veilig en gecachet ophalen
+            from functools import lru_cache
+
+            @lru_cache(maxsize=None)
+            def _badge_safe(raw):
+                try:
+                    b = badge_van_chauffeur(raw)
+                    return b or ""
+                except Exception:
+                    return ""
+
+            # 5) Lijst renderen
             for _, row in grp.iterrows():
                 raw = str(row["chauffeur_raw"])
-
-                # Displaynaam ophalen
-                if "volledige naam_disp" in df_filtered.columns:
-                    disp_series = df_filtered.loc[df_filtered["volledige naam"] == raw, "volledige naam_disp"]
-                    disp = disp_series.iloc[0] if not disp_series.empty else raw
-                else:
-                    disp = raw
-
-                # Badge ophalen (optioneel)
-                try:
-                    badge = badge_van_chauffeur(raw) or ""
-                except Exception:
-                    badge = ""
-
+                disp = disp_map.get(raw, raw)
+                badge = _badge_safe(raw)
                 st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
+
 
 
     # ===== Tab 2: Voertuig =====
