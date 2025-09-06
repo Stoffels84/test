@@ -602,7 +602,7 @@ def run_dashboard():
 
 
                 # --- Handmatig aantal chauffeurs + gemiddeld (default 598, door gebruiker aanpasbaar) ---
-            st.markdown("---")
+            
             st.markdown("#### Handmatig aantal chauffeurs")
 
             # default = 598, gebruiker kan dit overschrijven
