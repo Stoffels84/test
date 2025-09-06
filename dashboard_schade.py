@@ -657,9 +657,7 @@ def run_dashboard():
 
 
 
-    # ===== Tab 3: Locatie =====
-    with locatie_tab:
-        st.subheader("📍 Schadegevallen per locatie")
+
 
 # ===== Tab 3: Locatie =====
 with locatie_tab:
