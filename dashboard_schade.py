@@ -889,21 +889,14 @@ def run_dashboard():
 
             # 3) Toon onder Teamcoach (één per regel)
             if coaching_dates:
-                # sorteer als datum wanneer mogelijk
-                try:
-                    coaching_dates = sorted(
-                        coaching_dates,
-                        key=lambda x: pd.to_datetime(x, dayfirst=True, errors="coerce")
-                    )
-                except Exception:
-                    coaching_dates = sorted(coaching_dates)
-            
                 st.markdown("**📅 Datum coaching:**")
-                for d in coaching_dates:
-                    st.markdown(f"- {d}")
+                # gebruik dezelfde kleurbol als bij de coachingstatus
+                dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
+                for d in sorted(coaching_dates, key=lambda x: datetime.strptime(x, "%d-%m-%Y")):
+                    st.markdown(f"- {dot} {d}".strip())
             else:
                 st.markdown("**📅 Datum coaching:** —")
-            # ▲▲ Datum coaching onder Teamcoach ▲▲
+
 
 
 
