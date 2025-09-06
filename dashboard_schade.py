@@ -630,20 +630,20 @@ def run_dashboard():
 
 
                 
-                from functools import lru_cache
-                @lru_cache(maxsize=None)
-                def _badge_safe(raw):
-                    try:
-                        b = badge_van_chauffeur(raw)
-                        return b or ""
-                    except Exception:
-                        return ""
+            from functools import lru_cache
+            @lru_cache(maxsize=None)
+            def _badge_safe(raw):
+                try:
+                    b = badge_van_chauffeur(raw)
+                    return b or ""
+                except Exception:
+                    return ""
 
-                for _, row in grp.iterrows():
-                    raw = str(row["chauffeur_raw"])
-                    disp = disp_map.get(raw, raw)
-                    badge = _badge_safe(raw)
-                    st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
+            for _, row in grp.iterrows():
+                raw = str(row["chauffeur_raw"])
+                disp = disp_map.get(raw, raw)
+                badge = _badge_safe(raw)
+                st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
 
     # ===== Tab 2: Voertuig =====
     with voertuig_tab:
