@@ -281,6 +281,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     achternaam_keys = ["achternaam", "familienaam", "lastname", "last name", "surname", "naam"]
     coach_keys      = ["teamcoach", "coach", "team coach"]
     rating_keys     = ["beoordeling coaching", "beoordeling", "rating", "evaluatie"]
+    date_hints      = ["Datum coaching"]
 
     def lees_sheet(sheetnaam, status_label):
         ids = set()
