@@ -661,10 +661,7 @@ def run_dashboard():
     with locatie_tab:
         st.subheader("📍 Schadegevallen per locatie")
 
-        if "Locatie_disp" not in df_filtered.columns:
-            st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
-        else:
-            
+           
 
                 agg = (
                     work.groupby("Locatie_disp")
