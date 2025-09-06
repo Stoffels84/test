@@ -831,6 +831,7 @@ def run_dashboard():
         else:
             res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
             res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
+            ex_info = st.session_state.get("excel_info", {})
 
             if not res.empty:
                 naam_disp = res["volledige naam_disp"].iloc[0]
@@ -845,6 +846,7 @@ def run_dashboard():
                 naam_disp = (ex_info.get(pnr, {}) or {}).get("naam") or ""
                 teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
                 naam_raw = naam_disp
+                st.error("❌ Helaas, die chauffeur bestaat nog niet. Probeer opnieuw.")
 
             try:
                 s = str(naam_raw or "").strip()
