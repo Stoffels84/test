@@ -601,25 +601,24 @@ def run_dashboard():
             
             st.markdown("#### Handmatig aantal chauffeurs")
 
-# --- Handmatig aantal chauffeurs (default 598, aanpasbaar) ---
-st.markdown("#### Handmatig aantal chauffeurs")
+                # --- Handmatig aantal chauffeurs (default 598, aanpasbaar) ---
+                st.markdown("#### Handmatig aantal chauffeurs")
 
-handmatig_aantal = st.number_input(
-    "Handmatig aantal chauffeurs",
-    min_value=1,
-    value=598,   # standaard op 598
-    step=1
-)
+                handmatig_aantal = st.number_input(
+                    "Handmatig aantal chauffeurs",
+                    min_value=1,
+                    value=598,   # standaard op 598
+                    step=1
+                )
 
-# herbereken gemiddelde o.b.v. handmatige invoer
-gem_schades_handmatig = round(totaal_schades / max(1, handmatig_aantal), 2)
+                # herbereken gemiddelde o.b.v. handmatige invoer
+                gem_schades_handmatig = round(totaal_schades / max(1, handmatig_aantal), 2)
 
-# toon metric
-col_m, _ = st.columns([1, 2])
-with col_m:
-    st.metric("Gemiddeld aantal schades (handmatig)", gem_schades_handmatig)
+                # toon metric
+                col_m, _ = st.columns([1, 2])
+                with col_m:
+                    st.metric("Gemiddeld aantal schades (handmatig)", gem_schades_handmatig)
 
-st.markdown("---")
 
             st.markdown("---")
                 
