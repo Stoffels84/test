@@ -619,7 +619,7 @@ def run_dashboard():
 
             # toon metric + verschil t.o.v. automatisch gemiddelde (chauffeurs met schade)
             col_m, _ = st.columns([1, 2])
-            with col_m:
+                with col_m:
             st.metric(
                 "Gemiddeld aantal schades (handmatig)",
                 gem_schades_handmatig
