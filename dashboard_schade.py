@@ -585,14 +585,14 @@ with chauffeur_tab:
             c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, aantal_ch), 2))
             c3.metric("Totaal aantal schades", totaal_schades)
 
-            # --- Handmatig aantal chauffeurs ---
+            # --- Handmatig aantal chauffeurs (default 598) + gemiddeld ---
             st.markdown("---")
             st.markdown("#### Handmatig aantal chauffeurs")
 
             handmatig_aantal = st.number_input(
                 "Handmatig aantal chauffeurs",
                 min_value=1,
-                value=598,  # default = 598, gebruiker kan overschrijven
+                value=598,   # default; gebruiker kan overschrijven
                 step=1
             )
 
@@ -622,6 +622,7 @@ with chauffeur_tab:
                 disp_map = {}
 
             from functools import lru_cache
+
             @lru_cache(maxsize=None)
             def _badge_safe(raw):
                 try:
