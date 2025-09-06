@@ -620,12 +620,7 @@ def run_dashboard():
                 st.markdown("---")
 
 
-
-            st.markdown("---")
-                
-
-
-                
+               
             from functools import lru_cache
             @lru_cache(maxsize=None)
             def _badge_safe(raw):
