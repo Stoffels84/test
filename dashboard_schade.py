@@ -887,39 +887,36 @@ def run_dashboard():
             st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
 
 
-
-                # ▼▼ Datum coaching onder Teamcoach (met per-datum kleur) ▼▼
-                coaching_rows = []  # lijst van tuples (dd-mm-YYYY, emoji)
-                
-                coach_df = st.session_state.get("coachings_df")
-                if isinstance(coach_df, pd.DataFrame) and not coach_df.empty and "Datum coaching" in coach_df.columns:
-                    mask = coach_df["dienstnummer"].astype(str).str.strip() == str(pnr).strip()
-                    rows = coach_df.loc[mask].copy()
-                    if not rows.empty:
-                        rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce")
-                        rows = rows[rows["Datum coaching"].notna()]
-                        for _, r in rows.iterrows():
-                            dstr = r["Datum coaching"].strftime("%d-%m-%Y")
-                            rate = str(r.get("Beoordeling", "") or "").strip().lower()
-                            dot = _beoordeling_emoji(rate).strip() or ""   # 🟢 🟠 🔴 (leeg = geen beoordeling)
-                            coaching_rows.append((dstr, dot))
-                
-                # Fallback op oude lijst als er geen rijen zijn
-                if not coaching_rows and coaching_dates:
-                    dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
-                    coaching_rows = [(d, dot) for d in coaching_dates]
-                
-                # Tonen
-                if coaching_rows:
-                    st.markdown("**📅 Datum coaching:**")
-                    coaching_rows.sort(key=lambda t: datetime.strptime(t[0], "%d-%m-%Y"))
-                    for d, dot in coaching_rows:
-                        st.markdown(f"- {dot} {d}".strip())
-                else:
-                    st.markdown("**📅 Datum coaching:** —")
-                # ▲▲ Datum coaching met per-datum kleur ▲▲
-
-
+            # ▼▼ Datum coaching onder Teamcoach (met per-datum kleur) ▼▼
+            coaching_rows = []  # lijst van tuples (dd-mm-YYYY, emoji)
+            
+            coach_df = st.session_state.get("coachings_df")
+            if isinstance(coach_df, pd.DataFrame) and not coach_df.empty and "Datum coaching" in coach_df.columns:
+                mask = coach_df["dienstnummer"].astype(str).str.strip() == str(pnr).strip()
+                rows = coach_df.loc[mask].copy()
+                if not rows.empty:
+                    rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce")
+                    rows = rows[rows["Datum coaching"].notna()]
+                    for _, r in rows.iterrows():
+                        dstr = r["Datum coaching"].strftime("%d-%m-%Y")
+                        rate = str(r.get("Beoordeling", "") or "").strip().lower()
+                        dot = _beoordeling_emoji(rate).strip() or ""   # 🟢 🟠 🔴 (leeg = geen beoordeling)
+                        coaching_rows.append((dstr, dot))
+            
+            # Fallback op oude lijst als er geen rijen zijn
+            if not coaching_rows and coaching_dates:
+                dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
+                coaching_rows = [(d, dot) for d in coaching_dates]
+            
+            # Tonen
+            if coaching_rows:
+                st.markdown("**📅 Datum coaching:**")
+                coaching_rows.sort(key=lambda t: datetime.strptime(t[0], "%d-%m-%Y"))
+                for d, dot in coaching_rows:
+                    st.markdown(f"- {dot} {d}".strip())
+            else:
+                st.markdown("**📅 Datum coaching:** —")
+            # ▲▲ Datum coaching met per-datum kleur ▲▲
 
 
 
