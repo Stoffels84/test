@@ -890,25 +890,41 @@ def run_dashboard():
             # ▼▼ Datum coaching onder Teamcoach (met per-datum kleur) ▼▼
             coaching_rows = []  # lijst van tuples (dd-mm-YYYY, emoji)
             
+            # 1) Primaire bron: per-rij DF met datum + beoordeling
             coach_df = st.session_state.get("coachings_df")
-            if isinstance(coach_df, pd.DataFrame) and not coach_df.empty and "Datum coaching" in coach_df.columns:
+            if (isinstance(coach_df, pd.DataFrame) and not coach_df.empty
+                    and {"dienstnummer", "Datum coaching"}.issubset(set(coach_df.columns))):
                 mask = coach_df["dienstnummer"].astype(str).str.strip() == str(pnr).strip()
-                rows = coach_df.loc[mask].copy()
+                rows = coach_df.loc[mask, ["Datum coaching", "Beoordeling"]].copy()
                 if not rows.empty:
-                    rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce")
-                    rows = rows[rows["Datum coaching"].notna()]
+                    rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce", dayfirst=True)
+                    rows = rows.dropna(subset=["Datum coaching"])
                     for _, r in rows.iterrows():
                         dstr = r["Datum coaching"].strftime("%d-%m-%Y")
                         rate = str(r.get("Beoordeling", "") or "").strip().lower()
                         dot = _beoordeling_emoji(rate).strip() or ""   # 🟢 🟠 🔴 (leeg = geen beoordeling)
                         coaching_rows.append((dstr, dot))
             
-            # Fallback op oude lijst als er geen rijen zijn
-            if not coaching_rows and coaching_dates:
-                dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
-                coaching_rows = [(d, dot) for d in coaching_dates]
+            # 2) Fallback: uit excel_info (oude lijst), met globale status-kleur
+            if not coaching_rows:
+                coaching_dates = []
+                ex_info = st.session_state.get("excel_info", {})
+                if pnr in ex_info:
+                    raw = (
+                        (ex_info[pnr] or {}).get("coaching_datums")
+                        or (ex_info[pnr] or {}).get("Datum coaching")
+                        or (ex_info[pnr] or {}).get("datum_coaching")
+                    )
+                    if isinstance(raw, (list, tuple, set)):
+                        coaching_dates = [str(x).strip() for x in raw if str(x).strip()]
+                    elif isinstance(raw, str) and raw.strip():
+                        coaching_dates = re.split(r"[;,]\s*", raw.strip())
             
-            # Tonen
+                if coaching_dates:
+                    dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
+                    coaching_rows = [(d, dot) for d in coaching_dates]
+            
+            # 3) Tonen
             if coaching_rows:
                 st.markdown("**📅 Datum coaching:**")
                 coaching_rows.sort(key=lambda t: datetime.strptime(t[0], "%d-%m-%Y"))
@@ -917,6 +933,7 @@ def run_dashboard():
             else:
                 st.markdown("**📅 Datum coaching:** —")
             # ▲▲ Datum coaching met per-datum kleur ▲▲
+
 
 
 
