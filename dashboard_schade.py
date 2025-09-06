@@ -517,8 +517,10 @@ def run_dashboard():
     # Data laden
     df, options = load_schade_prepared()
     gecoachte_ids, coaching_ids, total_geel, total_blauw, excel_info, coach_warn = lees_coachingslijst()
-    st.session_state["coaching_ids"] = coaching_ids
-    st.session_state["excel_info"]   = excel_info
+    st.session_state["gecoachte_ids"] = gecoachte_ids    # nieuw: voltooide set bewaren
+    st.session_state["coaching_ids"]  = coaching_ids
+    st.session_state["excel_info"]    = excel_info
+
 
     # Extra kolommen
     df["gecoacht_geel"]  = df["dienstnummer"].astype(str).isin(gecoachte_ids)
@@ -834,11 +836,9 @@ def run_dashboard():
             chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
 
             set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
-            set_voltooid = set(map(str, st.session_state.get("excel_info", {}).keys()))
-            if pnr in set_lopend:
-                status_lbl, status_emoji = "Lopend", "⚫"
-                status_bron = "bron: Coaching (lopend)"
-            elif pnr in set_voltooid:
+            set_voltooid = set(map(str, st.session_state.get("gecoachte_ids", set())))  # juiste set
+            
+            if pnr in set_voltooid:   # Voltooid krijgt voorrang
                 beo_raw = (st.session_state.get("excel_info", {}).get(pnr, {}) or {}).get("beoordeling", "")
                 b = str(beo_raw or "").strip().lower()
                 if b in {"zeer goed", "goed"}:
@@ -850,9 +850,15 @@ def run_dashboard():
                 else:
                     status_lbl, status_emoji = "Voltooid (geen beoordeling)", "🟡"
                 status_bron = f"bron: Voltooide coachings (beoordeling: {beo_raw or '—'})"
+            
+            elif pnr in set_lopend:
+                status_lbl, status_emoji = "Lopend", "⚫"
+                status_bron = "bron: Coaching (lopend)"
+            
             else:
                 status_lbl, status_emoji = "Niet aangevraagd", "⚪"
                 status_bron = "bron: Coachingslijst.xlsx"
+
 
             st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
             st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
