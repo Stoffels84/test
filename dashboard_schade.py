@@ -598,6 +598,38 @@ def run_dashboard():
                 else:
                     disp_map = {}
 
+
+
+
+                # --- Handmatig aantal chauffeurs + gemiddeld (default 598, door gebruiker aanpasbaar) ---
+            st.markdown("---")
+            st.markdown("#### Handmatig aantal chauffeurs")
+
+            # default = 598, gebruiker kan dit overschrijven
+            handmatig_aantal = st.number_input(
+            "Handmatig aantal chauffeurs",
+                min_value=1,
+               value=598,   # default
+                step=1
+            )
+
+            # herbereken gemiddelde o.b.v. handmatige invoer
+            gem_schades_handmatig = round(totaal_schades / max(1, handmatig_aantal), 2)
+            gem_schades_auto = round(totaal_schades / max(1, aantal_ch), 2)
+
+            # toon metric + verschil t.o.v. automatisch gemiddelde (chauffeurs met schade)
+            col_m, _ = st.columns([1, 2])
+            with col_m:
+                st.metric(
+                   "Gemiddeld aantal schades (handmatig)",
+                    gem_schades_handmatig,
+                    delta=round(gem_schades_handmatig - gem_schades_auto, 2)
+                )
+
+                
+
+
+                
                 from functools import lru_cache
                 @lru_cache(maxsize=None)
                 def _badge_safe(raw):
