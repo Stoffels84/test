@@ -667,9 +667,9 @@ def run_dashboard():
         work = df_filtered.copy()
         work["dienstnummer_s"] = work["dienstnummer"].astype(str)
 
-        if work.empty:
+    if work.empty:
             st.info("Geen resultaten binnen de huidige filters/keuze.")
-        else:
+    else:
             agg = (
                 work.groupby("Locatie_disp")
                     .agg(
