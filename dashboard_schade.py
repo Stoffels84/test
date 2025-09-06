@@ -623,7 +623,7 @@ def run_dashboard():
             st.metric(
                 "Gemiddeld aantal schades (handmatig)",
                 gem_schades_handmatig
-           )
+            )
 
             st.markdown("---")
                 
