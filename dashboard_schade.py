@@ -756,26 +756,7 @@ def run_dashboard():
                         key="dl_loc_summary"
                     )
 
-                    st.markdown("---")
-                    st.subheader("📂 Schadegevallen per locatie")
-                    for _, r in agg.sort_values("Schades", ascending=False).iterrows():
-                        locatie = r["Locatie"]
-                        subset = work.loc[work["Locatie_disp"] == locatie].copy()
-                        if subset.empty:
-                            continue
-                        kol_list = ["Datum","volledige naam_disp","BusTram_disp"]
-                        if "Link" in subset.columns:
-                            kol_list.append("Link")
-                        subset = subset[kol_list].sort_values("Datum")
 
-                        with st.expander(f"{locatie} — {len(subset)} schadegevallen", expanded=expand_all):
-                            for _, row in subset.iterrows():
-                                datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                                chauffeur = row.get("volledige naam_disp","onbekend")
-                                voertuig  = row.get("BusTram_disp","onbekend")
-                                link      = extract_url(row.get("Link")) if "Link" in subset.columns else None
-                                prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — "
-                                st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
 
     # ===== Tab 4: Opzoeken =====
     with opzoeken_tab:
