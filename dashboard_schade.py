@@ -921,11 +921,6 @@ def run_dashboard():
 
 
             
-
-
-            
-            
-            st.markdown(f"**🎯 Coachingstatus:** {status_emoji} {status_lbl}  \n*{status_bron}*")
             st.markdown("---")
 
             st.metric("Aantal schadegevallen", int(len(res)))
