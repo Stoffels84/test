@@ -624,7 +624,7 @@ def run_dashboard():
                    "Gemiddeld aantal schades (handmatig)",
                     gem_schades_handmatig,
                     delta=round(gem_schades_handmatig - gem_schades_auto, 2)
-                )
+            )
                st.markdown("---")
                 
 
