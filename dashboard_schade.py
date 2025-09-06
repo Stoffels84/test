@@ -661,8 +661,6 @@ def run_dashboard():
     with locatie_tab:
         st.subheader("📍 Schadegevallen per locatie")
 
-
-
     if "Locatie_disp" not in df_filtered.columns:
         st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
     else:
@@ -674,9 +672,12 @@ def run_dashboard():
         else:
             agg = (
                 work.groupby("Locatie_disp")
-                    .agg(Schades=("dienstnummer_s","size"),
-                         Unieke_chauffeurs=("dienstnummer_s","nunique"))
-                    .reset_index().rename(columns={"Locatie_disp":"Locatie"})
+                    .agg(
+                        Schades=("dienstnummer_s", "size"),
+                        Unieke_chauffeurs=("dienstnummer_s", "nunique"),
+                    )
+                    .reset_index()
+                    .rename(columns={"Locatie_disp": "Locatie"})
             )
 
             dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
@@ -700,30 +701,26 @@ def run_dashboard():
                 agg_view["Periode"] = agg_view.apply(
                     lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
                     if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
-                    axis=1
+                    axis=1,
                 )
 
-                cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"]
-
+                cols_show = ["Locatie", "Schades", "Unieke_chauffeurs", "Periode"]
 
                 st.dataframe(
-                    agg_view[["Locatie","Schades","Unieke_chauffeurs","Periode"]]
+                    agg_view[cols_show]
                         .sort_values("Schades", ascending=False)
                         .reset_index(drop=True),
                     use_container_width=True,
-                    height=700,   # bv. 700-900 px
+                    height=700,
                 )
-
 
                 st.download_button(
                     "⬇️ Download samenvatting (CSV)",
                     agg_view[cols_show].to_csv(index=False).encode("utf-8"),
                     file_name="locaties_samenvatting.csv",
                     mime="text/csv",
-                    key="dl_loc_summary"
+                    key="dl_loc_summary",
                 )
-
-
 
 
     # ===== Tab 4: Opzoeken =====
