@@ -267,6 +267,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     ids_geel, ids_blauw = set(), set()
     total_geel_rows, total_blauw_rows = 0, 0
     excel_info = {}
+    df_voltooide_clean = None  # <— nieuw
     try:
         xls = pd.ExcelFile(pad)
     except Exception as e:
@@ -281,7 +282,8 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     achternaam_keys = ["achternaam", "familienaam", "lastname", "last name", "surname", "naam"]
     coach_keys      = ["teamcoach", "coach", "team coach"]
     rating_keys     = ["beoordeling coaching", "beoordeling", "rating", "evaluatie"]
-    date_hints      = ["Datum coaching"]
+    # nieuw: mogelijke datumkolommen
+    date_hints      = ["datum coaching", "datumcoaching", "coaching datum", "datum"]
 
     def lees_sheet(sheetnaam, status_label):
         ids = set()
@@ -289,9 +291,11 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         try:
             dfc = pd.read_excel(xls, sheet_name=sheetnaam)
         except Exception:
-            return ids, total_rows
+            return ids, total_rows, None
 
         dfc.columns = dfc.columns.str.strip().str.lower()
+        cols_lower = {c.lower().strip(): c for c in dfc.columns}
+
         kol_pnr   = next((k for k in pnr_keys if k in dfc.columns), None)
         kol_full  = next((k for k in fullname_keys if k in dfc.columns), None)
         kol_vn    = next((k for k in voornaam_keys if k in dfc.columns), None)
@@ -299,9 +303,23 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
         kol_rate  = next((k for k in rating_keys if k in dfc.columns), None)
 
-        if kol_pnr is None:
-            return ids, total_rows
+        # nieuw: datumkolom zoeken
+        kol_date = None
+        for hint in date_hints:
+            if hint in dfc.columns:
+                kol_date = hint
+                break
+        # fallback: kolom die zowel 'datum' als 'coach' bevat
+        if not kol_date:
+            for k in dfc.columns:
+                if ("datum" in k) and ("coach" in k):
+                    kol_date = k
+                    break
 
+        if kol_pnr is None:
+            return ids, total_rows, None
+
+        # strings voor pnr
         s_pnr = (
             dfc[kol_pnr].astype(str)
             .str.extract(r"(\d+)", expand=False)
@@ -310,6 +328,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         total_rows = int(s_pnr.shape[0])
         ids = set(s_pnr.tolist())
 
+        # loop en vul excel_info
         s_pnr_reset = s_pnr.reset_index(drop=True)
         for i in range(len(s_pnr_reset)):
             pnr = s_pnr_reset.iloc[i]
@@ -321,16 +340,18 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
                 full = str(dfc[kol_full].iloc[i]).strip() if kol_full else ""
                 naam = full if full.lower() not in {"nan", "none", ""} else None
             else:
-                naam = f"{vn} {an}".strip()
-                if naam.lower() in {"nan", "none", ""}:
+                naam = f"{vn} {an}".strip() or None
+                if naam and naam.lower() in {"nan", "none", ""}:
                     naam = None
             tc = str(dfc[kol_coach].iloc[i]).strip() if kol_coach else None
             if tc and tc.lower() in {"nan", "none", ""}:
                 tc = None
+
             info = excel_info.get(pnr, {})
             if naam: info["naam"] = naam
             if tc:   info["teamcoach"] = tc
             info["status"] = status_label
+
             if kol_rate and status_label == "Voltooid":
                 raw_rate = str(dfc[kol_rate].iloc[i]).strip().lower()
                 if raw_rate and raw_rate not in {"nan", "none", ""}:
@@ -344,17 +365,56 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
                         "zeerslecht": "zeer slecht",
                     }
                     info["beoordeling"] = mapping.get(raw_rate, raw_rate)
+
+            # nieuw: datum coaching verzamelen
+            if kol_date:
+                d_raw = dfc[kol_date].iloc[i]
+                d = pd.to_datetime(d_raw, errors="coerce", dayfirst=True)
+                if pd.notna(d):
+                    lst = info.get("coaching_datums", [])
+                    if d.strftime("%d-%m-%Y") not in lst:
+                        lst.append(d.strftime("%d-%m-%Y"))
+                    info["coaching_datums"] = lst
+
             excel_info[pnr] = info
-        return ids, total_rows
+
+        # nieuw: compacte DF teruggeven voor session_state
+        df_small = None
+        if kol_date:
+            df_small = dfc[[kol_pnr, kol_date]].copy()
+            df_small.columns = ["dienstnummer", "Datum coaching"]
+            df_small["dienstnummer"] = (
+                df_small["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).str.strip()
+            )
+            df_small["Datum coaching"] = pd.to_datetime(df_small["Datum coaching"], errors="coerce", dayfirst=True)
+
+        return ids, total_rows, df_small
 
     s_geel  = vind_sheet(xls, "voltooide coachings")
     s_blauw = vind_sheet(xls, "coaching")
+
     if s_geel:
-        ids_geel,  total_geel_rows  = lees_sheet(s_geel,  "Voltooid")
+        ids_geel,  total_geel_rows,  df_voltooide_clean = lees_sheet(s_geel,  "Voltooid")
     if s_blauw:
-        ids_blauw, total_blauw_rows = lees_sheet(s_blauw, "Coaching")
+        ids_blauw, total_blauw_rows, _                 = lees_sheet(s_blauw, "Coaching")
+
+    # NIEUW: zet de DF in session_state zodat Tab 'Opzoeken' ze kan gebruiken
+    if isinstance(df_voltooide_clean, pd.DataFrame):
+        st.session_state["coachings_df"] = df_voltooide_clean
+
+    # normaliseer/unique datums per pnr
+    for p, inf in excel_info.items():
+        if "coaching_datums" in inf and isinstance(inf["coaching_datums"], list):
+            # sorteer en dedup
+            try:
+                dd = sorted(set(inf["coaching_datums"]),
+                            key=lambda x: pd.to_datetime(x, dayfirst=True, errors="coerce"))
+            except Exception:
+                dd = sorted(set(inf["coaching_datums"]))
+            inf["coaching_datums"] = dd
 
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
+
 
 # =========================
 # LOGIN FLOW (compact)
