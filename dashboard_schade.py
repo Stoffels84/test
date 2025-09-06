@@ -762,9 +762,13 @@ def run_dashboard():
 
             try:
                 s = str(naam_raw or "").strip()
-                naam_clean = re.sub(r"^\s*\d+\s*-\s*", "", s)
+                # Verwijder vooraan het pnr (of eender welk nummer) + optionele scheidingstekens
+                # dekt: "29179 Verwee", "29179 - Verwee", "29179: Verwee", "29179— Verwee", ...
+                patroon = rf"^\s*({re.escape(pnr)}|\d+)\s*[-:–—]?\s*"
+                naam_clean = re.sub(patroon, "", s)
             except Exception:
                 naam_clean = naam_disp
+
 
             chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
 
