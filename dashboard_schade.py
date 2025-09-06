@@ -698,11 +698,7 @@ def run_dashboard():
                     agg = agg.merge(v, left_on="Locatie", right_index=True, how="left")
                 else:
                     agg["Unieke_voertuigen"] = 0
-                if "teamcoach_disp" in work.columns:
-                    t = work.groupby("Locatie_disp")["teamcoach_disp"].nunique().rename("Unieke_teamcoaches")
-                    agg = agg.merge(t, left_on="Locatie", right_index=True, how="left")
-                else:
-                    agg["Unieke_teamcoaches"] = 0
+
 
                 dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
                 dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
@@ -725,7 +721,8 @@ def run_dashboard():
                         if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
                         axis=1
                     )
-                    cols_show = ["Locatie","Schades","Unieke_chauffeurs","Unieke_voertuigen","Unieke_teamcoaches","Periode"]
+                    cols_show = ["Locatie","Schades","Unieke_chauffeurs","Unieke_voertuigen","Periode"]
+
                     st.dataframe(
                         agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
                         use_container_width=True
