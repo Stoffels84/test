@@ -599,8 +599,6 @@ def run_dashboard():
                     disp_map = {}
 
             
-            st.markdown("#### Handmatig aantal chauffeurs")
-
                 # --- Handmatig aantal chauffeurs (default 598, aanpasbaar) ---
                 st.markdown("#### Handmatig aantal chauffeurs")
 
@@ -618,6 +616,9 @@ def run_dashboard():
                 col_m, _ = st.columns([1, 2])
                 with col_m:
                     st.metric("Gemiddeld aantal schades (handmatig)", gem_schades_handmatig)
+
+                st.markdown("---")
+
 
 
             st.markdown("---")
