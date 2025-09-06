@@ -379,14 +379,37 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
             excel_info[pnr] = info
 
         # nieuw: compacte DF teruggeven voor session_state
-        df_small = None
-        if kol_date:
-            df_small = dfc[[kol_pnr, kol_date]].copy()
-            df_small.columns = ["dienstnummer", "Datum coaching"]
-            df_small["dienstnummer"] = (
-                df_small["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).str.strip()
-            )
-            df_small["Datum coaching"] = pd.to_datetime(df_small["Datum coaching"], errors="coerce", dayfirst=True)
+# ... nadat kol_pnr, kol_date, kol_rate gevonden zijn
+
+            df_small = None
+            if kol_date:
+                df_small = dfc[[kol_pnr, kol_date]].copy()
+                df_small.columns = ["dienstnummer", "Datum coaching"]
+                df_small["dienstnummer"] = (
+                    df_small["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).str.strip()
+                )
+                df_small["Datum coaching"] = pd.to_datetime(
+                    df_small["Datum coaching"], errors="coerce", dayfirst=True
+                )
+            
+                # ▼ nieuw: beoordeling per rij normaliseren
+                if kol_rate:
+                    map_rate = {
+                        "zeer goed": "zeer goed",
+                        "goed": "goed",
+                        "voldoende": "voldoende",
+                        "onvoldoende": "onvoldoende",
+                        "slecht": "slecht",
+                        "zeer slecht": "zeer slecht",
+                        "zeergoed": "zeer goed",
+                        "zeerslecht": "zeer slecht",
+                    }
+                    df_small["Beoordeling"] = (
+                        dfc[kol_rate].astype(str).str.strip().str.lower().replace(map_rate)
+                    )
+                else:
+                    df_small["Beoordeling"] = None
+
 
         return ids, total_rows, df_small
 
@@ -865,43 +888,37 @@ def run_dashboard():
 
 
 
-            # ▼▼ Datum coaching onder Teamcoach ▼▼
-            coaching_dates = []
-            ex_info = st.session_state.get("excel_info", {})
-            coach_df = st.session_state.get("coachings_df")  # optioneel: DF met tab 'Voltooide coaching'
+                # ▼▼ Datum coaching onder Teamcoach (met per-datum kleur) ▼▼
+                coaching_rows = []  # lijst van tuples (dd-mm-YYYY, emoji)
+                
+                coach_df = st.session_state.get("coachings_df")
+                if isinstance(coach_df, pd.DataFrame) and not coach_df.empty and "Datum coaching" in coach_df.columns:
+                    mask = coach_df["dienstnummer"].astype(str).str.strip() == str(pnr).strip()
+                    rows = coach_df.loc[mask].copy()
+                    if not rows.empty:
+                        rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce")
+                        rows = rows[rows["Datum coaching"].notna()]
+                        for _, r in rows.iterrows():
+                            dstr = r["Datum coaching"].strftime("%d-%m-%Y")
+                            rate = str(r.get("Beoordeling", "") or "").strip().lower()
+                            dot = _beoordeling_emoji(rate).strip() or ""   # 🟢 🟠 🔴 (leeg = geen beoordeling)
+                            coaching_rows.append((dstr, dot))
+                
+                # Fallback op oude lijst als er geen rijen zijn
+                if not coaching_rows and coaching_dates:
+                    dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
+                    coaching_rows = [(d, dot) for d in coaching_dates]
+                
+                # Tonen
+                if coaching_rows:
+                    st.markdown("**📅 Datum coaching:**")
+                    coaching_rows.sort(key=lambda t: datetime.strptime(t[0], "%d-%m-%Y"))
+                    for d, dot in coaching_rows:
+                        st.markdown(f"- {dot} {d}".strip())
+                else:
+                    st.markdown("**📅 Datum coaching:** —")
+                # ▲▲ Datum coaching met per-datum kleur ▲▲
 
-            # 1) Probeer uit excel_info (verschillende mogelijke keys)
-            if pnr in ex_info:
-                raw = (
-                    (ex_info.get(pnr, {}) or {}).get("Datum coaching")
-                    or (ex_info.get(pnr, {}) or {}).get("datum_coaching")
-                    or (ex_info.get(pnr, {}) or {}).get("coaching_datums")
-                )
-                if isinstance(raw, (list, tuple, set)):
-                    coaching_dates = list(raw)
-                elif isinstance(raw, str) and raw.strip():
-                    # gescheiden door , of ;
-                    coaching_dates = re.split(r"[;,]\s*", raw.strip())
-
-            # 2) Zo niet: haal uit DataFrame van tab 'Voltooide coaching' (indien aanwezig)
-            if not coaching_dates and isinstance(coach_df, pd.DataFrame) and not coach_df.empty:
-                mask = coach_df["dienstnummer"].astype(str).str.strip() == pnr
-                if "Datum coaching" in coach_df.columns:
-                   # formatteer netjes en dedupliceer
-                    dates_series = pd.to_datetime(coach_df.loc[mask, "Datum coaching"], errors="coerce").dropna()
-                    coaching_dates = (
-                        dates_series.dt.strftime("%d-%m-%Y").dropna().unique().tolist()
-                    )
-
-            # 3) Toon onder Teamcoach (één per regel)
-            if coaching_dates:
-                st.markdown("**📅 Datum coaching:**")
-                # gebruik dezelfde kleurbol als bij de coachingstatus
-                dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
-                for d in sorted(coaching_dates, key=lambda x: datetime.strptime(x, "%d-%m-%Y")):
-                    st.markdown(f"- {dot} {d}".strip())
-            else:
-                st.markdown("**📅 Datum coaching:** —")
 
 
 
