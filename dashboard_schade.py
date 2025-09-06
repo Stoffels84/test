@@ -684,8 +684,8 @@ def run_dashboard():
                 col_top1, col_top2 = st.columns(2)
                 with col_top1:
                     min_schades = st.number_input("Min. aantal schades", min_value=1, value=1, step=1, key="loc_min")
-                with col_top2:
-                    expand_all = st.checkbox("Alles openklappen", value=False, key="loc_expand_all")
+
+
 
                 agg = (
                     work.groupby("Locatie_disp")
