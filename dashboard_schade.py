@@ -795,6 +795,53 @@ def run_dashboard():
 
             st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
             st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
+
+
+
+            # ▼▼ Datum coaching onder Teamcoach ▼▼
+            coaching_dates = []
+            ex_info = st.session_state.get("excel_info", {})
+            coach_df = st.session_state.get("coachings_df")  # optioneel: DF met tab 'Voltooide coaching'
+
+            # 1) Probeer uit excel_info (verschillende mogelijke keys)
+            if pnr in ex_info:
+                raw = (
+                    (ex_info.get(pnr, {}) or {}).get("Datum coaching")
+                    or (ex_info.get(pnr, {}) or {}).get("datum_coaching")
+                    or (ex_info.get(pnr, {}) or {}).get("coaching_datums")
+                )
+                if isinstance(raw, (list, tuple, set)):
+                    coaching_dates = list(raw)
+                elif isinstance(raw, str) and raw.strip():
+                    # gescheiden door , of ;
+                    coaching_dates = re.split(r"[;,]\s*", raw.strip())
+
+            # 2) Zo niet: haal uit DataFrame van tab 'Voltooide coaching' (indien aanwezig)
+            if not coaching_dates and isinstance(coach_df, pd.DataFrame) and not coach_df.empty:
+                mask = coach_df["dienstnummer"].astype(str).str.strip() == pnr
+                if "Datum coaching" in coach_df.columns:
+                   # formatteer netjes en dedupliceer
+                    dates_series = pd.to_datetime(coach_df.loc[mask, "Datum coaching"], errors="coerce").dropna()
+                    coaching_dates = (
+                        dates_series.dt.strftime("%d-%m-%Y").dropna().unique().tolist()
+                    )
+
+            # 3) Toon onder Teamcoach (één per regel)
+            if coaching_dates:
+                st.markdown("**📅 Datum coaching:**")
+                for d in sorted(coaching_dates, key=lambda x: datetime.strptime(x, "%d-%m-%Y")):
+                    st.markdown(f"- {d}")
+            else:
+                st.markdown("**📅 Datum coaching:** —")
+            # ▲▲ Datum coaching onder Teamcoach ▲▲
+
+
+
+            
+
+
+            
+            
             st.markdown(f"**🎯 Coachingstatus:** {status_emoji} {status_lbl}  \n*{status_bron}*")
             st.markdown("---")
 
