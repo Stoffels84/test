@@ -659,9 +659,9 @@ def run_dashboard():
 
 
 
-# ===== Tab 3: Locatie =====
-with locatie_tab:
-    st.subheader("📍 Schadegevallen per locatie")
+    # ===== Tab 3: Locatie =====
+    with locatie_tab:
+        st.subheader("📍 Schadegevallen per locatie")
 
     if "Locatie_disp" not in df_filtered.columns:
         st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
