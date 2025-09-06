@@ -655,25 +655,7 @@ def run_dashboard():
                 sum_df = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
                 st.dataframe(sum_df, use_container_width=True)
 
-                st.markdown("---")
-                st.subheader("📂 Details per voertuigtype")
-                for voertuig in counts.index.tolist():
-                    kol = ["Datum", "volledige naam_disp", "Locatie_disp", "teamcoach_disp"]
-                    if "Link" in df_filtered.columns:
-                        kol.append("Link")
-                    sub = (
-                        df_filtered.loc[df_filtered["BusTram_disp"] == voertuig, kol]
-                        .sort_values("Datum", ascending=True)
-                    )
-                    with st.expander(f"{voertuig} — {len(sub)} schadegevallen", expanded=False):
-                        for _, r in sub.iterrows():
-                            datum_str = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
-                            chauffeur = r.get("volledige naam_disp", "onbekend")
-                            coach     = r.get("teamcoach_disp", "onbekend")
-                            loc       = r.get("Locatie_disp", "onbekend")
-                            link      = extract_url(r.get("Link")) if "Link" in sub.columns else None
-                            prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🧑‍💼 {coach} — 📍 {loc} — "
-                            st.markdown(prefix + (f"[🔗 openen]({link})" if link else "❌ geen link"), unsafe_allow_html=True)
+
 
     # ===== Tab 3: Locatie =====
     with locatie_tab:
