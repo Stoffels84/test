@@ -664,28 +664,7 @@ def run_dashboard():
         if "Locatie_disp" not in df_filtered.columns:
             st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
         else:
-            loc_options = sorted([x for x in df_filtered["Locatie_disp"].dropna().unique().tolist() if str(x).strip()])
-            gekozen_locs = st.multiselect(
-                "Zoek locatie(s)",
-                options=loc_options,
-                default=[],
-                placeholder="Type om te zoeken…",
-                key="loc_ms"
-            )
-
-            work = df_filtered.copy()
-            work["dienstnummer_s"] = work["dienstnummer"].astype(str)
-            if gekozen_locs:
-                work = work[work["Locatie_disp"].isin(gekozen_locs)]
-
-            if work.empty:
-                st.info("Geen resultaten binnen de huidige filters/keuze.")
-            else:
-                col_top1, col_top2 = st.columns(2)
-                with col_top1:
-                    min_schades = st.number_input("Min. aantal schades", min_value=1, value=1, step=1, key="loc_min")
-                with col_top2:
-                    expand_all = st.checkbox("Alles openklappen", value=False, key="loc_expand_all")
+            
 
                 agg = (
                     work.groupby("Locatie_disp")
