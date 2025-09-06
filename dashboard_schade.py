@@ -705,11 +705,6 @@ def run_dashboard():
 
                 cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"]
 
-                st.dataframe(
-                    agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
-                    use_container_width=True
-                )
-
 
                 st.dataframe(
                     agg_view[["Locatie","Schades","Unieke_chauffeurs","Periode"]]
