@@ -663,16 +663,16 @@ def run_dashboard():
     with locatie_tab:
         st.subheader("📍 Schadegevallen per locatie")
 
-    if "Locatie_disp" not in df_filtered.columns:
-        st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
-    else:
-        work = df_filtered.copy()
-        work["dienstnummer_s"] = work["dienstnummer"].astype(str)
-
-        if work.empty:
-            st.info("Geen resultaten binnen de huidige filters/keuze.")
+        if "Locatie_disp" not in df_filtered.columns:
+            st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
         else:
-            # Samenvatting op locatieniveau
+            work = df_filtered.copy()
+            work["dienstnummer_s"] = work["dienstnummer"].astype(str)
+
+            if work.empty:
+            st.info("Geen resultaten binnen de huidige filters/keuze.")
+            else:
+                # Samenvatting op locatieniveau
             agg = (
                 work.groupby("Locatie_disp")
                     .agg(
