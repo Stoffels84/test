@@ -625,7 +625,7 @@ def run_dashboard():
                     gem_schades_handmatig,
                     delta=round(gem_schades_handmatig - gem_schades_auto, 2)
                 )
-           st.markdown("---")
+               st.markdown("---")
                 
 
 
