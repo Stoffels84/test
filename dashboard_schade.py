@@ -710,6 +710,16 @@ def run_dashboard():
                     use_container_width=True
                 )
 
+
+                st.dataframe(
+                    agg_view[["Locatie","Schades","Unieke_chauffeurs","Periode"]]
+                        .sort_values("Schades", ascending=False)
+                        .reset_index(drop=True),
+                    use_container_width=True,
+                    height=700,   # bv. 700-900 px
+                )
+
+
                 st.download_button(
                     "⬇️ Download samenvatting (CSV)",
                     agg_view[cols_show].to_csv(index=False).encode("utf-8"),
