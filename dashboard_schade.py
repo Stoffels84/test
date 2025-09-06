@@ -714,13 +714,7 @@ def run_dashboard():
                     height=700,
                 )
 
-                st.download_button(
-                    "⬇️ Download samenvatting (CSV)",
-                    agg_view[cols_show].to_csv(index=False).encode("utf-8"),
-                    file_name="locaties_samenvatting.csv",
-                    mime="text/csv",
-                    key="dl_loc_summary",
-                )
+
 
 
     # ===== Tab 4: Opzoeken =====
