@@ -661,15 +661,20 @@ def run_dashboard():
     with locatie_tab:
         st.subheader("📍 Schadegevallen per locatie")
 
+# ===== Tab 3: Locatie =====
+with locatie_tab:
+    st.subheader("📍 Schadegevallen per locatie")
+
     if "Locatie_disp" not in df_filtered.columns:
         st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
     else:
         work = df_filtered.copy()
         work["dienstnummer_s"] = work["dienstnummer"].astype(str)
 
-    if work.empty:
+        if work.empty:
             st.info("Geen resultaten binnen de huidige filters/keuze.")
-    else:
+        else:
+            # Samenvatting op locatieniveau
             agg = (
                 work.groupby("Locatie_disp")
                     .agg(
@@ -680,10 +685,11 @@ def run_dashboard():
                     .rename(columns={"Locatie_disp": "Locatie"})
             )
 
-            dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
-            dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
-            agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
-            agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
+            # Periode (eerste en laatste datum)
+            dmin = work.groupby("Locatie")["Datum"].min().rename("Eerste")
+            dmax = work.groupby("Locatie")["Datum"].max().rename("Laatste")
+            agg = agg.merge(dmin, on="Locatie", how="left")
+            agg = agg.merge(dmax, on="Locatie", how="left")
 
             if agg.empty:
                 st.info("Geen locaties die voldoen aan je filters.")
@@ -699,8 +705,11 @@ def run_dashboard():
 
                 agg_view = agg.copy()
                 agg_view["Periode"] = agg_view.apply(
-                    lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
-                    if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
+                    lambda r: (
+                        f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
+                        if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"])
+                        else "—"
+                    ),
                     axis=1,
                 )
 
@@ -714,6 +723,13 @@ def run_dashboard():
                     height=700,
                 )
 
+                st.download_button(
+                    "⬇️ Download samenvatting (CSV)",
+                    agg_view[cols_show].to_csv(index=False).encode("utf-8"),
+                    file_name="locaties_samenvatting.csv",
+                    mime="text/csv",
+                    key="dl_loc_summary",
+                )
 
 
 
