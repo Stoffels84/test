@@ -661,50 +661,63 @@ def run_dashboard():
     with locatie_tab:
         st.subheader("📍 Schadegevallen per locatie")
 
-           
 
-                agg = (
-                    work.groupby("Locatie_disp")
-                        .agg(Schades=("dienstnummer_s","size"),
-                             Unieke_chauffeurs=("dienstnummer_s","nunique"))
-                        .reset_index().rename(columns={"Locatie_disp":"Locatie"})
+
+    if "Locatie_disp" not in df_filtered.columns:
+        st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
+    else:
+        work = df_filtered.copy()
+        work["dienstnummer_s"] = work["dienstnummer"].astype(str)
+
+        if work.empty:
+            st.info("Geen resultaten binnen de huidige filters/keuze.")
+        else:
+            agg = (
+                work.groupby("Locatie_disp")
+                    .agg(Schades=("dienstnummer_s","size"),
+                         Unieke_chauffeurs=("dienstnummer_s","nunique"))
+                    .reset_index().rename(columns={"Locatie_disp":"Locatie"})
+            )
+
+            dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
+            dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
+            agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
+            agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
+
+            if agg.empty:
+                st.info("Geen locaties die voldoen aan je filters.")
+            else:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.metric("Unieke locaties", int(agg.shape[0]))
+                with c2:
+                    st.metric("Totaal schadegevallen", int(len(work)))
+
+                st.markdown("---")
+                st.subheader("📊 Samenvatting per locatie")
+
+                agg_view = agg.copy()
+                agg_view["Periode"] = agg_view.apply(
+                    lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
+                    if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
+                    axis=1
                 )
 
-                dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
-                dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
-                agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
-                agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
+                cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"]
 
-                agg = agg[agg["Schades"] >= int(min_schades)]
-                if agg.empty:
-                    st.info("Geen locaties die voldoen aan je filters.")
-                else:
-                    c1, c2 = st.columns(2)
-                    c1.metric("Unieke locaties", int(agg.shape[0]))
-                    c2.metric("Totaal schadegevallen", int(len(work)))
+                st.dataframe(
+                    agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
+                    use_container_width=True
+                )
 
-                    st.markdown("---")
-                    st.subheader("📊 Samenvatting per locatie")
-                    agg_view = agg.copy()
-                    agg_view["Periode"] = agg_view.apply(
-                        lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
-                        if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
-                        axis=1
-                    )
-                    cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"]
+                st.download_button(
+                    "⬇️ Download samenvatting (CSV)",
+                    agg_view[cols_show].to_csv(index=False).encode("utf-8"),
+                    file_name="locaties_samenvatting.csv",
+                    mime="text/csv",
+                    key="dl_loc_summary"
+                )
 
-
-                    st.dataframe(
-                        agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
-                        use_container_width=True
-                    )
-                    st.download_button(
-                        "⬇️ Download samenvatting (CSV)",
-                        agg_view[cols_show].to_csv(index=False).encode("utf-8"),
-                        file_name="locaties_samenvatting.csv",
-                        mime="text/csv",
-                        key="dl_loc_summary"
-                    )
 
 
 
