@@ -1,12 +1,6 @@
-"""Data loading utilities for the Schade Dashboard.
-
-Exposes:
-- load_schade_prepared(path="schade met macro.xlsm", sheet="BRON") -> (DataFrame, options dict)
-- lees_coachingslijst(pad="Coachingslijst.xlsx") -> (ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, warn)
-"""
+"""Data loaders voor het Schade Dashboard."""
 from __future__ import annotations
 
-import re
 import pandas as pd
 import streamlit as st
 
@@ -15,18 +9,11 @@ import streamlit as st
 # =========================
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_schade_prepared(path: str = "schade met macro.xlsm", sheet: str = "BRON"):
-    """Load base schade-data efficiently and prepare derived columns used across the app.
-
-    Returns a tuple: (df_ok, options)
-    - df_ok: cleaned dataframe with derived columns (dienstnummer, KwartaalP, Kwartaal, Maand, *_disp)
-    - options: dict for filter controls (teamcoach, locatie, voertuig, kwartaal, min_datum, max_datum)
-    """
-    # Lees enkel de nodige kolommen (scheelt I/O en RAM)
+    """Laad schade-data efficiënt in en bereken afgeleide kolommen."""
     usecols = ["Datum", "volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"]
     df_raw = pd.read_excel(path, sheet_name=sheet, usecols=usecols)
     df_raw.columns = df_raw.columns.str.strip()
 
-    # Datum in twee passes (met fallback)
     d1 = pd.to_datetime(df_raw["Datum"], errors="coerce", dayfirst=True)
     need_retry = d1.isna()
     if need_retry.any():
@@ -35,15 +22,12 @@ def load_schade_prepared(path: str = "schade met macro.xlsm", sheet: str = "BRON
     df_raw["Datum"] = d1
     df_ok = df_raw[df_raw["Datum"].notna()].copy()
 
-    # String cleanup één keer
     for col in ("volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"):
         if col in df_ok.columns:
             df_ok[col] = df_ok[col].astype("string").str.strip()
 
-    # Afgeleiden: filters/aggregaties
-    df_ok["dienstnummer"]   = df_ok["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False)\
-                                 .astype("string").str.strip()
-    df_ok["dienstnummer_s"] = df_ok["dienstnummer"].astype("string")  # vaak nodig → cache als string
+    df_ok["dienstnummer"]   = df_ok["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
+    df_ok["dienstnummer_s"] = df_ok["dienstnummer"].astype("string")
     df_ok["KwartaalP"]      = df_ok["Datum"].dt.to_period("Q")
     df_ok["Kwartaal"]       = df_ok["KwartaalP"].astype(str)
     df_ok["Maand"]          = df_ok["Datum"].dt.to_period("M").dt.to_timestamp()
@@ -53,7 +37,6 @@ def load_schade_prepared(path: str = "schade met macro.xlsm", sheet: str = "BRON
         bad = s.isna() | s.eq("") | s.str.lower().isin({"nan","none","<na>"})
         return s.mask(bad, "onbekend")
 
-    # Categorical kolommen → sneller .isin/.unique en minder geheugen
     df_ok["volledige naam_disp"] = _clean_display_series(df_ok["volledige naam"]).astype("category")
     df_ok["teamcoach_disp"]      = _clean_display_series(df_ok["teamcoach"]).astype("category")
     df_ok["Locatie_disp"]        = _clean_display_series(df_ok["Locatie"]).astype("category")
@@ -68,7 +51,6 @@ def load_schade_prepared(path: str = "schade met macro.xlsm", sheet: str = "BRON
         "max_datum": df_ok["Datum"].max().normalize(),
     }
 
-    # Kolomnamen normaliseren (éénmalig)
     df_ok.columns = (
         df_ok.columns.astype(str)
              .str.normalize("NFKC")
@@ -76,20 +58,10 @@ def load_schade_prepared(path: str = "schade met macro.xlsm", sheet: str = "BRON
     )
     return df_ok, options
 
-
 # ========= Coachingslijst inlezen =========
 @st.cache_data(show_spinner=False)
 def lees_coachingslijst(pad: str = "Coachingslijst.xlsx"):
-    """Read the coaching workbook and build helper structures.
-
-    Returns:
-        ids_geel (set[str])           – dienstnummers met status Voltooid
-        ids_blauw (set[str])          – dienstnummers met status Coaching (lopend)
-        total_geel_rows (int)         – ruwe rijen in 'voltooide coachings'
-        total_blauw_rows (int)        – ruwe rijen in 'coaching'
-        excel_info (dict[str, dict])  – per pnr: naam/teamcoach/status/beoordeling/coaching_datums
-        warn (str|None)               – waarschuwingsboodschap of None
-    """
+    """Lees de coachingslijst en bouw hulpstructuren."""
     ids_geel, ids_blauw = set(), set()
     total_geel_rows, total_blauw_rows = 0, 0
     excel_info: dict[str, dict] = {}
@@ -150,7 +122,6 @@ def lees_coachingslijst(pad: str = "Coachingslijst.xlsx"):
         total_rows = int(s_pnr.shape[0])
         ids = set(s_pnr.tolist())
 
-        # Vul excel_info per rij
         s_pnr_reset = s_pnr.reset_index(drop=True)
         for i in range(len(s_pnr_reset)):
             pnr = s_pnr_reset.iloc[i]
@@ -199,7 +170,6 @@ def lees_coachingslijst(pad: str = "Coachingslijst.xlsx"):
 
             excel_info[pnr] = info
 
-        # Compacte DF per sheet (buiten de loop)
         if kol_date:
             df_small = dfc[[kol_pnr, kol_date]].copy()
             df_small.columns = ["dienstnummer", "Datum coaching"]
@@ -239,7 +209,6 @@ def lees_coachingslijst(pad: str = "Coachingslijst.xlsx"):
     if isinstance(df_voltooide_clean, pd.DataFrame):
         st.session_state["coachings_df"] = df_voltooide_clean
 
-    # normaliseer/unique datums per pnr
     for p, inf in excel_info.items():
         if "coaching_datums" in inf and isinstance(inf["coaching_datums"], list):
             try:
@@ -253,8 +222,4 @@ def lees_coachingslijst(pad: str = "Coachingslijst.xlsx"):
 
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
 
-
-__all__ = [
-    "load_schade_prepared",
-    "lees_coachingslijst",
-]
+__all__ = ["load_schade_prepared", "lees_coachingslijst"]
