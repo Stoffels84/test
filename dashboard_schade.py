@@ -1,13 +1,11 @@
-# dashboard_schade.py
-import os
 import re
-import time
-import secrets
-import smtplib
-import ssl
-import hashlib
-from email.message import EmailMessage
 from datetime import datetime
+
+import streamlit as st
+import pandas as pd
+
+from auth import login_gate
+
 
 import streamlit as st
 import pandas as pd
