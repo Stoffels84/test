@@ -741,6 +741,44 @@ def run_dashboard():
                 sum_df = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
                 st.dataframe(sum_df, use_container_width=True)
 
+            # --- 📈 Grafiek: schades per maand per voertuigtype (jaaroverschrijdend) ---
+        st.markdown("### 📈 Schades per maand per voertuigtype")
+        
+        if {"Datum", "BusTram_disp"}.issubset(df_filtered.columns):
+            work = df_filtered.copy()
+            if work.empty:
+                st.caption("Geen data binnen de huidige filters.")
+            else:
+                # Maand als tijd-as (eerste dag van de maand)
+                work["Maand"] = work["Datum"].dt.to_period("M").dt.to_timestamp()
+        
+                # Tellen per maand × voertuigtype
+                monthly = (
+                    work.groupby(["Maand", "BusTram_disp"])
+                        .size()
+                        .rename("Schades")
+                        .reset_index()
+                )
+        
+                # Wide-vorm: kolommen = voertuigtypes
+                pivot = (
+                    monthly.pivot(index="Maand", columns="BusTram_disp", values="Schades")
+                           .sort_index()
+                )
+        
+                # Volledige maandrange zodat ontbrekende maanden als 0 verschijnen
+                full_idx = pd.period_range(
+                    work["Datum"].min().to_period("M"),
+                    work["Datum"].max().to_period("M"),
+                    freq="M"
+                ).to_timestamp()
+                pivot = pivot.reindex(full_idx).fillna(0).astype(int)
+        
+                # Lijngrafiek
+                st.line_chart(pivot, use_container_width=True)
+        else:
+            st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
+
 
 
     # ===== Tab 3: Locatie =====
