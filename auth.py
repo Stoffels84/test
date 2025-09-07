@@ -1,16 +1,4 @@
-"""Authentication & email helpers for the Schade Dashboard.
-
-Exposes:
-- load_contact_map()  -> dict[str, dict]
-- login_gate()        -> renders login UI and sets session_state on success
-
-Environment variables (from mail.env):
-- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SSL
-- EMAIL_FROM
-- OTP_LENGTH, OTP_TTL_SECONDS, OTP_RESEND_SECONDS
-- OTP_SUBJECT, OTP_BODY_TEXT, OTP_BODY_HTML (optional)
-- ALLOWED_EMAIL_DOMAINS (comma-separated)
-"""
+"""Authentication & e-mail/OTP voor het Schade Dashboard."""
 
 from __future__ import annotations
 
@@ -30,11 +18,8 @@ import streamlit as st
 # =========================
 # .env / mail.env laden
 # =========================
-
 def _load_env(path: str = "mail.env") -> None:
-    """Load environment variables from a .env-like file without adding a hard dep.
-    Tries python-dotenv; falls back to a tiny parser.
-    """
+    """Laad env-variabelen. Probeert python-dotenv; anders simpele parser."""
     try:
         from dotenv import load_dotenv  # type: ignore
         load_dotenv(path)
@@ -49,7 +34,6 @@ def _load_env(path: str = "mail.env") -> None:
                     continue
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip())
-
 
 _load_env("mail.env")
 
@@ -82,13 +66,11 @@ OTP_BODY_HTML = os.getenv("OTP_BODY_HTML", "")
 # =========================
 # Domeinlogica / helpers
 # =========================
-
 def _extract_domain(addr: str) -> str:
     try:
         return addr.split("@", 1)[1].lower()
     except Exception:
         return ""
-
 
 ALLOWED_EMAIL_DOMAINS = [
     d.strip().lower()
@@ -99,13 +81,11 @@ if not ALLOWED_EMAIL_DOMAINS:
     d = _extract_domain(EMAIL_FROM or SMTP_USER or "")
     ALLOWED_EMAIL_DOMAINS = [d] if d else []
 
-
 def _is_allowed_email(addr: str) -> bool:
     if not ALLOWED_EMAIL_DOMAINS:
         return True
     a = addr.strip().lower()
     return any(a.endswith("@" + d) for d in ALLOWED_EMAIL_DOMAINS)
-
 
 def _mask_email(addr: str) -> str:
     try:
@@ -118,16 +98,13 @@ def _mask_email(addr: str) -> str:
     except Exception:
         return addr
 
-
 def _gen_otp(n: int | None = None) -> str:
     if n is None:
         n = OTP_LENGTH
     return "".join(secrets.choice("0123456789") for _ in range(n))
 
-
 def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
-
 
 def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = None) -> None:
     if not (SMTP_HOST and SMTP_PORT and EMAIL_FROM):
@@ -159,11 +136,9 @@ def _send_email(to_addr: str, subject: str, body_text: str, html: str | None = N
                 server.login(SMTP_USER, SMTP_PASS)
             server.send_message(msg)
 
-
 # =========================
 # Contact mapping (login)
 # =========================
-
 def load_contact_map() -> dict[str, dict]:
     """
     'schade met macro.xlsm' → tab 'contact'
@@ -198,18 +173,11 @@ def load_contact_map() -> dict[str, dict]:
         raise RuntimeError("Geen geldige rijen in tabblad 'contact'.")
     return mapping
 
-
 # =========================
 # LOGIN FLOW (Streamlit)
 # =========================
-
 def login_gate():
-    """Render de login-UI met personeelsnummer + OTP, en zet sessiestatus bij succes.
-
-    Zet o.a. deze keys in st.session_state bij succesvolle login:
-      - authenticated: True
-      - user_pnr, user_email, user_name
-    """
+    """Render login-UI (personeelsnummer + OTP) en zet sessiestatus bij succes."""
     st.title("🔐 Beveiligde toegang")
     st.caption("Log in met je personeelsnummer. Je ontvangt een verificatiecode per e-mail.")
     try:
@@ -219,21 +187,12 @@ def login_gate():
         st.stop()
 
     if "otp" not in st.session_state:
-        st.session_state.otp = {
-            "pnr": None,
-            "email": None,
-            "hash": None,
-            "expires": 0.0,
-            "last_sent": 0.0,
-            "sent": False,
-        }
+        st.session_state.otp = {"pnr":None,"email":None,"hash":None,"expires":0.0,"last_sent":0.0,"sent":False}
     otp = st.session_state.otp
 
-    col1, col2 = st.columns([3, 2])
+    col1, col2 = st.columns([3,2])
     with col1:
-        pnr_input = st.text_input(
-            "Personeelsnummer", placeholder="bijv. 41092", value=otp.get("pnr") or ""
-        )
+        pnr_input = st.text_input("Personeelsnummer", placeholder="bijv. 41092", value=otp.get("pnr") or "")
     with col2:
         want_code = st.button("📨 Verstuur code")
 
@@ -252,64 +211,29 @@ def login_gate():
                     st.error(f"E-mailadres {email} is niet toegestaan.")
                 else:
                     now = time.time()
-                    if (
-                        now - otp.get("last_sent", 0) < OTP_RESEND_SECONDS
-                        and otp.get("pnr") == pnr_digits
-                    ):
-                        remaining = int(
-                            OTP_RESEND_SECONDS - (now - otp.get("last_sent", 0))
-                        )
-                        st.warning(
-                            f"Wacht {remaining}s voordat je opnieuw een code aanvraagt."
-                        )
+                    if now - otp.get("last_sent", 0) < OTP_RESEND_SECONDS and otp.get("pnr") == pnr_digits:
+                        remaining = int(OTP_RESEND_SECONDS - (now - otp.get("last_sent", 0)))
+                        st.warning(f"Wacht {remaining}s voordat je opnieuw een code aanvraagt.")
                     else:
                         try:
                             code = _gen_otp()
-                            st.session_state.otp.update(
-                                {
-                                    "pnr": pnr_digits,
-                                    "email": email,
-                                    "hash": _hash_code(code),
-                                    "expires": time.time() + OTP_TTL_SECONDS,
-                                    "last_sent": time.time(),
-                                    "sent": True,
-                                }
-                            )
+                            st.session_state.otp.update({
+                                "pnr": pnr_digits,
+                                "email": email,
+                                "hash": _hash_code(code),
+                                "expires": time.time() + OTP_TTL_SECONDS,
+                                "last_sent": time.time(),
+                                "sent": True,
+                            })
                             minutes = OTP_TTL_SECONDS // 60
                             now_str = datetime.now().strftime("%d-%m-%Y %H:%M")
-                            naam = (
-                                rec.get("name") if isinstance(rec, dict) else None
-                            ) or "collega"
-                            subject = OTP_SUBJECT.format(
-                                code=code,
-                                minutes=minutes,
-                                pnr=pnr_digits,
-                                date=now_str,
-                                name=naam,
-                            )
-                            body_text = OTP_BODY_TEXT.format(
-                                code=code,
-                                minutes=minutes,
-                                pnr=pnr_digits,
-                                date=now_str,
-                                name=naam,
-                            )
+                            naam = (rec.get("name") if isinstance(rec, dict) else None) or "collega"
+                            subject = OTP_SUBJECT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
+                            body_text = OTP_BODY_TEXT.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam)
                             body_html_raw = (OTP_BODY_HTML or "").strip()
-                            body_html = (
-                                body_html_raw.format(
-                                    code=code,
-                                    minutes=minutes,
-                                    pnr=pnr_digits,
-                                    date=now_str,
-                                    name=naam,
-                                )
-                                if body_html_raw
-                                else None
-                            )
+                            body_html = body_html_raw.format(code=code, minutes=minutes, pnr=pnr_digits, date=now_str, name=naam) if body_html_raw else None
                             _send_email(email, subject, body_text, html=body_html)
-                            st.success(
-                                f"Code verzonden naar {_mask_email(email)}. Vul de code hieronder in."
-                            )
+                            st.success(f"Code verzonden naar {_mask_email(email)}. Vul de code hieronder in.")
                         except Exception as e:
                             st.error(f"Kon geen e-mail verzenden: {e}")
 
@@ -326,25 +250,10 @@ def login_gate():
                 st.error("Ongeldige code.")
             else:
                 st.session_state.authenticated = True
-                st.session_state.user_pnr = otp.get("pnr")
+                st.session_state.user_pnr   = otp.get("pnr")
                 st.session_state.user_email = otp.get("email")
-                # Gebruik reeds geladen contacts
-                st.session_state.user_name = (
-                    (contacts.get(otp.get("pnr"), {}) or {}).get("name")
-                    or otp.get("pnr")
-                )
-                st.session_state.otp = {
-                    "pnr": None,
-                    "email": None,
-                    "hash": None,
-                    "expires": 0.0,
-                    "last_sent": 0.0,
-                    "sent": False,
-                }
+                st.session_state.user_name  = (contacts.get(otp.get("pnr"), {}) or {}).get("name") or otp.get("pnr")
+                st.session_state.otp = {"pnr":None,"email":None,"hash":None,"expires":0.0,"last_sent":0.0,"sent":False}
                 st.rerun()
 
-
-__all__ = [
-    "load_contact_map",
-    "login_gate",
-]
+__all__ = ["load_contact_map", "login_gate"]
