@@ -255,6 +255,8 @@ def run_dashboard():
             st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
 
     # ===== Tab 3: Locatie =====
+
+    # ===== Tab 3: Locatie =====
     with locatie_tab:
         st.subheader("📍 Schadegevallen per locatie")
 
@@ -304,18 +306,47 @@ def run_dashboard():
 
                     st.markdown("---")
                     st.subheader("📊 Samenvatting per locatie")
+
                     agg_view = agg.copy()
                     agg_view["Periode"] = agg_view.apply(
                         lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
                         if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
                         axis=1
                     )
-                    cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"]
+
+                    # ⬇️ NIEUW: Link-kolom (meest recente link per locatie)
+                    link_available = "Link" in work.columns
+                    if link_available:
+                        work = work.copy()
+                        work["URL"] = work["Link"].apply(extract_url)
+                        latest_idx = (
+                            work.sort_values("Datum")
+                                .groupby("Locatie_disp")["Datum"]
+                                .idxmax()
+                        )
+                        link_map = work.loc[latest_idx].set_index("Locatie_disp")["URL"].to_dict()
+                        agg_view["Link"] = agg_view["Locatie"].map(link_map)
+
+                    # kolommen tonen
+                    cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"] + (["Link"] if link_available else [])
+
+                    # klikbare kolomconfig
+                    column_config = {
+                        "Locatie": st.column_config.TextColumn("Locatie"),
+                        "Schades": st.column_config.NumberColumn("Schades"),
+                        "Unieke_chauffeurs": st.column_config.NumberColumn("Unieke chauffeurs"),
+                        "Periode": st.column_config.TextColumn("Periode"),
+                    }
+                    if link_available:
+                        column_config["Link"] = st.column_config.LinkColumn("Link", display_text="openen")
 
                     st.dataframe(
                         agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
-                        use_container_width=True
+                        use_container_width=True,
+                        column_config=column_config
                     )
+
+                    # downloadknop
                     st.download_button(
                         "⬇️ Download samenvatting (CSV)",
                         agg_view[cols_show].to_csv(index=False).encode("utf-8"),
@@ -324,6 +355,8 @@ def run_dashboard():
                         key="dl_loc_summary"
                     )
 
+
+    
     # ===== Tab 4: Opzoeken =====
     with opzoeken_tab:
         st.subheader("🔎 Opzoeken op personeelsnummer")
