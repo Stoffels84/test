@@ -254,11 +254,10 @@ def run_dashboard():
         else:
             st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
 
-    # ===== Tab 3: Locatie =====
 
     # ===== Tab 3: Locatie =====
-with locatie_tab:
-    st.subheader("📍 Schadegevallen per locatie")
+    with locatie_tab:
+        st.subheader("🔎 Opzoeken op locatie")
 
     if "Locatie_disp" not in df_filtered.columns:
         st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
