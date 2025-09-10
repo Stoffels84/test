@@ -12,6 +12,28 @@ from datetime import datetime
 import streamlit as st
 import pandas as pd
 
+def file_sig(path: str) -> str | None:
+    """
+    Geef een stabiele signatuur voor het bestand (size + mtime + sha256).
+    Resultaat verandert zodra het bestand echt wijzigt.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        st_ = os.stat(path)
+        size = st_.st_size
+        mtime = int(st_.st_mtime)
+        import hashlib
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        # korte, leesbare signatuur teruggeven
+        return f"{size}-{mtime}-{h.hexdigest()[:16]}"
+    except Exception:
+        return None
+
+
 # =========================
 # .env / mail.env laden
 # =========================
