@@ -256,8 +256,9 @@ def run_dashboard():
 
 
     # ===== Tab 3: Locatie =====
-    with locatie_tab:
-        st.subheader("🔎 Opzoeken op locatie")
+# ===== Tab 3: Locatie =====
+with locatie_tab:
+    st.subheader("📍 Schadegevallen per locatie")
 
     if "Locatie_disp" not in df_filtered.columns:
         st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
@@ -304,67 +305,7 @@ def run_dashboard():
                 c2.metric("Totaal schadegevallen", int(len(work)))
 
                 st.markdown("---")
-                st.subheader("📊 Samenvatting per locatie")
 
-                agg_view = agg.copy()
-                agg_view["Periode"] = agg_view.apply(
-                    lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
-                    if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
-                    axis=1
-                )
-
-                # ▶️ Link-kolom (meest recente link per locatie), robuust zonder idxmax
-                link_available = "Link" in work.columns
-                if link_available:
-                    tmp = work.copy()
-
-                    # URL extraheren en datums netjes forceren
-                    tmp["URL"] = tmp["Link"].apply(extract_url)
-                    tmp["Datum"] = pd.to_datetime(tmp["Datum"], errors="coerce")
-
-                    # rijen zonder Locatie of Datum negeren (anders crasht "laatste per groep")
-                    tmp = tmp.dropna(subset=["Locatie_disp", "Datum"])
-
-                    if not tmp.empty:
-                        # sorteren en laatste rij per locatie nemen
-                        latest = (
-                            tmp.sort_values(["Locatie_disp", "Datum"])
-                               .groupby("Locatie_disp", as_index=False)
-                               .tail(1)
-                        )
-                        link_map = dict(zip(latest["Locatie_disp"], latest["URL"]))
-                    else:
-                        link_map = {}
-
-                    agg_view["Link"] = agg_view["Locatie"].map(link_map)
-
-                # kolommen tonen (Link naast Periode)
-                cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"] + (["Link"] if link_available else [])
-
-                column_config = {
-                    "Locatie": st.column_config.TextColumn("Locatie"),
-                    "Schades": st.column_config.NumberColumn("Schades"),
-                    "Unieke_chauffeurs": st.column_config.NumberColumn("Unieke chauffeurs"),
-                    "Periode": st.column_config.TextColumn("Periode"),
-                }
-                if link_available:
-                    column_config["Link"] = st.column_config.LinkColumn("Link", display_text="openen")
-
-                st.dataframe(
-                    agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
-                    use_container_width=True,
-                    column_config=column_config
-                )
-
-                st.download_button(
-                    "⬇️ Download samenvatting (CSV)",
-                    agg_view[cols_show].to_csv(index=False).encode("utf-8"),
-                    file_name="locaties_samenvatting.csv",
-                    mime="text/csv",
-                    key="dl_loc_summary"
-                )
-
-    
     # ===== Tab 4: Opzoeken =====
     with opzoeken_tab:
         st.subheader("🔎 Opzoeken op personeelsnummer")
