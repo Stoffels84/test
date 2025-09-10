@@ -257,104 +257,113 @@ def run_dashboard():
     # ===== Tab 3: Locatie =====
 
     # ===== Tab 3: Locatie =====
-    with locatie_tab:
-        st.subheader("📍 Schadegevallen per locatie")
+with locatie_tab:
+    st.subheader("📍 Schadegevallen per locatie")
 
-        if "Locatie_disp" not in df_filtered.columns:
-            st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
+    if "Locatie_disp" not in df_filtered.columns:
+        st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
+    else:
+        loc_options = sorted([x for x in df_filtered["Locatie_disp"].dropna().unique().tolist() if str(x).strip()])
+        gekozen_locs = st.multiselect(
+            "Zoek locatie(s)",
+            options=loc_options,
+            default=[],
+            placeholder="Type om te zoeken…",
+            key="loc_ms"
+        )
+
+        work = df_filtered.copy()
+        work["dienstnummer_s"] = work["dienstnummer"].astype(str)
+        if gekozen_locs:
+            work = work[work["Locatie_disp"].isin(gekozen_locs)]
+
+        if work.empty:
+            st.info("Geen resultaten binnen de huidige filters/keuze.")
         else:
-            loc_options = sorted([x for x in df_filtered["Locatie_disp"].dropna().unique().tolist() if str(x).strip()])
-            gekozen_locs = st.multiselect(
-                "Zoek locatie(s)",
-                options=loc_options,
-                default=[],
-                placeholder="Type om te zoeken…",
-                key="loc_ms"
+            col_top1, _ = st.columns(2)
+            with col_top1:
+                min_schades = st.number_input("Min. aantal schades", min_value=1, value=1, step=1, key="loc_min")
+
+            agg = (
+                work.groupby("Locatie_disp")
+                    .agg(Schades=("dienstnummer_s","size"),
+                         Unieke_chauffeurs=("dienstnummer_s","nunique"))
+                    .reset_index().rename(columns={"Locatie_disp":"Locatie"})
             )
 
-            work = df_filtered.copy()
-            work["dienstnummer_s"] = work["dienstnummer"].astype(str)
-            if gekozen_locs:
-                work = work[work["Locatie_disp"].isin(gekozen_locs)]
+            dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
+            dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
+            agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
+            agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
 
-            if work.empty:
-                st.info("Geen resultaten binnen de huidige filters/keuze.")
+            agg = agg[agg["Schades"] >= int(min_schades)]
+            if agg.empty:
+                st.info("Geen locaties die voldoen aan je filters.")
             else:
-                col_top1, _ = st.columns(2)
-                with col_top1:
-                    min_schades = st.number_input("Min. aantal schades", min_value=1, value=1, step=1, key="loc_min")
+                c1, c2 = st.columns(2)
+                c1.metric("Unieke locaties", int(agg.shape[0]))
+                c2.metric("Totaal schadegevallen", int(len(work)))
 
-                agg = (
-                    work.groupby("Locatie_disp")
-                        .agg(Schades=("dienstnummer_s","size"),
-                             Unieke_chauffeurs=("dienstnummer_s","nunique"))
-                        .reset_index().rename(columns={"Locatie_disp":"Locatie"})
+                st.markdown("---")
+                st.subheader("📊 Samenvatting per locatie")
+
+                agg_view = agg.copy()
+                agg_view["Periode"] = agg_view.apply(
+                    lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
+                    if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
+                    axis=1
                 )
 
-                dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
-                dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
-                agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
-                agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
+                # ▶️ Link-kolom (meest recente link per locatie), robuust zonder idxmax
+                link_available = "Link" in work.columns
+                if link_available:
+                    tmp = work.copy()
 
-                agg = agg[agg["Schades"] >= int(min_schades)]
-                if agg.empty:
-                    st.info("Geen locaties die voldoen aan je filters.")
-                else:
-                    c1, c2 = st.columns(2)
-                    c1.metric("Unieke locaties", int(agg.shape[0]))
-                    c2.metric("Totaal schadegevallen", int(len(work)))
+                    # URL extraheren en datums netjes forceren
+                    tmp["URL"] = tmp["Link"].apply(extract_url)
+                    tmp["Datum"] = pd.to_datetime(tmp["Datum"], errors="coerce")
 
-                    st.markdown("---")
-                    st.subheader("📊 Samenvatting per locatie")
+                    # rijen zonder Locatie of Datum negeren (anders crasht "laatste per groep")
+                    tmp = tmp.dropna(subset=["Locatie_disp", "Datum"])
 
-                    agg_view = agg.copy()
-                    agg_view["Periode"] = agg_view.apply(
-                        lambda r: f"{r['Eerste']:%d-%m-%Y} – {r['Laatste']:%d-%m-%Y}"
-                        if pd.notna(r["Eerste"]) and pd.notna(r["Laatste"]) else "—",
-                        axis=1
-                    )
-
-                    # ⬇️ NIEUW: Link-kolom (meest recente link per locatie)
-                    link_available = "Link" in work.columns
-                    if link_available:
-                        work = work.copy()
-                        work["URL"] = work["Link"].apply(extract_url)
-                        latest_idx = (
-                            work.sort_values("Datum")
-                                .groupby("Locatie_disp")["Datum"]
-                                .idxmax()
+                    if not tmp.empty:
+                        # sorteren en laatste rij per locatie nemen
+                        latest = (
+                            tmp.sort_values(["Locatie_disp", "Datum"])
+                               .groupby("Locatie_disp", as_index=False)
+                               .tail(1)
                         )
-                        link_map = work.loc[latest_idx].set_index("Locatie_disp")["URL"].to_dict()
-                        agg_view["Link"] = agg_view["Locatie"].map(link_map)
+                        link_map = dict(zip(latest["Locatie_disp"], latest["URL"]))
+                    else:
+                        link_map = {}
 
-                    # kolommen tonen
-                    cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"] + (["Link"] if link_available else [])
+                    agg_view["Link"] = agg_view["Locatie"].map(link_map)
 
-                    # klikbare kolomconfig
-                    column_config = {
-                        "Locatie": st.column_config.TextColumn("Locatie"),
-                        "Schades": st.column_config.NumberColumn("Schades"),
-                        "Unieke_chauffeurs": st.column_config.NumberColumn("Unieke chauffeurs"),
-                        "Periode": st.column_config.TextColumn("Periode"),
-                    }
-                    if link_available:
-                        column_config["Link"] = st.column_config.LinkColumn("Link", display_text="openen")
+                # kolommen tonen (Link naast Periode)
+                cols_show = ["Locatie","Schades","Unieke_chauffeurs","Periode"] + (["Link"] if link_available else [])
 
-                    st.dataframe(
-                        agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
-                        use_container_width=True,
-                        column_config=column_config
-                    )
+                column_config = {
+                    "Locatie": st.column_config.TextColumn("Locatie"),
+                    "Schades": st.column_config.NumberColumn("Schades"),
+                    "Unieke_chauffeurs": st.column_config.NumberColumn("Unieke chauffeurs"),
+                    "Periode": st.column_config.TextColumn("Periode"),
+                }
+                if link_available:
+                    column_config["Link"] = st.column_config.LinkColumn("Link", display_text="openen")
 
-                    # downloadknop
-                    st.download_button(
-                        "⬇️ Download samenvatting (CSV)",
-                        agg_view[cols_show].to_csv(index=False).encode("utf-8"),
-                        file_name="locaties_samenvatting.csv",
-                        mime="text/csv",
-                        key="dl_loc_summary"
-                    )
+                st.dataframe(
+                    agg_view[cols_show].sort_values("Schades", ascending=False).reset_index(drop=True),
+                    use_container_width=True,
+                    column_config=column_config
+                )
 
+                st.download_button(
+                    "⬇️ Download samenvatting (CSV)",
+                    agg_view[cols_show].to_csv(index=False).encode("utf-8"),
+                    file_name="locaties_samenvatting.csv",
+                    mime="text/csv",
+                    key="dl_loc_summary"
+                )
 
     
     # ===== Tab 4: Opzoeken =====
