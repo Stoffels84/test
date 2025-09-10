@@ -255,57 +255,57 @@ def run_dashboard():
             st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
 
 
-    # ===== Tab 3: Locatie =====
+
 # ===== Tab 3: Locatie =====
-with locatie_tab:
-    st.subheader("📍 Schadegevallen per locatie")
-
-    if "Locatie_disp" not in df_filtered.columns:
-        st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
-    else:
-        loc_options = sorted([x for x in df_filtered["Locatie_disp"].dropna().unique().tolist() if str(x).strip()])
-        gekozen_locs = st.multiselect(
-            "Zoek locatie(s)",
-            options=loc_options,
-            default=[],
-            placeholder="Type om te zoeken…",
-            key="loc_ms"
-        )
-
-        work = df_filtered.copy()
-        work["dienstnummer_s"] = work["dienstnummer"].astype(str)
-        if gekozen_locs:
-            work = work[work["Locatie_disp"].isin(gekozen_locs)]
-
-        if work.empty:
-            st.info("Geen resultaten binnen de huidige filters/keuze.")
+    with locatie_tab:
+        st.subheader("📍 Schadegevallen per locatie")
+    
+        if "Locatie_disp" not in df_filtered.columns:
+            st.warning("⚠️ Kolom 'Locatie' niet gevonden in de huidige selectie.")
         else:
-            col_top1, _ = st.columns(2)
-            with col_top1:
-                min_schades = st.number_input("Min. aantal schades", min_value=1, value=1, step=1, key="loc_min")
-
-            agg = (
-                work.groupby("Locatie_disp")
-                    .agg(Schades=("dienstnummer_s","size"),
-                         Unieke_chauffeurs=("dienstnummer_s","nunique"))
-                    .reset_index().rename(columns={"Locatie_disp":"Locatie"})
+            loc_options = sorted([x for x in df_filtered["Locatie_disp"].dropna().unique().tolist() if str(x).strip()])
+            gekozen_locs = st.multiselect(
+                "Zoek locatie(s)",
+                options=loc_options,
+                default=[],
+                placeholder="Type om te zoeken…",
+                key="loc_ms"
             )
-
-            dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
-            dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
-            agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
-            agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
-
-            agg = agg[agg["Schades"] >= int(min_schades)]
-            if agg.empty:
-                st.info("Geen locaties die voldoen aan je filters.")
+    
+            work = df_filtered.copy()
+            work["dienstnummer_s"] = work["dienstnummer"].astype(str)
+            if gekozen_locs:
+                work = work[work["Locatie_disp"].isin(gekozen_locs)]
+    
+            if work.empty:
+                st.info("Geen resultaten binnen de huidige filters/keuze.")
             else:
-                c1, c2 = st.columns(2)
-                c1.metric("Unieke locaties", int(agg.shape[0]))
-                c2.metric("Totaal schadegevallen", int(len(work)))
-
-                st.markdown("---")
-
+                col_top1, _ = st.columns(2)
+                with col_top1:
+                    min_schades = st.number_input("Min. aantal schades", min_value=1, value=1, step=1, key="loc_min")
+    
+                agg = (
+                    work.groupby("Locatie_disp")
+                        .agg(Schades=("dienstnummer_s","size"),
+                             Unieke_chauffeurs=("dienstnummer_s","nunique"))
+                        .reset_index().rename(columns={"Locatie_disp":"Locatie"})
+                )
+    
+                dmin = work.groupby("Locatie_disp")["Datum"].min().rename("Eerste")
+                dmax = work.groupby("Locatie_disp")["Datum"].max().rename("Laatste")
+                agg = agg.merge(dmin, left_on="Locatie", right_index=True, how="left")
+                agg = agg.merge(dmax, left_on="Locatie", right_index=True, how="left")
+    
+                agg = agg[agg["Schades"] >= int(min_schades)]
+                if agg.empty:
+                    st.info("Geen locaties die voldoen aan je filters.")
+                else:
+                    c1, c2 = st.columns(2)
+                    c1.metric("Unieke locaties", int(agg.shape[0]))
+                    c2.metric("Totaal schadegevallen", int(len(work)))
+    
+                    st.markdown("---")
+    
     # ===== Tab 4: Opzoeken =====
     with opzoeken_tab:
         st.subheader("🔎 Opzoeken op personeelsnummer")
