@@ -263,7 +263,8 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
 
 # ========= Coachingslijst inlezen =========
 @st.cache_data(show_spinner=False)
-def lees_coachingslijst(pad="Coachingslijst.xlsx"):
+def lees_coachingslijst(pad="Coachingslijst.xlsx", _v=None):
+
     ids_geel, ids_blauw = set(), set()
     total_geel_rows, total_blauw_rows = 0, 0
     excel_info = {}
@@ -539,7 +540,16 @@ def run_dashboard():
 
     # Data laden
     df, options = load_schade_prepared()
-    gecoachte_ids, coaching_ids, total_geel, total_blauw, excel_info, coach_warn = lees_coachingslijst()
+    
+    # ▼ Nieuw: mtime van Coachingslijst als cache-sleutel
+    coachings_pad = "Coachingslijst.xlsx"
+    mtime = os.path.getmtime(coachings_pad) if os.path.exists(coachings_pad) else None
+    
+    gecoachte_ids, coaching_ids, total_geel, total_blauw, excel_info, coach_warn = lees_coachingslijst(
+        pad=coachings_pad,
+        _v=mtime  # verandert wanneer het bestand wijzigt → cache wordt vernieuwd
+    )
+
     st.session_state["gecoachte_ids"] = gecoachte_ids    # nieuw: voltooide set bewaren
     st.session_state["coaching_ids"]  = coaching_ids
     st.session_state["excel_info"]    = excel_info
