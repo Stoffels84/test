@@ -1065,15 +1065,17 @@ def run_dashboard():
                 if heeft_link:
                     res["URL"] = res["Link"].apply(extract_url)
 
-                kol = ["Datum", "Locatie_disp"] + (["URL"] if heeft_link else [])
+                kol = ["Datum", "Locatie_disp", "BusTram_disp"] + (["URL"] if heeft_link else [])
                 column_config = {
                     "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
                     "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                    "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
                 }
                 if heeft_link:
                     column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-
+                
                 st.dataframe(res[kol], column_config=column_config, use_container_width=True)
+
 
     # ===== Tab 5: Coaching =====
     with coaching_tab:
