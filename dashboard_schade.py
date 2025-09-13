@@ -858,8 +858,8 @@ def run_dashboard():
                 pivot = pivot.reindex(full_idx).fillna(0).astype(int)
                 st.line_chart(pivot, use_container_width=True)
 
-else:
-    st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
+        else:
+            st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
 
 
 
