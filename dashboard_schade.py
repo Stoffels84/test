@@ -750,94 +750,91 @@ def run_dashboard():
                 st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
 
     # ===== Tab 2: Voertuig =====
-    with voertuig_tab:
-        st.subheader("🚘 Schadegevallen per voertuigtype")
-    
-        if "BusTram_disp" not in df_filtered.columns:
-            st.info("Kolom voor voertuigtype niet gevonden.")
+# ===== Tab 2: Voertuig =====
+with voertuig_tab:
+    st.subheader("🚘 Schadegevallen per voertuigtype")
+
+    if "BusTram_disp" not in df_filtered.columns:
+        st.info("Kolom voor voertuigtype niet gevonden.")
+    else:
+        # Tellingen per voertuigtype
+        counts = (
+            df_filtered["BusTram_disp"]
+            .fillna("onbekend")
+            .value_counts(dropna=False)
+            .sort_values(ascending=False)
+        )
+
+        if counts.empty:
+            st.info("Geen schadegevallen binnen de huidige filters.")
         else:
-            # Tellingen per voertuigtype (gesorteerd op meeste schades)
-            counts = (
-                df_filtered["BusTram_disp"]
-                .fillna("onbekend")
-                .value_counts(dropna=False)
-                .sort_values(ascending=False)
-            )
-    
-            if counts.empty:
-                st.info("Geen schadegevallen binnen de huidige filters.")
-            else:
-                c1, c2 = st.columns(2)
-                c1.metric("Unieke voertuigtypes", int(counts.shape[0]))
-                c2.metric("Totaal schadegevallen", int(len(df_filtered)))
-    
-                st.markdown("### 📦 Overzicht (klik open per voertuigtype)")
-    
-                # Voor de maandgrafiek per expander hebben we alvast een maandkolom nodig
-                work_all = df_filtered.copy()
-                work_all["Maand"] = work_all["Datum"].dt.to_period("M").dt.to_timestamp()
-    
-                for vtype, total in counts.items():
-                    with st.expander(f"{vtype} — {int(total)} schades", expanded=False):
-                        # Subset voor dit voertuigtype
-                        sub = work_all[work_all["BusTram_disp"] == vtype].copy()
-    
-                        # Kleine samenvattingstabel
-                        kpi1, kpi2, kpi3 = st.columns(3)
-                        with kpi1:
-                            st.metric("Schades", int(len(sub)))
-                        with kpi2:
-                            st.metric("Unieke chauffeurs", int(sub["dienstnummer"].astype(str).nunique()))
-                        with kpi3:
-                            eerste = sub["Datum"].min()
-                            laatste = sub["Datum"].max()
-                            periode_txt = (
-                                f"{eerste:%d-%m-%Y} – {laatste:%d-%m-%Y}"
-                                if pd.notna(eerste) and pd.notna(laatste) else "—"
-                            )
-                            st.metric("Periode", periode_txt)
-    
-                        st.markdown("**Samenvatting**")
-                        sum_df = (
-                            sub.groupby("Locatie_disp", dropna=False)
-                               .size()
-                               .sort_values(ascending=False)
-                               .rename("Schades")
-                               .rename_axis("Locatie")
-                               .reset_index()
-                        )
-                        # Beperk tot de top 25 voor leesbaarheid; pas gerust aan
-                        st.dataframe(sum_df.head(25), use_container_width=True)
-    
-                        # 📈 Grafiek: schades per maand (alleen dit voertuigtype)
-                        st.markdown("**Schades per maand**")
+            c1, c2 = st.columns(2)
+            c1.metric("Unieke voertuigtypes", int(counts.shape[0]))
+            c2.metric("Totaal schadegevallen", int(len(df_filtered)))
+
+            st.markdown("### 📦 Overzicht (klik open per voertuigtype)")
+
+            work_all = df_filtered.copy()
+            work_all["Maand"] = work_all["Datum"].dt.to_period("M").dt.to_timestamp()
+
+            # — Accordeon per voertuigtype
+            for vtype, total in counts.items():
+                with st.expander(f"{vtype} — {int(total)} schades", expanded=False):
+                    sub = work_all[work_all["BusTram_disp"] == vtype].copy()
+
+                    kpi1, kpi2, kpi3 = st.columns(3)
+                    with kpi1:
+                        st.metric("Schades", int(len(sub)))
+                    with kpi2:
+                        st.metric("Unieke chauffeurs", int(sub["dienstnummer"].astype(str).nunique()))
+                    with kpi3:
+                        d_min, d_max = sub["Datum"].min(), sub["Datum"].max()
+                        periode = f"{d_min:%d-%m-%Y} – {d_max:%d-%m-%Y}" if pd.notna(d_min) and pd.notna(d_max) else "—"
+                        st.metric("Periode", periode)
+
+                    st.markdown("**Samenvatting per locatie**")
+                    sum_df = (
+                        sub.groupby("Locatie_disp", dropna=False)
+                           .size()
+                           .sort_values(ascending=False)
+                           .rename("Schades")
+                           .rename_axis("Locatie")
+                           .reset_index()
+                    )
+                    st.dataframe(sum_df.head(25), use_container_width=True)
+
+                    st.markdown("**Schades per maand**")
+                    monthly = (
+                        sub.groupby("Maand")
+                           .size()
+                           .rename("Schades")
+                           .reset_index()
+                           .sort_values("Maand")
+                    )
+                    if monthly.empty:
+                        st.caption("Geen maanddata binnen de huidige filters.")
+                    else:
+                        full_idx = pd.period_range(
+                            sub["Datum"].min().to_period("M"),
+                            sub["Datum"].max().to_period("M"),
+                            freq="M"
+                        ).to_timestamp()
                         monthly = (
-                            sub.groupby("Maand")
-                               .size()
-                               .rename("Schades")
-                               .reset_index()
-                               .sort_values("Maand")
+                            monthly.set_index("Maand")
+                                   .reindex(full_idx)
+                                   .fillna(0)
+                                   .rename_axis("Maand")
+                                   .reset_index()
                         )
-    
-                        if monthly.empty:
-                            st.caption("Geen maanddata binnen de huidige filters.")
-                        else:
-                            # Zorg dat ontbrekende maanden als 0 verschijnen
-                            full_idx = pd.period_range(
-                                sub["Datum"].min().to_period("M"),
-                                sub["Datum"].max().to_period("M"),
-                                freq="M"
-                            ).to_timestamp()
-                            monthly = monthly.set_index("Maand").reindex(full_idx).fillna(0).rename_axis("Maand").reset_index()
-                            st.line_chart(monthly.set_index("Maand")["Schades"], use_container_width=True)
-    
-                st.markdown("---")
-                st.markdown("### 📊 Totale samenvatting per voertuigtype")
-                sum_df_total = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
-                st.dataframe(sum_df_total, use_container_width=True)
-    
-                # (Optioneel) totaal-grafiek per maand × voertuigtype zoals vroeger
-                st.markdown("### 📈 Totaal: schades per maand per voertuigtype")
+                        st.line_chart(monthly.set_index("Maand")["Schades"], use_container_width=True)
+
+            st.markdown("---")
+            st.markdown("### 📊 Totale samenvatting per voertuigtype")
+            sum_df_total = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
+            st.dataframe(sum_df_total, use_container_width=True)
+
+            st.markdown("### 📈 Totaal: schades per maand per voertuigtype")
+            if {"Datum", "BusTram_disp"}.issubset(df_filtered.columns):
                 work = df_filtered.copy()
                 work["Maand"] = work["Datum"].dt.to_period("M").dt.to_timestamp()
                 monthly_all = (
@@ -857,11 +854,8 @@ def run_dashboard():
                 ).to_timestamp()
                 pivot = pivot.reindex(full_idx).fillna(0).astype(int)
                 st.line_chart(pivot, use_container_width=True)
-
-        else:
-            st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
-
-
+            else:
+                st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
 
     # ===== Tab 3: Locatie =====
     with locatie_tab:
