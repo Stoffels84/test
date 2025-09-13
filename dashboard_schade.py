@@ -750,7 +750,6 @@ def run_dashboard():
                 st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
 
     # ===== Tab 2: Voertuig =====
-    # ===== Tab 2: Voertuig =====
     with voertuig_tab:
         st.subheader("🚘 Schadegevallen per voertuigtype")
     
