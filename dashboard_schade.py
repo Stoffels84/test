@@ -647,9 +647,10 @@ def run_dashboard():
     )
 
     # ===== Tabs =====
-    chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-        ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+    chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab, analyse_tab = st.tabs(
+        ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching", "📐 Analyse"]
     )
+
 
     # ===== Tab 1: Chauffeur =====
     with chauffeur_tab:
@@ -1210,6 +1211,80 @@ def run_dashboard():
                         mime="text/csv",
                         key="dl_more_schades_no_coaching"
                     )
+
+    # ===== Tab 6: Analyse =====
+    with analyse_tab:
+        st.subheader("📐 Analyse: lage ↔ hoge personeelsnummers")
+    
+        # 1) Dataset-keuze
+        use_filters = st.checkbox(
+            "Gebruik huidige filters (uit = volledige dataset)",
+            value=True,
+            key="pnr_dist_use_filters"
+        )
+        df_basis = df_filtered if use_filters else df
+    
+        # 2) Tellen per PNR en PNR numeriek maken
+        pnr_counts = (
+            df_basis["dienstnummer"]
+            .dropna()
+            .astype(str)
+            .str.extract(r"(\d+)", expand=False)
+            .dropna()
+        )
+        if pnr_counts.empty:
+            st.info("Geen geldige personeelsnummers in de huidige selectie.")
+        else:
+            pnr_counts = pnr_counts.astype(int).rename("PNR")
+            # aantal schades per PNR
+            per_pnr = pnr_counts.value_counts().sort_index().rename_axis("PNR").reset_index(name="Schades")
+    
+            # 3) Kwantielen (laag → hoog)
+            n_quant = st.slider("Aantal kwantielen", min_value=4, max_value=20, value=10, step=1, key="pnr_n_quant")
+            expanded = per_pnr.loc[per_pnr.index.repeat(per_pnr["Schades"])].reset_index(drop=True)
+            expanded["Q"] = pd.qcut(expanded["PNR"], q=n_quant, labels=[f"Q{q}" for q in range(1, n_quant+1)])
+            by_q = expanded.groupby("Q", observed=True).size().rename("Schades").reset_index()
+            by_q["Q (laag→hoog)"] = by_q["Q"]
+            by_q = by_q[["Q (laag→hoog)", "Schades"]]
+    
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Unieke PNR’s (in selectie)", int(per_pnr.shape[0]))
+            with c2:
+                st.metric("Totaal schades", int(by_q["Schades"].sum()))
+            with c3:
+                st.metric("Mediaan PNR (gewogen op schades)", int(expanded["PNR"].median()))
+    
+            st.bar_chart(by_q.set_index("Q (laag→hoog)")["Schades"], use_container_width=True)
+    
+            # 4) Aandeel schades door hoogste PNR’s (top X%)
+            top_pct = st.slider("Aandeel van hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct")
+            thr = expanded["PNR"].quantile(1 - top_pct/100.0)
+            share_top = (expanded["PNR"] >= thr).mean() * 100.0
+            st.markdown(
+                f"**Top {top_pct}% hoogste personeelsnummers zijn goed voor ~{share_top:.1f}% van alle schades in deze selectie.**"
+            )
+    
+            # 5) Simpele laag vs hoog (mediaan-split)
+            med = expanded["PNR"].median()
+            low_share = (expanded["PNR"] < med).mean() * 100.0
+            high_share = 100.0 - low_share
+            st.markdown(
+                f"**Onder mediaan**: ~{low_share:.1f}% van de schades · **Boven mediaan**: ~{high_share:.1f}%.**"
+            )
+    
+            # 6) Optioneel: vaste PNR-ranges
+            with st.expander("⚙️ Toon als vaste PNR-intervallen"):
+                n_bins = st.slider("Aantal intervallen", 4, 20, 8, step=1, key="pnr_bins")
+                bins = pd.cut(expanded["PNR"], bins=n_bins)
+                by_bin = expanded.groupby(bins, observed=True).size().rename("Schades").reset_index()
+                by_bin = by_bin.rename(columns={"PNR": "PNR-range"})
+                st.bar_chart(by_bin.set_index("PNR-range")["Schades"], use_container_width=True)
+
+
+
+
+        
 
         except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
