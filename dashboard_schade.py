@@ -652,6 +652,7 @@ def run_dashboard():
     )
 
 
+
     # ===== Tab 1: Chauffeur =====
     with chauffeur_tab:
         st.subheader("📂 Schadegevallen per chauffeur")
@@ -1211,6 +1212,13 @@ def run_dashboard():
                         mime="text/csv",
                         key="dl_more_schades_no_coaching"
                     )
+
+    
+        
+
+        except Exception as e:
+            st.error("Er ging iets mis in het Coaching-tab.")
+            st.exception(e)
 
     # ===== Tab 6: Analyse =====
     with analyse_tab:
