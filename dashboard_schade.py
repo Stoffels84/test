@@ -1221,7 +1221,7 @@ def run_dashboard():
             st.exception(e)
 
 
-    # ===== Tab 6: Analyse =====
+       # ===== Tab 6: Analyse =====
     with analyse_tab:
         st.subheader("📐 Analyse: lage ↔ hoge personeelsnummers")
     
@@ -1233,7 +1233,7 @@ def run_dashboard():
         )
         df_basis = df_filtered if use_filters else df
     
-        # 2) PNR's ophalen en numeriek maken
+        # 2) PNR’s ophalen en numeriek maken
         pnr_series = (
             df_basis["dienstnummer"]
             .dropna()
@@ -1255,23 +1255,10 @@ def run_dashboard():
                 .reset_index(name="Schades")
             )
     
-            # 3) Kwantielen (laag → hoog), gewogen op #schades
-            n_quant = st.slider("Aantal kwantielen (laag → hoog)", 4, 20, 10, step=1, key="pnr_n_quant")
+            # expanded = dataset waar elke schade één rij is (nodig voor histogram)
             expanded = per_pnr.loc[per_pnr.index.repeat(per_pnr["Schades"])].reset_index(drop=True)
     
-            # Robuust: minder kwantielen proberen als er te weinig unieke PNR's zijn
-            by_q = None
-            for q in range(n_quant, 1, -1):
-                try:
-                    labels = [f"Q{idx}" for idx in range(1, q + 1)]
-                    expanded["Q"] = pd.qcut(expanded["PNR"], q=q, labels=labels, duplicates="drop")
-                    by_q = expanded.groupby("Q", observed=True).size().rename("Schades").reset_index()
-                    by_q["Q (laag→hoog)"] = by_q["Q"]
-                    by_q = by_q[["Q (laag→hoog)", "Schades"]]
-                    break
-                except Exception:
-                    continue
-    
+            # 3) KPI’s
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.metric("Unieke PNR’s (in selectie)", int(per_pnr.shape[0]))
@@ -1280,39 +1267,35 @@ def run_dashboard():
             with c3:
                 st.metric("Mediaan PNR (gewogen op schades)", int(expanded["PNR"].median()))
     
-            if by_q is not None and not by_q.empty:
-                st.bar_chart(by_q.set_index("Q (laag→hoog)")["Schades"], use_container_width=True)
-            else:
-                st.caption("Niet genoeg unieke PNR’s om kwantielen te maken; bekijk de mediaan-split hieronder.")
+            # 4) Histogram
+            st.markdown("### 📊 Histogram van schades per personeelsnummer")
+            n_bins = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins")
     
-            # 4) Aandeel schades door hoogste PNR’s (top X%)
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.hist(expanded["PNR"], bins=n_bins, edgecolor="black")
+            ax.axvline(expanded["PNR"].median(), color="red", linestyle="--", label="Mediaan PNR")
+            ax.set_xlabel("Personeelsnummer")
+            ax.set_ylabel("Aantal schades")
+            ax.set_title("Verdeling van schades over personeelsnummers")
+            ax.legend()
+            st.pyplot(fig)
+    
+            # 5) Aandeel schades door hoogste PNR’s (top X%)
             top_pct = st.slider("Aandeel van hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct")
             thr = expanded["PNR"].quantile(1 - top_pct / 100.0)
-            share_top = (expanded["PNR"] >= thr).mean() * 100.0  # 1 rij = 1 schade
+            share_top = (expanded["PNR"] >= thr).mean() * 100.0
             st.markdown(
                 f"**Top {top_pct}% hoogste personeelsnummers zijn goed voor ~{share_top:.1f}% van alle schades in deze selectie.**"
             )
     
-            # 5) Simpele laag vs. hoog (mediaan-split)
+            # 6) Mediaan-split
             med = expanded["PNR"].median()
             low_share = (expanded["PNR"] < med).mean() * 100.0
             high_share = 100.0 - low_share
             st.markdown(
-                f"**Onder mediaan**: ~{low_share:.1f}% van de schades · **Boven mediaan**: ~{high_share:.1f}%."
+                f"**Onder mediaan**: ~{low_share:.1f}% van de schades · **Boven mediaan**: ~{high_share:.1f}%.**"
             )
-    
-            # 6) Optioneel: vaste PNR-intervallen (fix: Interval → string labels)
-            with st.expander("⚙️ Toon als vaste PNR-intervallen"):
-                n_bins = st.slider("Aantal intervallen", 4, 20, 8, step=1, key="pnr_bins")
-                bins = pd.cut(expanded["PNR"], bins=n_bins)
-    
-                # Series met IntervalIndex → omzetten naar string index
-                by_bin = expanded.groupby(bins, observed=True).size()
-                by_bin.index = by_bin.index.astype(str)   # "(20000, 23000]" etc.
-                by_bin.name = "Schades"
-    
-                st.bar_chart(by_bin, use_container_width=True)
-    
 
 
 # =========================
