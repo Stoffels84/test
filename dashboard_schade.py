@@ -1221,7 +1221,7 @@ def run_dashboard():
             st.exception(e)
 
 
-       # ===== Tab 6: Analyse =====
+    # ===== Tab 6: Analyse =====
     with analyse_tab:
         st.subheader("📐 Analyse: lage ↔ hoge personeelsnummers")
     
@@ -1233,7 +1233,7 @@ def run_dashboard():
         )
         df_basis = df_filtered if use_filters else df
     
-        # 2) PNR’s ophalen en numeriek maken
+        # 2) PNR’s ophalen en numeriek maken (alleen dossiers met schade)
         pnr_series = (
             df_basis["dienstnummer"]
             .dropna()
@@ -1254,34 +1254,89 @@ def run_dashboard():
                 .rename_axis("PNR")
                 .reset_index(name="Schades")
             )
-    
-            # expanded = dataset waar elke schade één rij is (nodig voor histogram)
+            # expanded: 1 rij = 1 schade (voor histogram en gewogen statistics)
             expanded = per_pnr.loc[per_pnr.index.repeat(per_pnr["Schades"])].reset_index(drop=True)
     
-            # 3) KPI’s
-            c1, c2, c3 = st.columns(3)
+            # 3) 📦 Populatie-instellingen (handmatig + automatische vulling uit contactlijst)
+            auto_total_staff = None
+            median_all_staff = None
+            try:
+                contacts = load_contact_map()  # gebruikt je tab 'contact' in 'schade met macro.xlsm'
+                all_pnrs = (
+                    pd.Series(list(contacts.keys()), dtype="string")
+                    .str.extract(r"(\d+)", expand=False)
+                    .dropna()
+                    .astype(int)
+                )
+                if not all_pnrs.empty:
+                    auto_total_staff = int(all_pnrs.nunique())
+                    median_all_staff = int(all_pnrs.median())
+            except Exception:
+                pass
+    
+            total_staff_default = auto_total_staff or int(per_pnr.shape[0])
+            total_staff = st.number_input(
+                "Handmatig totaal personeelsnummers",
+                min_value=1,
+                value=total_staff_default,
+                step=1,
+                help="Gebruik de automatisch ingevulde waarde of overschrijf ze indien het personeelsbestand gewijzigd is."
+            )
+    
+            # 4) KPI’s (uitgebreid met populatiecijfers)
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
-                st.metric("Unieke PNR’s (in selectie)", int(per_pnr.shape[0]))
+                st.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
             with c2:
                 st.metric("Totaal schades", int(per_pnr["Schades"].sum()))
             with c3:
-                st.metric("Mediaan PNR (gewogen op schades)", int(expanded["PNR"].median()))
+                st.metric("Mediaan PNR (gewogen, schades)", int(expanded["PNR"].median()))
+            with c4:
+                st.metric("Gemiddeld PNR (gewogen, schades)", round(expanded["PNR"].mean(), 1))
     
-            # 4) Histogram
+            c5, c6, c7 = st.columns(3)
+            with c5:
+                coverage = (per_pnr.shape[0] / total_staff) * 100.0
+                st.metric("Dekking personeel met schade", f"{coverage:.1f}%")
+            with c6:
+                rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
+                st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
+            with c7:
+                if median_all_staff is not None:
+                    st.metric("Mediaan PNR (alle medewerkers)", median_all_staff)
+                else:
+                    st.metric("Mediaan PNR (alle medewerkers)", "—")
+    
+            # 5) Histogram
             st.markdown("### 📊 Histogram van schades per personeelsnummer")
             n_bins = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins")
     
             import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(8, 4))
             ax.hist(expanded["PNR"], bins=n_bins, edgecolor="black")
-            ax.axvline(expanded["PNR"].median(), color="red", linestyle="--", label="Mediaan PNR")
+            ax.axvline(expanded["PNR"].median(), color="red", linestyle="--", label="Mediaan PNR (schades)")
+            ax.axvline(expanded["PNR"].mean(), color="blue", linestyle=":", label="Gemiddeld PNR (schades)")
+            if median_all_staff is not None:
+                ax.axvline(median_all_staff, color="green", linestyle="-.", label="Mediaan PNR (alle medewerkers)")
             ax.set_xlabel("Personeelsnummer")
             ax.set_ylabel("Aantal schades")
             ax.set_title("Verdeling van schades over personeelsnummers")
             ax.legend()
             st.pyplot(fig)
     
-            # 5) Aandeel schades door hoogste PNR’s (top X%)
+            # 6) Automatische interpretatie van scheefheid (op basis van schades)
+            med = expanded["PNR"].median()
+            mean = expanded["PNR"].mean()
+            diff = mean - med
+            if abs(diff) < 100:
+                interpretatie = "De verdeling is ongeveer symmetrisch: gemiddelde en mediaan liggen dicht bij elkaar."
+            elif mean > med:
+                interpretatie = "De verdeling is **rechts-scheef**: hogere personeelsnummers veroorzaken relatief meer schades."
+            else:
+                interpretatie = "De verdeling is **links-scheef**: lagere personeelsnummers veroorzaken relatief meer schades."
+            st.caption(f"📌 Interpretatie: {interpretatie}")
+    
+            # 7) Top-% hoogste PNR’s (schades)
             top_pct = st.slider("Aandeel van hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct")
             thr = expanded["PNR"].quantile(1 - top_pct / 100.0)
             share_top = (expanded["PNR"] >= thr).mean() * 100.0
@@ -1289,14 +1344,19 @@ def run_dashboard():
                 f"**Top {top_pct}% hoogste personeelsnummers zijn goed voor ~{share_top:.1f}% van alle schades in deze selectie.**"
             )
     
-            # 6) Mediaan-split
-            med = expanded["PNR"].median()
+            # 8) Mediaan-split (schades)
             low_share = (expanded["PNR"] < med).mean() * 100.0
             high_share = 100.0 - low_share
             st.markdown(
                 f"**Onder mediaan**: ~{low_share:.1f}% van de schades · **Boven mediaan**: ~{high_share:.1f}%.**"
             )
-
+    
+            # 9) Toelichting op populatie-interpretatie
+            st.caption(
+                "ℹ️ De rode/blauwe lijnen en percentages zijn berekend op PNR’s met schades. "
+                "Met het handmatig totaal hierboven krijg je extra context (dekking en schadegraad). "
+                "Als de contactlijst beschikbaar is, tonen we ook de mediaan PNR van alle medewerkers (groene lijn)."
+            )
 
 # =========================
 # main
