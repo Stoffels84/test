@@ -1219,6 +1219,8 @@ def run_dashboard():
         except Exception as e:
             st.error("Er ging iets mis in het Coaching-tab.")
             st.exception(e)
+
+
 # ===== Tab 6: Analyse =====
 with analyse_tab:
     st.subheader("📐 Analyse: lage ↔ hoge personeelsnummers")
@@ -1310,6 +1312,7 @@ with analyse_tab:
             by_bin.name = "Schades"
 
             st.bar_chart(by_bin, use_container_width=True)
+
 
 
 # =========================
