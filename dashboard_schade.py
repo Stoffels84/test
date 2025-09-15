@@ -1291,13 +1291,6 @@ def run_dashboard():
 
 
 
-
-        
-
-        except Exception as e:
-            st.error("Er ging iets mis in het Coaching-tab.")
-            st.exception(e)
-
     # =========================
     # main
     # =========================
