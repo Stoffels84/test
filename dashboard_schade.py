@@ -1291,12 +1291,12 @@ def run_dashboard():
                 help="Overschrijf indien je personeelsbestand gewijzigd is."
             )
     
-            # KPI’s
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
             c2.metric("Totaal schades", int(per_pnr["Schades"].sum()))
             c3.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
-            c4.metric("Gemiddeld PNR (gewogen)", round(expanded["PNR"].mean(), 1))
+            c4.metric("Gemiddeld PNR (gewogen)", int(round(expanded["PNR"].mean())))
+
     
             c5, c6, c7 = st.columns(3)
             with c5:
