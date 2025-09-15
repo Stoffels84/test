@@ -1233,32 +1233,32 @@ def run_dashboard():
         )
         df_basis = df_filtered if use_filters else df
     
-        # 2) PNR’s ophalen en numeriek maken (alleen PNR's met minstens 1 schade)
-        pnr_series = (
-            df_basis["dienstnummer"]
-            .dropna()
-            .astype(str)
-            .str.extract(r"(\d+)", expand=False)
-            .dropna()
-        )
+        # -------- helpers --------
+        import matplotlib.pyplot as plt
     
-        if pnr_series.empty:
-            st.info("Geen geldige personeelsnummers in de huidige selectie.")
-        else:
+        def _pnr_stats_and_expanded(df_in: pd.DataFrame):
+            """Return per_pnr (PNR, Schades) en expanded (1 rij = 1 schade) voor een subset."""
+            pnr_series = (
+                df_in["dienstnummer"]
+                .dropna()
+                .astype(str)
+                .str.extract(r"(\d+)", expand=False)
+                .dropna()
+            )
+            if pnr_series.empty:
+                return None, None
             pnr_series = pnr_series.astype(int).rename("PNR")
-    
-            # aantal schades per PNR
             per_pnr = (
                 pnr_series.value_counts()
                 .sort_index()
                 .rename_axis("PNR")
                 .reset_index(name="Schades")
             )
-    
-            # expanded: 1 rij = 1 schade (handig voor histogram & gewogen statistiek)
             expanded = per_pnr.loc[per_pnr.index.repeat(per_pnr["Schades"])].reset_index(drop=True)
+            return per_pnr, expanded
     
-            # 3) 📦 Populatie-instellingen (probeer automatisch uit contactlijst te halen)
+        def _overall_population_defaults():
+            """Haal optioneel het totaal personeel en mediaan PNR (alle medewerkers) op uit 'contact' tab."""
             auto_total_staff = None
             median_all_staff = None
             try:
@@ -1274,105 +1274,152 @@ def run_dashboard():
                     median_all_staff = int(all_pnrs.median())
             except Exception:
                 pass
+            return auto_total_staff, median_all_staff
     
-            total_staff_default = auto_total_staff or int(per_pnr.shape[0])
-            total_staff = st.number_input(
-                "Handmatig totaal personeelsnummers",
-                min_value=1,
-                value=total_staff_default,
-                step=1,
-                help="Overschrijf indien je personeelsbestand gewijzigd is."
-            )
+        def _render_subset_block(df_in: pd.DataFrame, title: str, show_population: bool, n_bins: int, top_pct: int):
+            """Render KPI's + histogram + top% + mediaan-split voor gegeven subset."""
+            per_pnr, expanded = _pnr_stats_and_expanded(df_in)
+            if per_pnr is None or expanded is None or expanded.empty:
+                st.info(f"Geen geldige personeelsnummers in selectie: {title}.")
+                return
     
-            # 4) KPI’s
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
+            st.markdown(f"### {title}")
+    
+            # Populatie (alleen in overall blok)
+            if show_population:
+                auto_total_staff, median_all_staff = _overall_population_defaults()
+                total_staff_default = auto_total_staff or int(per_pnr.shape[0])
+                total_staff = st.number_input(
+                    "Handmatig totaal personeelsnummers",
+                    min_value=1,
+                    value=total_staff_default,
+                    step=1,
+                    help="Overschrijf indien je personeelsbestand gewijzigd is.",
+                    key=f"total_staff_{title}"
+                )
+            else:
+                total_staff, median_all_staff = None, None
+    
+            # KPI’s
+            cols = st.columns(4 if show_population else 4)
+            with cols[0]:
                 st.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
-            with c2:
+            with cols[1]:
                 st.metric("Totaal schades", int(per_pnr["Schades"].sum()))
-            with c3:
-                st.metric("Mediaan PNR (gewogen, schades)", int(expanded["PNR"].median()))
-            with c4:
-                st.metric("Gemiddeld PNR (gewogen, schades)", round(expanded["PNR"].mean(), 1))
+            with cols[2]:
+                st.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
+            with cols[3]:
+                st.metric("Gemiddeld PNR (gewogen)", round(expanded["PNR"].mean(), 1))
     
-            c5, c6, c7 = st.columns(3)
-            with c5:
-                coverage = (per_pnr.shape[0] / total_staff) * 100.0
-                st.metric("Dekking personeel met schade", f"{coverage:.1f}%")
-            with c6:
-                rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
-                st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
-            with c7:
-                st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
+            if show_population:
+                c5, c6, c7 = st.columns(3)
+                with c5:
+                    coverage = (per_pnr.shape[0] / total_staff) * 100.0
+                    st.metric("Dekking personeel met schade", f"{coverage:.1f}%")
+                with c6:
+                    rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
+                    st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
+                with c7:
+                    st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
     
-            # 5) Histogram
-            st.markdown("### 📊 Histogram van schades per personeelsnummer")
-            n_bins = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins")
-    
-            import matplotlib.pyplot as plt
+            # Histogram
             fig, ax = plt.subplots(figsize=(8, 4))
             ax.hist(expanded["PNR"], bins=n_bins, edgecolor="black")
-            ax.axvline(expanded["PNR"].median(), color="red", linestyle="--", label="Mediaan PNR (schades)")
-            ax.axvline(expanded["PNR"].mean(), color="blue", linestyle=":", label="Gemiddeld PNR (schades)")
-            if median_all_staff is not None:
+            ax.axvline(expanded["PNR"].median(), color="red", linestyle="--", label="Mediaan PNR")
+            ax.axvline(expanded["PNR"].mean(), color="blue", linestyle=":", label="Gemiddeld PNR")
+            if show_population and median_all_staff is not None:
                 ax.axvline(median_all_staff, color="green", linestyle="-.", label="Mediaan PNR (alle medewerkers)")
             ax.set_xlabel("Personeelsnummer")
             ax.set_ylabel("Aantal schades")
-            ax.set_title("Verdeling van schades over personeelsnummers")
+            ax.set_title(f"Histogram schades per PNR — {title}")
             ax.legend()
             st.pyplot(fig)
     
-            # 6) Automatische interpretatie met Pearson’s 2e skewness
-            med = float(expanded["PNR"].median())
-            mean = float(expanded["PNR"].mean())
-            std = float(expanded["PNR"].std(ddof=0))  # populatie-std
-            pearson2 = 0.0 if std == 0 else 3.0 * (mean - med) / std
-    
-            if abs(pearson2) < 0.2:
-                interpretatie = (
-                    "De verdeling is ongeveer symmetrisch: mediaan en gemiddelde liggen dicht bij elkaar "
-                    f"(skew ≈ {pearson2:.2f})."
-                )
-            elif pearson2 > 0:
-                interpretatie = (
-                    "De verdeling is **rechts-scheef** (positief): de rechterstaart is zwaarder → "
-                    "**hogere personeelsnummers** veroorzaken relatief meer schades "
-                    f"(skew = {pearson2:.2f})."
-                )
-            else:
-                interpretatie = (
-                    "De verdeling is **links-scheef** (negatief): de linkerstaat is zwaarder → "
-                    "**lagere personeelsnummers** veroorzaken relatief meer schades "
-                    f"(skew = {pearson2:.2f})."
-                )
-            st.caption(
-                "📌 Interpretatie: " + interpretatie +
-                f" (mediaan = {med:,.0f}, gemiddeld = {mean:,.0f})."
-            )
-    
-            # 7) Top-% hoogste PNR’s (schades)
-            top_pct = st.slider("Aandeel van hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct")
+            # Top-% hoogste PNR’s (schades)
             thr = expanded["PNR"].quantile(1 - top_pct / 100.0)
             share_top = (expanded["PNR"] >= thr).mean() * 100.0
             st.markdown(
-                f"**Top {top_pct}% hoogste personeelsnummers zijn goed voor ~{share_top:.1f}% van alle schades in deze selectie.**"
+                f"**Top {top_pct}% hoogste personeelsnummers** zijn goed voor **~{share_top:.1f}%** van alle schades in deze selectie."
             )
     
-            # 8) Mediaan-split (schades)
+            # Mediaan-split
+            med = expanded["PNR"].median()
             low_share = (expanded["PNR"] < med).mean() * 100.0
             high_share = 100.0 - low_share
-            st.markdown(
-                f"**Onder mediaan**: ~{low_share:.1f}% van de schades · **Boven mediaan**: ~{high_share:.1f}%.**"
+            st.markdown(f"**Onder mediaan**: ~{low_share:.1f}% · **Boven mediaan**: ~{high_share:.1f}% van de schades.")
+    
+        # 2) Overall instellingen
+        st.markdown("#### 🔧 Weergave-instellingen")
+        n_bins_overall = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins_overall")
+        top_pct_overall = st.slider("Aandeel hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct_overall")
+    
+        # 3) Overall (alle teamcoaches/filters)
+        _render_subset_block(df_basis, "Totaal (huidige selectie)", show_population=True,
+                             n_bins=n_bins_overall, top_pct=top_pct_overall)
+    
+        st.markdown("---")
+        st.subheader("👥 Vergelijking per teamcoach")
+    
+        # 4) Per teamcoach – selectie & rendering
+        if "teamcoach_disp" not in df_basis.columns:
+            st.caption("Kolom 'teamcoach_disp' ontbreekt — per-teamcoach analyse niet beschikbaar.")
+        else:
+            teamcoach_opts = sorted(x for x in df_basis["teamcoach_disp"].dropna().unique() if str(x).strip())
+            sel_coaches = st.multiselect(
+                "Kies 1–3 teamcoaches voor detail, of >3 voor een samenvattingstabel",
+                options=teamcoach_opts,
+                default=[],
+                placeholder="Selecteer teamcoaches…",
+                key="analyse_tc_ms"
             )
     
-            # 9) Toelichting
-            st.caption(
-                "ℹ️ De rode/blauwe lijnen en percentages zijn berekend op PNR’s met schades. "
-                "Het handmatig totaal geeft context (dekking en schadegraad). "
-                "Als de contactlijst beschikbaar is, tonen we ook de mediaan PNR van alle medewerkers (groene lijn). "
-                "‘Rechts-scheef’ betekent zwaardere staart rechts (meer schades bij hoge PNR’s); ‘links-scheef’ het omgekeerde."
-            )
-
+            if not sel_coaches:
+                st.caption("Tip: selecteer teamcoaches om een vergelijking te zien.")
+            elif len(sel_coaches) <= 3:
+                # eigen sliders voor de per-coach plots
+                n_bins_tc = st.slider("Aantal bins (per teamcoach)", 10, 100, 30, step=5, key="pnr_hist_bins_tc")
+                top_pct_tc = st.slider("Top % (per teamcoach)", 5, 50, 20, step=5, key="pnr_top_pct_tc")
+    
+                for tc in sel_coaches:
+                    sub_tc = df_basis[df_basis["teamcoach_disp"] == tc].copy()
+                    _render_subset_block(sub_tc, f"Teamcoach: {tc}", show_population=False,
+                                         n_bins=n_bins_tc, top_pct=top_pct_tc)
+                    st.markdown("---")
+            else:
+                # Samenvattende tabel per coach (compact)
+                rows = []
+                for tc in sel_coaches:
+                    sub_tc = df_basis[df_basis["teamcoach_disp"] == tc].copy()
+                    per_pnr, expanded = _pnr_stats_and_expanded(sub_tc)
+                    if per_pnr is None or expanded is None or expanded.empty:
+                        rows.append({
+                            "Teamcoach": tc, "Unieke PNR’s": 0, "Totaal schades": 0,
+                            "Mediaan PNR": None, "Gemiddeld PNR": None
+                        })
+                    else:
+                        rows.append({
+                            "Teamcoach": tc,
+                            "Unieke PNR’s": int(per_pnr.shape[0]),
+                            "Totaal schades": int(per_pnr["Schades"].sum()),
+                            "Mediaan PNR": int(expanded["PNR"].median()),
+                            "Gemiddeld PNR": round(expanded["PNR"].mean(), 1),
+                        })
+                if rows:
+                    df_sum = pd.DataFrame(rows).sort_values(["Totaal schades","Teamcoach"], ascending=[False, True]).reset_index(drop=True)
+                    st.dataframe(df_sum, use_container_width=True)
+                    st.download_button(
+                        "⬇️ Download samenvatting per teamcoach (CSV)",
+                        df_sum.to_csv(index=False).encode("utf-8"),
+                        file_name="analyse_per_teamcoach.csv",
+                        mime="text/csv",
+                        key="dl_analyse_tc"
+                    )
+    
+        st.caption(
+            "ℹ️ Histogrammen en KPI’s zijn gebaseerd op PNR’s met schades in de huidige selectie. "
+            "In het totaalblok kun je optioneel het totaal personeelsbestand instellen en (indien beschikbaar) "
+            "de mediaan PNR van alle medewerkers laten tonen."
+        )
 
 # =========================
 # main
