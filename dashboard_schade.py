@@ -1291,15 +1291,15 @@ def run_dashboard():
 
 
 
-    # =========================
-    # main
-    # =========================
-    def main():
-        st.set_page_config(page_title="Schade Dashboard", page_icon="📊", layout="wide")
-        if not st.session_state.get("authenticated"):
-            login_gate()
-            return
-        run_dashboard()
+# =========================
+# main
+# =========================
+def main():
+    st.set_page_config(page_title="Schade Dashboard", page_icon="📊", layout="wide")
+    if not st.session_state.get("authenticated"):
+        login_gate()
+        return
+    run_dashboard()
     
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
