@@ -1282,13 +1282,13 @@ def run_dashboard():
             if per_pnr is None or expanded is None or expanded.empty:
                 st.info(f"Geen geldige personeelsnummers in selectie: {title}.")
                 return
-    
+        
             st.markdown(f"### {title}")
-    
+        
             # Populatie (alleen in overall blok)
             if show_population:
                 auto_total_staff, median_all_staff = _overall_population_defaults()
-                total_staff_default = auto_total_staff or int(per_pnr.shape[0])
+                total_staff_default = auto_total_staff or 598   # 🔹 standaard altijd 598
                 total_staff = st.number_input(
                     "Handmatig totaal personeelsnummers",
                     min_value=1,
@@ -1299,7 +1299,7 @@ def run_dashboard():
                 )
             else:
                 total_staff, median_all_staff = None, None
-    
+        
             # KPI’s
             cols = st.columns(4 if show_population else 4)
             with cols[0]:
@@ -1310,7 +1310,7 @@ def run_dashboard():
                 st.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
             with cols[3]:
                 st.metric("Gemiddeld PNR (gewogen)", round(expanded["PNR"].mean(), 1))
-    
+        
             if show_population:
                 c5, c6, c7 = st.columns(3)
                 with c5:
@@ -1321,32 +1321,35 @@ def run_dashboard():
                     st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
                 with c7:
                     st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
-    
-            # Histogram
+        
+            # Histogram (🔹 alleen groene lijn behouden)
             fig, ax = plt.subplots(figsize=(8, 4))
             ax.hist(expanded["PNR"], bins=n_bins, edgecolor="black")
-            ax.axvline(expanded["PNR"].median(), color="red", linestyle="--", label="Mediaan PNR")
-            ax.axvline(expanded["PNR"].mean(), color="blue", linestyle=":", label="Gemiddeld PNR")
+        
             if show_population and median_all_staff is not None:
-                ax.axvline(median_all_staff, color="green", linestyle="-.", label="Mediaan PNR (alle medewerkers)")
+                ax.axvline(median_all_staff, color="green", linestyle="-.", linewidth=2,
+                           label="Mediaan PNR (alle medewerkers)")
+        
             ax.set_xlabel("Personeelsnummer")
             ax.set_ylabel("Aantal schades")
             ax.set_title(f"Histogram schades per PNR — {title}")
-            ax.legend()
+            if show_population and median_all_staff is not None:
+                ax.legend()
             st.pyplot(fig)
-    
+        
             # Top-% hoogste PNR’s (schades)
             thr = expanded["PNR"].quantile(1 - top_pct / 100.0)
             share_top = (expanded["PNR"] >= thr).mean() * 100.0
             st.markdown(
                 f"**Top {top_pct}% hoogste personeelsnummers** zijn goed voor **~{share_top:.1f}%** van alle schades in deze selectie."
             )
-    
-            # Mediaan-split
+        
+            # Mediaan-split (schades)
             med = expanded["PNR"].median()
             low_share = (expanded["PNR"] < med).mean() * 100.0
             high_share = 100.0 - low_share
-            st.markdown(f"**Onder mediaan**: ~{low_share:.1f}% · **Boven mediaan**: ~{high_share:.1f}% van de schades.")
+            st.markdown(f"**Onder mediaan (schades)**: ~{low_share:.1f}% · **Boven mediaan (schades)**: ~{high_share:.1f}% van de schades.")
+
     
         # 2) Overall instellingen
         st.markdown("#### 🔧 Weergave-instellingen")
