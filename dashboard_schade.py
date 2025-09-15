@@ -1233,7 +1233,7 @@ def run_dashboard():
         )
         df_basis = df_filtered if use_filters else df
     
-        # 2) PNR’s ophalen en numeriek maken (alleen dossiers met schade)
+        # 2) PNR’s ophalen en numeriek maken (alleen PNR's met minstens 1 schade)
         pnr_series = (
             df_basis["dienstnummer"]
             .dropna()
@@ -1254,14 +1254,15 @@ def run_dashboard():
                 .rename_axis("PNR")
                 .reset_index(name="Schades")
             )
-            # expanded: 1 rij = 1 schade (voor histogram en gewogen statistics)
+    
+            # expanded: 1 rij = 1 schade (handig voor histogram & gewogen statistiek)
             expanded = per_pnr.loc[per_pnr.index.repeat(per_pnr["Schades"])].reset_index(drop=True)
     
-            # 3) 📦 Populatie-instellingen (handmatig + automatische vulling uit contactlijst)
+            # 3) 📦 Populatie-instellingen (probeer automatisch uit contactlijst te halen)
             auto_total_staff = None
             median_all_staff = None
             try:
-                contacts = load_contact_map()  # gebruikt je tab 'contact' in 'schade met macro.xlsm'
+                contacts = load_contact_map()  # tab 'contact' in 'schade met macro.xlsm'
                 all_pnrs = (
                     pd.Series(list(contacts.keys()), dtype="string")
                     .str.extract(r"(\d+)", expand=False)
@@ -1280,10 +1281,10 @@ def run_dashboard():
                 min_value=1,
                 value=total_staff_default,
                 step=1,
-                help="Gebruik de automatisch ingevulde waarde of overschrijf ze indien het personeelsbestand gewijzigd is."
+                help="Overschrijf indien je personeelsbestand gewijzigd is."
             )
     
-            # 4) KPI’s (uitgebreid met populatiecijfers)
+            # 4) KPI’s
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 st.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
@@ -1302,10 +1303,7 @@ def run_dashboard():
                 rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
                 st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
             with c7:
-                if median_all_staff is not None:
-                    st.metric("Mediaan PNR (alle medewerkers)", median_all_staff)
-                else:
-                    st.metric("Mediaan PNR (alle medewerkers)", "—")
+                st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
     
             # 5) Histogram
             st.markdown("### 📊 Histogram van schades per personeelsnummer")
@@ -1324,17 +1322,33 @@ def run_dashboard():
             ax.legend()
             st.pyplot(fig)
     
-            # 6) Automatische interpretatie van scheefheid (op basis van schades)
-            med = expanded["PNR"].median()
-            mean = expanded["PNR"].mean()
-            diff = mean - med
-            if abs(diff) < 100:
-                interpretatie = "De verdeling is ongeveer symmetrisch: gemiddelde en mediaan liggen dicht bij elkaar."
-            elif mean > med:
-                interpretatie = "De verdeling is **rechts-scheef**: hogere personeelsnummers veroorzaken relatief meer schades."
+            # 6) Automatische interpretatie met Pearson’s 2e skewness
+            med = float(expanded["PNR"].median())
+            mean = float(expanded["PNR"].mean())
+            std = float(expanded["PNR"].std(ddof=0))  # populatie-std
+            pearson2 = 0.0 if std == 0 else 3.0 * (mean - med) / std
+    
+            if abs(pearson2) < 0.2:
+                interpretatie = (
+                    "De verdeling is ongeveer symmetrisch: mediaan en gemiddelde liggen dicht bij elkaar "
+                    f"(skew ≈ {pearson2:.2f})."
+                )
+            elif pearson2 > 0:
+                interpretatie = (
+                    "De verdeling is **rechts-scheef** (positief): de rechterstaart is zwaarder → "
+                    "**hogere personeelsnummers** veroorzaken relatief meer schades "
+                    f"(skew = {pearson2:.2f})."
+                )
             else:
-                interpretatie = "De verdeling is **links-scheef**: lagere personeelsnummers veroorzaken relatief meer schades."
-            st.caption(f"📌 Interpretatie: {interpretatie}")
+                interpretatie = (
+                    "De verdeling is **links-scheef** (negatief): de linkerstaat is zwaarder → "
+                    "**lagere personeelsnummers** veroorzaken relatief meer schades "
+                    f"(skew = {pearson2:.2f})."
+                )
+            st.caption(
+                "📌 Interpretatie: " + interpretatie +
+                f" (mediaan = {med:,.0f}, gemiddeld = {mean:,.0f})."
+            )
     
             # 7) Top-% hoogste PNR’s (schades)
             top_pct = st.slider("Aandeel van hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct")
@@ -1351,12 +1365,14 @@ def run_dashboard():
                 f"**Onder mediaan**: ~{low_share:.1f}% van de schades · **Boven mediaan**: ~{high_share:.1f}%.**"
             )
     
-            # 9) Toelichting op populatie-interpretatie
+            # 9) Toelichting
             st.caption(
                 "ℹ️ De rode/blauwe lijnen en percentages zijn berekend op PNR’s met schades. "
-                "Met het handmatig totaal hierboven krijg je extra context (dekking en schadegraad). "
-                "Als de contactlijst beschikbaar is, tonen we ook de mediaan PNR van alle medewerkers (groene lijn)."
+                "Het handmatig totaal geeft context (dekking en schadegraad). "
+                "Als de contactlijst beschikbaar is, tonen we ook de mediaan PNR van alle medewerkers (groene lijn). "
+                "‘Rechts-scheef’ betekent zwaardere staart rechts (meer schades bij hoge PNR’s); ‘links-scheef’ het omgekeerde."
             )
+
 
 # =========================
 # main
