@@ -1082,44 +1082,58 @@ def run_dashboard():
                 res["URL"] = res["Link"].apply(extract_url)
     
             # --- helper om kolom case-insensitive te vinden
-            def find_col(df_in: pd.DataFrame, want: str) -> str | None:
-                want = want.strip().lower()
+            # --- kleine helper: case-insensitive kolomvinder, unieke naam
+            def find_col_ci(df_in: pd.DataFrame, want: str) -> str | None:
+                want = str(want).strip().lower()
                 for c in df_in.columns:
                     if str(c).strip().lower() == want:
                         return c
                 return None
-    
-            veh_col = find_col(res, "voertuig")
-            act_col = find_col(res, "actief")
-    
-            # Normaliseer 'actief' naar Ja/Neen (alleen voor weergave)
-            if act_col:
-                res[act_col] = (
-                    res[act_col]
-                    .astype(str).str.strip().str.lower()
-                    .map({"ja": "Ja", "neen": "Neen", "nee": "Neen", "true": "Ja", "false": "Neen"})
-                    .fillna(res[act_col])
-                )
-    
-            # Kolommen voor weergave
-            kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-            if veh_col: kol.append(veh_col)
-            if act_col: kol.append(act_col)
-            if heeft_link: kol.append("URL")
-    
-            column_config = {
-                "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
-            }
-            if veh_col:
-                column_config[veh_col] = st.column_config.TextColumn("Voertuig")
-            if act_col:
-                column_config[act_col] = st.column_config.TextColumn("Actief")
-            if "URL" in kol:
-                column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-    
-            st.dataframe(res[kol], column_config=column_config, use_container_width=True)
+            
+            # ... bovenstaand laten staan; daarna je resultaten-df 'res' maken (zoals je al doet) ...
+            
+            if res.empty:
+                st.caption("Geen schadegevallen binnen de huidige filters.")
+            else:
+                res = res.sort_values("Datum", ascending=False).copy()
+            
+                # optionele Link-kolom
+                heeft_link = "Link" in res.columns
+                if heeft_link:
+                    res["URL"] = res["Link"].apply(extract_url)
+            
+                # vind 'voertuig' en 'actief' case-insensitive
+                veh_col = find_col_ci(res, "voertuig")
+                act_col = find_col_ci(res, "actief")
+            
+                # normaliseer 'actief' -> Ja/Neen (alleen voor weergave)
+                if act_col:
+                    res[act_col] = (
+                        res[act_col].astype(str).strip().str.lower()
+                          .map({"ja": "Ja", "neen": "Neen", "nee": "Neen", "true": "Ja", "false": "Neen"})
+                          .fillna(res[act_col])
+                    )
+            
+                # kolommen die we tonen
+                kol = ["Datum", "Locatie_disp", "BusTram_disp"]
+                if veh_col: kol.append(veh_col)
+                if act_col: kol.append(act_col)
+                if heeft_link: kol.append("URL")
+            
+                # nette kolomlabels
+                column_config = {
+                    "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                    "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                    "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
+                }
+                if veh_col:
+                    column_config[veh_col] = st.column_config.TextColumn("Voertuig")
+                if act_col:
+                    column_config[act_col] = st.column_config.TextColumn("Actief")
+                if "URL" in kol:
+                    column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+            
+                st.dataframe(res[kol], column_config=column_config, use_container_width=True)
 
 
     # ===== Tab 5: Coaching =====
