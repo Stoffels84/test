@@ -646,6 +646,22 @@ def run_dashboard():
             .str.strip()
     )
 
+
+    def find_col(df_in: pd.DataFrame, want: str) -> str | None:
+    want = want.strip().lower()
+    for c in df_in.columns:
+        if str(c).strip().lower() == want:
+            return c
+    return None
+
+veh_col = find_col(res, "voertuig")
+act_col = find_col(res, "actief")
+...
+# Kolommen voor weergave
+kol = ["Datum", "Locatie_disp", "BusTram_disp"]
+if veh_col: kol.append(veh_col)
+if act_col: kol.append(act_col)
+
     # ===== Tabs =====
     chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab, analyse_tab = st.tabs(
         ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching", "📐 Analyse"]
