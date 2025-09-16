@@ -245,20 +245,46 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
     df_raw = pd.read_excel(path, sheet_name=sheet)
     df_raw.columns = df_raw.columns.str.strip()
 
-    d1 = pd.to_datetime(df_raw["Datum"], errors="coerce", dayfirst=True)
+    # --- Vereiste kolommen (case-insensitief zoeken) ---
+    def _col(df, name):
+        low = {c.lower(): c for c in df.columns}
+        if name.lower() not in low:
+            raise RuntimeError(f"Vereiste kolom '{name}' niet gevonden op tab '{sheet}'.")
+        return low[name.lower()]
+
+    col_datum    = _col(df_raw, "Datum")
+    col_naam     = _col(df_raw, "volledige naam")
+    col_locatie  = _col(df_raw, "Locatie")
+    col_teamcoach= _col(df_raw, "teamcoach")
+    col_voertuig = _col(df_raw, "voertuig")   # Z
+    col_actief   = _col(df_raw, "actief")     # AA  (Ja/Neen)
+
+    # --- Datum parsen ---
+    d1 = pd.to_datetime(df_raw[col_datum], errors="coerce", dayfirst=True)
     need_retry = d1.isna()
     if need_retry.any():
-        d2 = pd.to_datetime(df_raw.loc[need_retry, "Datum"], errors="coerce", dayfirst=False)
+        d2 = pd.to_datetime(df_raw.loc[need_retry, col_datum], errors="coerce", dayfirst=False)
         d1.loc[need_retry] = d2
-    df_raw["Datum"] = d1
-    df_ok = df_raw[df_raw["Datum"].notna()].copy()
+    df_raw[col_datum] = d1
+    df_ok = df_raw[df_raw[col_datum].notna()].copy()
 
-    for col in ("volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"):
-        if col in df_ok.columns:
-            df_ok[col] = df_ok[col].astype("string").str.strip()
+    # --- Opschonen basiskolommen ---
+    for col in (col_naam, col_teamcoach, col_locatie, col_voertuig):
+        df_ok[col] = df_ok[col].astype("string").str.strip()
 
+    # --- Actief (Ja/Neen → bool) ---
+    def _actief_bool(x):
+        s = ("" if pd.isna(x) else str(x)).strip().lower()
+        if s in {"ja", "j", "yes", "y"}:   return True
+        if s in {"neen", "nee", "n", "no"}: return False
+        # lege of onbekende waarden tellen we als False
+        return False
+    df_ok["Actief"] = df_ok[col_actief].apply(_actief_bool)
+
+    # --- Dienstnummer + kwartalen ---
+    df_ok["Datum"] = df_ok[col_datum]
     df_ok["dienstnummer"] = (
-        df_ok["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
+        df_ok[col_naam].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
     )
     df_ok["KwartaalP"] = df_ok["Datum"].dt.to_period("Q")
     df_ok["Kwartaal"]  = df_ok["KwartaalP"].astype(str)
@@ -268,10 +294,12 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
         bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
         return s.mask(bad, "onbekend")
 
-    df_ok["volledige naam_disp"] = _clean_display_series(df_ok["volledige naam"])
-    df_ok["teamcoach_disp"]      = _clean_display_series(df_ok["teamcoach"])
-    df_ok["Locatie_disp"]        = _clean_display_series(df_ok["Locatie"])
-    df_ok["BusTram_disp"]        = _clean_display_series(df_ok["Bus/ Tram"])
+    df_ok["volledige naam_disp"] = _clean_display_series(df_ok[col_naam])
+    df_ok["teamcoach_disp"]      = _clean_display_series(df_ok[col_teamcoach])
+    df_ok["Locatie_disp"]        = _clean_display_series(df_ok[col_locatie])
+
+    # --- Voertuig → weergavekolom die de rest van de app verwacht ---
+    df_ok["BusTram_disp"] = _clean_display_series(df_ok[col_voertuig])
 
     options = {
         "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
@@ -282,6 +310,7 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
         "max_datum": df_ok["Datum"].max().normalize(),
     }
     return df_ok, options
+
 
 # ========= Coachingslijst inlezen =========
 @st.cache_data(show_spinner=False)
