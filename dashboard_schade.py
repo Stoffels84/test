@@ -953,187 +953,63 @@ def run_dashboard():
     # ===== Tab 4: Opzoeken =====
     # ===== Tab 4: Opzoeken =====
     with opzoeken_tab:
-        st.subheader("🔎 Opzoeken op personeelsnummer")
+        st.subheader("🔎 Opzoeken van schadegevallen")
     
-        # 1) Invoer & normalisatie
-        zoek_raw = st.text_input(
-            "Personeelsnummer (dienstnummer)",
-            placeholder="bv. 41092",
-            key="zoek_pnr_input_new"
-        )
-        m = re.findall(r"\d+", str(zoek_raw or "").strip())
-        pnr = m[0] if m else ""
+        # --- kleine helper: case-insensitive kolomvinder ---
+        def find_col_ci(df_in: pd.DataFrame, want: str) -> str | None:
+            want = str(want).strip().lower()
+            for c in df_in.columns:
+                if str(c).strip().lower() == want:
+                    return c
+            return None
     
-        if not pnr:
-            st.info("Geef een personeelsnummer in om resultaten te zien.")
-            st.stop()
-    
-        # 2) Selectieset (binnen filters) en volledige dataset (fallback)
-        res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
-        res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
-    
-        # 3) Basisinfo chauffeur (naam + teamcoach)
-        if not res.empty:
-            naam_disp = res["volledige naam_disp"].iloc[0]
-            teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
-            naam_raw = res["volledige naam"].iloc[0] if "volledige naam" in res.columns else naam_disp
-        elif not res_all.empty:
-            naam_disp = res_all["volledige naam_disp"].iloc[0]
-            teamcoach_disp = res_all["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res_all.columns else "onbekend"
-            naam_raw = res_all["volledige naam"].iloc[0] if "volledige naam" in res_all.columns else naam_disp
-        else:
-            ex_info = st.session_state.get("excel_info", {})
-            naam_disp = (ex_info.get(pnr, {}) or {}).get("naam") or ""
-            teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
-            naam_raw = naam_disp
-            st.error("❌ Geen resultaten: dit personeelsnummer komt niet voor in de data.")
-    
-        # 4) Nettere naam (verwijder leading pnr en scheidingstekens)
-        try:
-            s = str(naam_raw or "").strip()
-            patroon = rf"^\s*({re.escape(pnr)}|\d+)\s*[-:–—]?\s*"
-            naam_clean = re.sub(patroon, "", s)
-        except Exception:
-            naam_clean = naam_disp
-    
-        chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
-    
-        # 5) Coaching-status & datums
-        set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
-        set_voltooid = set(map(str, st.session_state.get("gecoachte_ids", set())))
-    
-        if pnr in set_voltooid:   # Voltooid krijgt voorrang
-            beo_raw = (st.session_state.get("excel_info", {}).get(pnr, {}) or {}).get("beoordeling", "")
-            b = str(beo_raw or "").strip().lower()
-            if b in {"zeer goed", "goed"}:
-                status_lbl, status_emoji = "Goed", "🟢"
-            elif b == "voldoende":
-                status_lbl, status_emoji = "Voldoende", "🟠"
-            elif b in {"onvoldoende", "slecht", "zeer slecht"}:
-                status_lbl, status_emoji = ("Onvoldoende" if b == "onvoldoende" else "Slecht"), "🔴"
-            else:
-                status_lbl, status_emoji = "Voltooid (geen beoordeling)", "🟡"
-            status_bron = f"bron: Voltooide coachings (beoordeling: {beo_raw or '—'})"
-        elif pnr in set_lopend:
-            status_lbl, status_emoji = "Lopend", "⚫"
-            status_bron = "bron: Coaching (lopend)"
-        else:
-            status_lbl, status_emoji = "Niet aangevraagd", "⚪"
-            status_bron = "bron: Coachingslijst.xlsx"
-    
-        st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
-        st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
-        st.markdown(f"**📌 Coaching-status:** {status_emoji} {status_lbl} — _{status_bron}_")
-    
-        # 6) Coachingdatums (met per-datum kleur indien beschikbaar)
-        coaching_rows = []
-        coach_df = st.session_state.get("coachings_df")
-        if (isinstance(coach_df, pd.DataFrame) and not coach_df.empty
-                and {"dienstnummer", "Datum coaching"}.issubset(set(coach_df.columns))):
-            mask = coach_df["dienstnummer"].astype(str).str.strip() == str(pnr).strip()
-            rows = coach_df.loc[mask, ["Datum coaching", "Beoordeling"]].copy()
-            if not rows.empty:
-                rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce", dayfirst=True)
-                rows = rows.dropna(subset=["Datum coaching"])
-                for _, r in rows.iterrows():
-                    dstr = r["Datum coaching"].strftime("%d-%m-%Y")
-                    rate = str(r.get("Beoordeling", "") or "").strip().lower()
-                    dot = _beoordeling_emoji(rate).strip() or ""  # 🟢 🟠 🔴 of leeg
-                    coaching_rows.append((dstr, dot))
-    
-        if not coaching_rows:
-            coaching_dates = []
-            ex_info = st.session_state.get("excel_info", {})
-            if pnr in ex_info:
-                raw = (
-                    (ex_info[pnr] or {}).get("coaching_datums")
-                    or (ex_info[pnr] or {}).get("Datum coaching")
-                    or (ex_info[pnr] or {}).get("datum_coaching")
-                )
-                if isinstance(raw, (list, tuple, set)):
-                    coaching_dates = [str(x).strip() for x in raw if str(x).strip()]
-                elif isinstance(raw, str) and raw.strip():
-                    coaching_dates = re.split(r"[;,]\s*", raw.strip())
-            if coaching_dates:
-                dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
-                coaching_rows = [(d, dot) for d in coaching_dates]
-    
-        if coaching_rows:
-            st.markdown("**📅 Datum coaching:**")
-            coaching_rows.sort(key=lambda t: datetime.strptime(t[0], "%d-%m-%Y"))
-            for d, dot in coaching_rows:
-                st.markdown(f"- {dot} {d}".strip())
-        else:
-            st.markdown("**📅 Datum coaching:** —")
-    
-        st.markdown("---")
-    
-        # 7) Resultaten – tabel met extra kolommen 'Voertuig' en 'Actief'
-        st.metric("Aantal schadegevallen (binnen huidige filters)", int(len(res)))
+        # Werk op een kopie van de gefilterde data
+        res = df_filtered.copy()
     
         if res.empty:
-            st.caption("Geen schadegevallen binnen de huidige filters.")
+            st.caption("⚠️ Geen schadegevallen binnen de huidige filters.")
         else:
+            # Sorteer op datum aflopend
             res = res.sort_values("Datum", ascending=False).copy()
     
-            # Link-kolom (indien aanwezig)
+            # Controleer of er een 'Link'-kolom is
             heeft_link = "Link" in res.columns
             if heeft_link:
                 res["URL"] = res["Link"].apply(extract_url)
     
-            # --- helper om kolom case-insensitive te vinden
-            # --- kleine helper: case-insensitive kolomvinder, unieke naam
-            def find_col_ci(df_in: pd.DataFrame, want: str) -> str | None:
-                want = str(want).strip().lower()
-                for c in df_in.columns:
-                    if str(c).strip().lower() == want:
-                        return c
-                return None
-            
-            # ... bovenstaand laten staan; daarna je resultaten-df 'res' maken (zoals je al doet) ...
-            
-            if res.empty:
-                st.caption("Geen schadegevallen binnen de huidige filters.")
-            else:
-                res = res.sort_values("Datum", ascending=False).copy()
-            
-                # optionele Link-kolom
-                heeft_link = "Link" in res.columns
-                if heeft_link:
-                    res["URL"] = res["Link"].apply(extract_url)
-            
-                # vind 'voertuig' en 'actief' case-insensitive
-                veh_col = find_col_ci(res, "voertuig")
-                act_col = find_col_ci(res, "actief")
-            
-                # normaliseer 'actief' -> Ja/Neen (alleen voor weergave)
-                if act_col:
-                    res[act_col] = (
-                        res[act_col].astype(str).strip().str.lower()
-                          .map({"ja": "Ja", "neen": "Neen", "nee": "Neen", "true": "Ja", "false": "Neen"})
-                          .fillna(res[act_col])
-                    )
-            
-                # kolommen die we tonen
-                kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-                if veh_col: kol.append(veh_col)
-                if act_col: kol.append(act_col)
-                if heeft_link: kol.append("URL")
-            
-                # nette kolomlabels
-                column_config = {
-                    "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                    "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                    "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
-                }
-                if veh_col:
-                    column_config[veh_col] = st.column_config.TextColumn("Voertuig")
-                if act_col:
-                    column_config[act_col] = st.column_config.TextColumn("Actief")
-                if "URL" in kol:
-                    column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-            
-                st.dataframe(res[kol], column_config=column_config, use_container_width=True)
+            # Zoek voertuig- en actief-kolommen (case-insensitive)
+            veh_col = find_col_ci(res, "voertuig")
+            act_col = find_col_ci(res, "actief")
+    
+            # Normaliseer 'actief' -> Ja/Neen (enkel voor weergave)
+            if act_col:
+                res[act_col] = (
+                    res[act_col].astype(str).str.strip().str.lower()
+                    .map({"ja": "Ja", "neen": "Neen", "nee": "Neen", "true": "Ja", "false": "Neen"})
+                    .fillna(res[act_col])
+                )
+    
+            # Kolommen die getoond worden
+            kol = ["Datum", "Locatie_disp", "BusTram_disp"]
+            if veh_col: kol.append(veh_col)
+            if act_col: kol.append(act_col)
+            if heeft_link: kol.append("URL")
+    
+            # Nette kolomlabels en types
+            column_config = {
+                "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
+            }
+            if veh_col:
+                column_config[veh_col] = st.column_config.TextColumn("Voertuig")
+            if act_col:
+                column_config[act_col] = st.column_config.TextColumn("Actief")
+            if "URL" in kol:
+                column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+    
+            # Tabel tonen
+            st.dataframe(res[kol], column_config=column_config, use_container_width=True)
 
 
     # ===== Tab 5: Coaching =====
