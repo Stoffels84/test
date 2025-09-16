@@ -270,8 +270,18 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
     df_ok = df_raw[df_raw[col_datum].notna()].copy()
 
     # --- schoonmaken ---
-    for col in (col_naam, col_teamcoach, col_locatie, col_bus_tram, col_voertuig):
+    # --- schoonmaken ---
+    for col in (col_naam, col_teamcoach, col_locatie, col_bus_tram):
         df_ok[col] = df_ok[col].astype("string").str.strip()
+
+# ✅ Voertuig: altijd tekst, maar .0 wegfilteren
+if col_voertuig in df_ok.columns:
+    df_ok[col_voertuig] = (
+        df_ok[col_voertuig]
+        .astype(str)
+        .str.replace(r"\.0$", "", regex=True)  # 2209.0 → 2209
+        .str.strip()
+    )
 
     # --- Actief (Ja/Neen -> bool) ---
     def _actief_bool(x):
