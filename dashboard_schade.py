@@ -935,6 +935,7 @@ def run_dashboard():
 
 
     # ===== Tab 4: Opzoeken =====
+    # ===== Tab 4: Opzoeken =====
     with opzoeken_tab:
         st.subheader("🔎 Opzoeken op personeelsnummer")
     
@@ -981,7 +982,7 @@ def run_dashboard():
     
         chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
     
-        # 5) Coaching-status & datums (zoals in je eerdere code)
+        # 5) Coaching-status & datums
         set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
         set_voltooid = set(map(str, st.session_state.get("gecoachte_ids", set())))
     
@@ -1008,7 +1009,7 @@ def run_dashboard():
         st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
         st.markdown(f"**📌 Coaching-status:** {status_emoji} {status_lbl} — _{status_bron}_")
     
-        # 6) Coachingdatums onder de status (met per-datum kleur indien beschikbaar)
+        # 6) Coachingdatums (met per-datum kleur indien beschikbaar)
         coaching_rows = []
         coach_df = st.session_state.get("coachings_df")
         if (isinstance(coach_df, pd.DataFrame) and not coach_df.empty
@@ -1025,7 +1026,6 @@ def run_dashboard():
                     coaching_rows.append((dstr, dot))
     
         if not coaching_rows:
-            # fallback uit excel_info
             coaching_dates = []
             ex_info = st.session_state.get("excel_info", {})
             if pnr in ex_info:
@@ -1052,7 +1052,7 @@ def run_dashboard():
     
         st.markdown("---")
     
-        # 7) Resultaten (tabel) — gesorteerd op datum, met extra kolommen 'voertuig' en 'actief'
+        # 7) Resultaten – tabel met extra kolommen 'Voertuig' en 'Actief'
         st.metric("Aantal schadegevallen (binnen huidige filters)", int(len(res)))
     
         if res.empty:
@@ -1065,35 +1065,41 @@ def run_dashboard():
             if heeft_link:
                 res["URL"] = res["Link"].apply(extract_url)
     
-            # Normaliseer 'actief' → Ja/Neen (alleen voor weergave)
-            if "actief" in res.columns:
-                res["actief"] = (
-                    res["actief"]
-                    .astype(str)
-                    .str.strip()
-                    .str.lower()
+            # --- helper om kolom case-insensitive te vinden
+            def find_col(df_in: pd.DataFrame, want: str) -> str | None:
+                want = want.strip().lower()
+                for c in df_in.columns:
+                    if str(c).strip().lower() == want:
+                        return c
+                return None
+    
+            veh_col = find_col(res, "voertuig")
+            act_col = find_col(res, "actief")
+    
+            # Normaliseer 'actief' naar Ja/Neen (alleen voor weergave)
+            if act_col:
+                res[act_col] = (
+                    res[act_col]
+                    .astype(str).str.strip().str.lower()
                     .map({"ja": "Ja", "neen": "Neen", "nee": "Neen", "true": "Ja", "false": "Neen"})
-                    .fillna(res["actief"])
+                    .fillna(res[act_col])
                 )
     
             # Kolommen voor weergave
             kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-            if "voertuig" in res.columns:
-                kol.append("voertuig")
-            if "actief" in res.columns:
-                kol.append("actief")
-            if heeft_link:
-                kol.append("URL")
+            if veh_col: kol.append(veh_col)
+            if act_col: kol.append(act_col)
+            if heeft_link: kol.append("URL")
     
             column_config = {
                 "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
                 "Locatie_disp": st.column_config.TextColumn("Locatie"),
                 "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
             }
-            if "voertuig" in kol:
-                column_config["voertuig"] = st.column_config.TextColumn("Voertuig")
-            if "actief" in kol:
-                column_config["actief"] = st.column_config.TextColumn("Actief")
+            if veh_col:
+                column_config[veh_col] = st.column_config.TextColumn("Voertuig")
+            if act_col:
+                column_config[act_col] = st.column_config.TextColumn("Actief")
             if "URL" in kol:
                 column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
     
