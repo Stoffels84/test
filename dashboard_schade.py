@@ -646,22 +646,6 @@ def run_dashboard():
             .str.strip()
     )
 
-    def find_col(df_in: pd.DataFrame, want: str) -> str | None:
-        want = want.strip().lower()
-        for c in df_in.columns:
-            if str(c).strip().lower() == want:
-                return c
-        return None
-    
-    veh_col = find_col(res, "voertuig")
-    act_col = find_col(res, "actief")
-    ...
-    # Kolommen voor weergave
-    kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-    if veh_col: kol.append(veh_col)
-    if act_col: kol.append(act_col)
-
-
     # ===== Tabs =====
     chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab, analyse_tab = st.tabs(
         ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching", "📐 Analyse"]
@@ -951,65 +935,148 @@ def run_dashboard():
 
 
     # ===== Tab 4: Opzoeken =====
-    # ===== Tab 4: Opzoeken =====
     with opzoeken_tab:
-        st.subheader("🔎 Opzoeken van schadegevallen")
-    
-        # --- kleine helper: case-insensitive kolomvinder ---
-        def find_col_ci(df_in: pd.DataFrame, want: str) -> str | None:
-            want = str(want).strip().lower()
-            for c in df_in.columns:
-                if str(c).strip().lower() == want:
-                    return c
-            return None
-    
-        # Werk op een kopie van de gefilterde data
-        res = df_filtered.copy()
-    
-        if res.empty:
-            st.caption("⚠️ Geen schadegevallen binnen de huidige filters.")
+        st.subheader("🔎 Opzoeken op personeelsnummer")
+
+        zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092", key="zoek_pnr_input")
+        m = re.findall(r"\d+", str(zoek or "").strip())
+        pnr = m[0] if m else ""
+
+        if not pnr:
+            st.info("Geef een personeelsnummer in om resultaten te zien.")
         else:
-            # Sorteer op datum aflopend
-            res = res.sort_values("Datum", ascending=False).copy()
-    
-            # Controleer of er een 'Link'-kolom is
-            heeft_link = "Link" in res.columns
-            if heeft_link:
-                res["URL"] = res["Link"].apply(extract_url)
-    
-            # Zoek voertuig- en actief-kolommen (case-insensitive)
-            veh_col = find_col_ci(res, "voertuig")
-            act_col = find_col_ci(res, "actief")
-    
-            # Normaliseer 'actief' -> Ja/Neen (enkel voor weergave)
-            if act_col:
-                res[act_col] = (
-                    res[act_col].astype(str).str.strip().str.lower()
-                    .map({"ja": "Ja", "neen": "Neen", "nee": "Neen", "true": "Ja", "false": "Neen"})
-                    .fillna(res[act_col])
-                )
-    
-            # Kolommen die getoond worden
-            kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-            if veh_col: kol.append(veh_col)
-            if act_col: kol.append(act_col)
-            if heeft_link: kol.append("URL")
-    
-            # Nette kolomlabels en types
-            column_config = {
-                "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
-            }
-            if veh_col:
-                column_config[veh_col] = st.column_config.TextColumn("Voertuig")
-            if act_col:
-                column_config[act_col] = st.column_config.TextColumn("Actief")
-            if "URL" in kol:
-                column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-    
-            # Tabel tonen
-            st.dataframe(res[kol], column_config=column_config, use_container_width=True)
+            res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
+            res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
+            ex_info = st.session_state.get("excel_info", {})
+
+            if not res.empty:
+                naam_disp = res["volledige naam_disp"].iloc[0]
+                teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+                naam_raw = res["volledige naam"].iloc[0] if "volledige naam" in res.columns else naam_disp
+            elif not res_all.empty:
+                naam_disp = res_all["volledige naam_disp"].iloc[0]
+                teamcoach_disp = res_all["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res_all.columns else "onbekend"
+                naam_raw = res_all["volledige naam"].iloc[0] if "volledige naam" in res_all.columns else naam_disp
+            else:
+                ex_info = st.session_state.get("excel_info", {})
+                naam_disp = (ex_info.get(pnr, {}) or {}).get("naam") or ""
+                teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
+                naam_raw = naam_disp
+                st.error("❌ Helaas, die chauffeur bestaat nog niet. Probeer opnieuw.")
+
+            try:
+                s = str(naam_raw or "").strip()
+                # Verwijder vooraan het pnr (of eender welk nummer) + optionele scheidingstekens
+                # dekt: "29179 Verwee", "29179 - Verwee", "29179: Verwee", "29179— Verwee", ...
+                patroon = rf"^\s*({re.escape(pnr)}|\d+)\s*[-:–—]?\s*"
+                naam_clean = re.sub(patroon, "", s)
+            except Exception:
+                naam_clean = naam_disp
+
+
+            chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
+
+            set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
+            set_voltooid = set(map(str, st.session_state.get("gecoachte_ids", set())))  # juiste set
+            
+            if pnr in set_voltooid:   # Voltooid krijgt voorrang
+                beo_raw = (st.session_state.get("excel_info", {}).get(pnr, {}) or {}).get("beoordeling", "")
+                b = str(beo_raw or "").strip().lower()
+                if b in {"zeer goed", "goed"}:
+                    status_lbl, status_emoji = "Goed", "🟢"
+                elif b == "voldoende":
+                    status_lbl, status_emoji = "Voldoende", "🟠"
+                elif b in {"onvoldoende", "slecht", "zeer slecht"}:
+                    status_lbl, status_emoji = ("Onvoldoende" if b == "onvoldoende" else "Slecht"), "🔴"
+                else:
+                    status_lbl, status_emoji = "Voltooid (geen beoordeling)", "🟡"
+                status_bron = f"bron: Voltooide coachings (beoordeling: {beo_raw or '—'})"
+            
+            elif pnr in set_lopend:
+                status_lbl, status_emoji = "Lopend", "⚫"
+                status_bron = "bron: Coaching (lopend)"
+            
+            else:
+                status_lbl, status_emoji = "Niet aangevraagd", "⚪"
+                status_bron = "bron: Coachingslijst.xlsx"
+
+
+            st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
+            st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
+
+
+            # ▼▼ Datum coaching onder Teamcoach (met per-datum kleur) ▼▼
+            coaching_rows = []  # lijst van tuples (dd-mm-YYYY, emoji)
+            
+            # 1) Primaire bron: per-rij DF met datum + beoordeling
+            coach_df = st.session_state.get("coachings_df")
+            if (isinstance(coach_df, pd.DataFrame) and not coach_df.empty
+                    and {"dienstnummer", "Datum coaching"}.issubset(set(coach_df.columns))):
+                mask = coach_df["dienstnummer"].astype(str).str.strip() == str(pnr).strip()
+                rows = coach_df.loc[mask, ["Datum coaching", "Beoordeling"]].copy()
+                if not rows.empty:
+                    rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce", dayfirst=True)
+                    rows = rows.dropna(subset=["Datum coaching"])
+                    for _, r in rows.iterrows():
+                        dstr = r["Datum coaching"].strftime("%d-%m-%Y")
+                        rate = str(r.get("Beoordeling", "") or "").strip().lower()
+                        dot = _beoordeling_emoji(rate).strip() or ""   # 🟢 🟠 🔴 (leeg = geen beoordeling)
+                        coaching_rows.append((dstr, dot))
+            
+            # 2) Fallback: uit excel_info (oude lijst), met globale status-kleur
+            if not coaching_rows:
+                coaching_dates = []
+                ex_info = st.session_state.get("excel_info", {})
+                if pnr in ex_info:
+                    raw = (
+                        (ex_info[pnr] or {}).get("coaching_datums")
+                        or (ex_info[pnr] or {}).get("Datum coaching")
+                        or (ex_info[pnr] or {}).get("datum_coaching")
+                    )
+                    if isinstance(raw, (list, tuple, set)):
+                        coaching_dates = [str(x).strip() for x in raw if str(x).strip()]
+                    elif isinstance(raw, str) and raw.strip():
+                        coaching_dates = re.split(r"[;,]\s*", raw.strip())
+            
+                if coaching_dates:
+                    dot = status_emoji if status_emoji in {"🟢","🟠","🔴","🟡","⚫"} else ""
+                    coaching_rows = [(d, dot) for d in coaching_dates]
+            
+            # 3) Tonen
+            if coaching_rows:
+                st.markdown("**📅 Datum coaching:**")
+                coaching_rows.sort(key=lambda t: datetime.strptime(t[0], "%d-%m-%Y"))
+                for d, dot in coaching_rows:
+                    st.markdown(f"- {dot} {d}".strip())
+            else:
+                st.markdown("**📅 Datum coaching:** —")
+            # ▲▲ Datum coaching met per-datum kleur ▲▲
+
+
+
+
+            
+            st.markdown("---")
+
+            st.metric("Aantal schadegevallen", int(len(res)))
+            if res.empty:
+                st.caption("Geen schadegevallen binnen de huidige filters.")
+            else:
+                res = res.sort_values("Datum", ascending=False).copy()
+                heeft_link = "Link" in res.columns
+                if heeft_link:
+                    res["URL"] = res["Link"].apply(extract_url)
+
+                kol = ["Datum", "Locatie_disp", "BusTram_disp"] + (["URL"] if heeft_link else [])
+                column_config = {
+                    "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                    "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                    "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
+                }
+                if heeft_link:
+                    column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+                
+                st.dataframe(res[kol], column_config=column_config, use_container_width=True)
 
 
     # ===== Tab 5: Coaching =====
@@ -1166,10 +1233,11 @@ def run_dashboard():
         )
         df_basis = df_filtered if use_filters else df
     
+        # -------- helpers --------
         import matplotlib.pyplot as plt
     
-        # helpers
         def _pnr_stats_and_expanded(df_in: pd.DataFrame):
+            """Return per_pnr (PNR, Schades) en expanded (1 rij = 1 schade) voor een subset."""
             pnr_series = (
                 df_in["dienstnummer"]
                 .dropna()
@@ -1190,10 +1258,11 @@ def run_dashboard():
             return per_pnr, expanded
     
         def _overall_population_defaults():
+            """Haal optioneel het totaal personeel en mediaan PNR (alle medewerkers) op uit 'contact' tab."""
             auto_total_staff = None
             median_all_staff = None
             try:
-                contacts = load_contact_map()
+                contacts = load_contact_map()  # tab 'contact' in 'schade met macro.xlsm'
                 all_pnrs = (
                     pd.Series(list(contacts.keys()), dtype="string")
                     .str.extract(r"(\d+)", expand=False)
@@ -1207,78 +1276,153 @@ def run_dashboard():
                 pass
             return auto_total_staff, median_all_staff
     
-        def _render_overall(df_in: pd.DataFrame, n_bins: int, top_pct: int):
+        def _render_subset_block(df_in: pd.DataFrame, title: str, show_population: bool, n_bins: int, top_pct: int):
+            """Render KPI's + histogram + top% + mediaan-split voor gegeven subset."""
             per_pnr, expanded = _pnr_stats_and_expanded(df_in)
             if per_pnr is None or expanded is None or expanded.empty:
-                st.info("Geen geldige personeelsnummers in selectie.")
+                st.info(f"Geen geldige personeelsnummers in selectie: {title}.")
                 return
-    
-            # populatie
-            auto_total_staff, median_all_staff = _overall_population_defaults()
-            total_staff_default = auto_total_staff or 598
-            total_staff = st.number_input(
-                "Handmatig totaal personeelsnummers",
-                min_value=1,
-                value=total_staff_default,
-                step=1,
-                help="Overschrijf indien je personeelsbestand gewijzigd is."
-            )
-    
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
-            c2.metric("Totaal schades", int(per_pnr["Schades"].sum()))
-            c3.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
-            c4.metric("Gemiddeld PNR (gewogen)", int(round(expanded["PNR"].mean())))
-
-    
-            c5, c6, c7 = st.columns(3)
-            with c5:
-                coverage = (per_pnr.shape[0] / total_staff) * 100.0
-                st.metric("Dekking personeel met schade", f"{coverage:.1f}%")
-            with c6:
-                rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
-                st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
-            with c7:
-                st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
-    
-            # histogram (alleen groene lijn)
+        
+            st.markdown(f"### {title}")
+        
+            # Populatie (alleen in overall blok)
+            if show_population:
+                auto_total_staff, median_all_staff = _overall_population_defaults()
+                total_staff_default = auto_total_staff or 598   # 🔹 standaard altijd 598
+                total_staff = st.number_input(
+                    "Handmatig totaal personeelsnummers",
+                    min_value=1,
+                    value=total_staff_default,
+                    step=1,
+                    help="Overschrijf indien je personeelsbestand gewijzigd is.",
+                    key=f"total_staff_{title}"
+                )
+            else:
+                total_staff, median_all_staff = None, None
+        
+            # KPI’s
+            cols = st.columns(4 if show_population else 4)
+            with cols[0]:
+                st.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
+            with cols[1]:
+                st.metric("Totaal schades", int(per_pnr["Schades"].sum()))
+            with cols[2]:
+                st.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
+            with cols[3]:
+                st.metric("Gemiddeld PNR (gewogen)", round(expanded["PNR"].mean(), 1))
+        
+            if show_population:
+                c5, c6, c7 = st.columns(3)
+                with c5:
+                    coverage = (per_pnr.shape[0] / total_staff) * 100.0
+                    st.metric("Dekking personeel met schade", f"{coverage:.1f}%")
+                with c6:
+                    rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
+                    st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
+                with c7:
+                    st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
+        
+            # Histogram (🔹 alleen groene lijn behouden)
             fig, ax = plt.subplots(figsize=(8, 4))
             ax.hist(expanded["PNR"], bins=n_bins, edgecolor="black")
-    
-            if median_all_staff is not None:
+        
+            if show_population and median_all_staff is not None:
                 ax.axvline(median_all_staff, color="green", linestyle="-.", linewidth=2,
                            label="Mediaan PNR (alle medewerkers)")
-    
+        
             ax.set_xlabel("Personeelsnummer")
             ax.set_ylabel("Aantal schades")
-            ax.set_title("Histogram schades per PNR — totaal selectie")
-            if median_all_staff is not None:
+            ax.set_title(f"Histogram schades per PNR — {title}")
+            if show_population and median_all_staff is not None:
                 ax.legend()
             st.pyplot(fig)
-    
-            # top-% analyse
+        
+            # Top-% hoogste PNR’s (schades)
             thr = expanded["PNR"].quantile(1 - top_pct / 100.0)
             share_top = (expanded["PNR"] >= thr).mean() * 100.0
             st.markdown(
-                f"**Top {top_pct}% hoogste personeelsnummers** zijn goed voor **~{share_top:.1f}%** van alle schades."
+                f"**Top {top_pct}% hoogste personeelsnummers** zijn goed voor **~{share_top:.1f}%** van alle schades in deze selectie."
             )
-    
-            # mediaan-split
+        
+            # Mediaan-split (schades)
             med = expanded["PNR"].median()
             low_share = (expanded["PNR"] < med).mean() * 100.0
             high_share = 100.0 - low_share
-            st.markdown(
-                f"**Onder mediaan (schades)**: ~{low_share:.1f}% · **Boven mediaan (schades)**: ~{high_share:.1f}% van de schades."
+            st.markdown(f"**Onder mediaan (schades)**: ~{low_share:.1f}% · **Boven mediaan (schades)**: ~{high_share:.1f}% van de schades.")
+
+    
+        # 2) Overall instellingen
+        st.markdown("#### 🔧 Weergave-instellingen")
+        n_bins_overall = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins_overall")
+        top_pct_overall = st.slider("Aandeel hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct_overall")
+    
+        # 3) Overall (alle teamcoaches/filters)
+        _render_subset_block(df_basis, "Totaal (huidige selectie)", show_population=True,
+                             n_bins=n_bins_overall, top_pct=top_pct_overall)
+    
+        st.markdown("---")
+        st.subheader("👥 Vergelijking per teamcoach")
+    
+        # 4) Per teamcoach – selectie & rendering
+        if "teamcoach_disp" not in df_basis.columns:
+            st.caption("Kolom 'teamcoach_disp' ontbreekt — per-teamcoach analyse niet beschikbaar.")
+        else:
+            teamcoach_opts = sorted(x for x in df_basis["teamcoach_disp"].dropna().unique() if str(x).strip())
+            sel_coaches = st.multiselect(
+                "Kies 1–3 teamcoaches voor detail, of >3 voor een samenvattingstabel",
+                options=teamcoach_opts,
+                default=[],
+                placeholder="Selecteer teamcoaches…",
+                key="analyse_tc_ms"
             )
     
-        # instellingen
-        st.markdown("#### 🔧 Weergave-instellingen")
-        n_bins = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins_overall")
-        top_pct = st.slider("Aandeel hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct_overall")
+            if not sel_coaches:
+                st.caption("Tip: selecteer teamcoaches om een vergelijking te zien.")
+            elif len(sel_coaches) <= 3:
+                # eigen sliders voor de per-coach plots
+                n_bins_tc = st.slider("Aantal bins (per teamcoach)", 10, 100, 30, step=5, key="pnr_hist_bins_tc")
+                top_pct_tc = st.slider("Top % (per teamcoach)", 5, 50, 20, step=5, key="pnr_top_pct_tc")
     
-        # uitvoeren
-        _render_overall(df_basis, n_bins=n_bins, top_pct=top_pct)
-
+                for tc in sel_coaches:
+                    sub_tc = df_basis[df_basis["teamcoach_disp"] == tc].copy()
+                    _render_subset_block(sub_tc, f"Teamcoach: {tc}", show_population=False,
+                                         n_bins=n_bins_tc, top_pct=top_pct_tc)
+                    st.markdown("---")
+            else:
+                # Samenvattende tabel per coach (compact)
+                rows = []
+                for tc in sel_coaches:
+                    sub_tc = df_basis[df_basis["teamcoach_disp"] == tc].copy()
+                    per_pnr, expanded = _pnr_stats_and_expanded(sub_tc)
+                    if per_pnr is None or expanded is None or expanded.empty:
+                        rows.append({
+                            "Teamcoach": tc, "Unieke PNR’s": 0, "Totaal schades": 0,
+                            "Mediaan PNR": None, "Gemiddeld PNR": None
+                        })
+                    else:
+                        rows.append({
+                            "Teamcoach": tc,
+                            "Unieke PNR’s": int(per_pnr.shape[0]),
+                            "Totaal schades": int(per_pnr["Schades"].sum()),
+                            "Mediaan PNR": int(expanded["PNR"].median()),
+                            "Gemiddeld PNR": round(expanded["PNR"].mean(), 1),
+                        })
+                if rows:
+                    df_sum = pd.DataFrame(rows).sort_values(["Totaal schades","Teamcoach"], ascending=[False, True]).reset_index(drop=True)
+                    st.dataframe(df_sum, use_container_width=True)
+                    st.download_button(
+                        "⬇️ Download samenvatting per teamcoach (CSV)",
+                        df_sum.to_csv(index=False).encode("utf-8"),
+                        file_name="analyse_per_teamcoach.csv",
+                        mime="text/csv",
+                        key="dl_analyse_tc"
+                    )
+    
+        st.caption(
+            "ℹ️ Histogrammen en KPI’s zijn gebaseerd op PNR’s met schades in de huidige selectie. "
+            "In het totaalblok kun je optioneel het totaal personeelsbestand instellen en (indien beschikbaar) "
+            "de mediaan PNR van alle medewerkers laten tonen."
+        )
 
 # =========================
 # main
