@@ -245,21 +245,22 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
     df_raw = pd.read_excel(path, sheet_name=sheet)
     df_raw.columns = df_raw.columns.str.strip()
 
-    # --- Vereiste kolommen (case-insensitief zoeken) ---
+    # --- helpers ---
     def _col(df, name):
         low = {c.lower(): c for c in df.columns}
         if name.lower() not in low:
             raise RuntimeError(f"Vereiste kolom '{name}' niet gevonden op tab '{sheet}'.")
         return low[name.lower()]
 
-    col_datum    = _col(df_raw, "Datum")
-    col_naam     = _col(df_raw, "volledige naam")
-    col_locatie  = _col(df_raw, "Locatie")
-    col_teamcoach= _col(df_raw, "teamcoach")
-    col_voertuig = _col(df_raw, "voertuig")   # Z
-    col_actief   = _col(df_raw, "actief")     # AA  (Ja/Neen)
+    col_datum     = _col(df_raw, "Datum")
+    col_naam      = _col(df_raw, "volledige naam")
+    col_locatie   = _col(df_raw, "Locatie")
+    col_teamcoach = _col(df_raw, "teamcoach")
+    col_bus_tram  = _col(df_raw, "Bus/ Tram")   # bestaand
+    col_voertuig  = _col(df_raw, "voertuig")    # NIEUW (Z)
+    col_actief    = _col(df_raw, "actief")      # NIEUW (AA)
 
-    # --- Datum parsen ---
+    # --- datum ---
     d1 = pd.to_datetime(df_raw[col_datum], errors="coerce", dayfirst=True)
     need_retry = d1.isna()
     if need_retry.any():
@@ -268,20 +269,19 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
     df_raw[col_datum] = d1
     df_ok = df_raw[df_raw[col_datum].notna()].copy()
 
-    # --- Opschonen basiskolommen ---
-    for col in (col_naam, col_teamcoach, col_locatie, col_voertuig):
+    # --- schoonmaken ---
+    for col in (col_naam, col_teamcoach, col_locatie, col_bus_tram, col_voertuig):
         df_ok[col] = df_ok[col].astype("string").str.strip()
 
-    # --- Actief (Ja/Neen → bool) ---
+    # --- Actief (Ja/Neen -> bool) ---
     def _actief_bool(x):
         s = ("" if pd.isna(x) else str(x)).strip().lower()
-        if s in {"ja", "j", "yes", "y"}:   return True
+        if s in {"ja", "j", "yes", "y"}:  return True
         if s in {"neen", "nee", "n", "no"}: return False
-        # lege of onbekende waarden tellen we als False
         return False
     df_ok["Actief"] = df_ok[col_actief].apply(_actief_bool)
 
-    # --- Dienstnummer + kwartalen ---
+    # --- basisvelden ---
     df_ok["Datum"] = df_ok[col_datum]
     df_ok["dienstnummer"] = (
         df_ok[col_naam].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
@@ -294,17 +294,24 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
         bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
         return s.mask(bad, "onbekend")
 
+    # --- weergavekolommen ---
     df_ok["volledige naam_disp"] = _clean_display_series(df_ok[col_naam])
     df_ok["teamcoach_disp"]      = _clean_display_series(df_ok[col_teamcoach])
     df_ok["Locatie_disp"]        = _clean_display_series(df_ok[col_locatie])
 
-    # --- Voertuig → weergavekolom die de rest van de app verwacht ---
-    df_ok["BusTram_disp"] = _clean_display_series(df_ok[col_voertuig])
+    # BELANGRIJK: laat 'Bus/ Tram' werken zoals vroeger
+    df_ok["BusTram_disp"]        = _clean_display_series(df_ok[col_bus_tram])
+
+    # NIEUW: aparte weergave voor kolom 'voertuig' (Z)
+    df_ok["Voertuig_disp"]       = _clean_display_series(df_ok[col_voertuig])
 
     options = {
         "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
         "locatie":   sorted(df_ok["Locatie_disp"].dropna().unique().tolist()),
+        # bestaande filter blijft op Bus/Tram draaien:
         "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),
+        # NIEUW: aparte opties voor 'voertuig' (kolom Z):
+        "voertuig_nieuw": sorted(df_ok["Voertuig_disp"].dropna().unique().tolist()),
         "kwartaal":  sorted(df_ok["KwartaalP"].dropna().astype(str).unique().tolist()),
         "min_datum": df_ok["Datum"].min().normalize(),
         "max_datum": df_ok["Datum"].max().normalize(),
