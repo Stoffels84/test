@@ -1108,36 +1108,36 @@ def run_dashboard():
             st.stop()
     
         res = res.sort_values("Datum", ascending=False).copy()
-    
-        # Link als klikbare kolom
+        
         heeft_link = "Link" in res.columns
         if heeft_link:
             res["URL"] = res["Link"].apply(extract_url)
-    
-        # Actief (AA) als Ja/Neen
+        
+        # ✅ 'Actief (AA)' -> 'Actief' (Ja/Neen)
         if "Actief" in res.columns:
-            res["Actief (AA)"] = res["Actief"].map({True: "Ja", False: "Neen"})
-    
-        # Kolomvolgorde: Datum, Locatie, Bus/Tram (origineel), Voertuig (Z), Actief (AA), Link
+            res["Actief"] = res["Actief"].map({True: "Ja", False: "Neen"})
+        
+        # ✅ kolomvolgorde, zonder haakjes in headers
         kol = ["Datum", "Locatie_disp", "BusTram_disp"]
         if "Voertuig_disp" in res.columns:
-            kol.append("Voertuig_disp")
-        if "Actief (AA)" in res.columns:
-            kol.append("Actief (AA)")
+            kol.append("Voertuig_disp")      # header wordt 'Voertuig'
+        if "Actief" in res.columns:
+            kol.append("Actief")             # header wordt 'Actief'
         if heeft_link:
             kol.append("URL")
-    
+        
         column_config = {
             "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
             "Locatie_disp": st.column_config.TextColumn("Locatie"),
-            "BusTram_disp": st.column_config.TextColumn("Voertuigtype (Bus/Tram)"),
+            "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
         }
         if "Voertuig_disp" in res.columns:
-            column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig (Z)")
+            column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")
         if heeft_link:
             column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-    
+        
         st.dataframe(res[kol], column_config=column_config, use_container_width=True)
+
 
 
     # ===== Tab 5: Coaching =====
