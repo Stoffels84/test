@@ -241,26 +241,37 @@ def extract_url(x) -> str | None:
 # Data laden / voorbereiden
 # =========================
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
+def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
     df_raw = pd.read_excel(path, sheet_name=sheet)
-    df_raw.columns = df_raw.columns.str.strip()
+    df_raw.columns = df_raw.columns.astype(str).str.strip()
 
-    # --- helpers ---
-    def _col(df, name):
-        low = {c.lower(): c for c in df.columns}
-        if name.lower() not in low:
-            raise RuntimeError(f"Vereiste kolom '{name}' niet gevonden op tab '{sheet}'.")
-        return low[name.lower()]
+    # --- helper om kolommen robuust te vinden ---
+    def _col(df, primary_name, *, aliases=None, letter=None, required=True):
+        aliases = aliases or []
+        lowmap = {c.lower(): c for c in df.columns}
+        for nm in [primary_name] + aliases:
+            if nm.lower() in lowmap:
+                return lowmap[nm.lower()]
+        # fallback op positie (Z=25, AA=26) als header anders/blank is
+        if letter:
+            letters = {"Z": 25, "AA": 26}
+            idx = letters.get(letter.upper())
+            if idx is not None and idx < len(df.columns):
+                return df.columns[idx]
+        if required:
+            raise RuntimeError(f"Vereiste kolom '{primary_name}' niet gevonden op tab '{sheet}'.")
+        return None
 
+    # --- vereiste kolommen ---
     col_datum     = _col(df_raw, "Datum")
-    col_naam      = _col(df_raw, "volledige naam")
+    col_naam      = _col(df_raw, "volledige naam", aliases=["volledige_naam","naam","chauffeur"])
     col_locatie   = _col(df_raw, "Locatie")
-    col_teamcoach = _col(df_raw, "teamcoach")
-    col_bus_tram  = _col(df_raw, "Bus/ Tram")   # bestaand
-    col_voertuig  = _col(df_raw, "voertuig")    # NIEUW (Z)
-    col_actief    = _col(df_raw, "actief")      # NIEUW (AA)
+    col_teamcoach = _col(df_raw, "teamcoach", aliases=["coach","team coach"])
+    col_bus_tram  = _col(df_raw, "Bus/ Tram")                   # blijft bestaan
+    col_voertuig  = _col(df_raw, "voertuig", letter="Z")        # nieuw (Z)
+    col_actief    = _col(df_raw, "actief",  letter="AA")        # nieuw (AA: Ja/Neen)
 
-    # --- datum ---
+    # --- datum normaliseren ---
     d1 = pd.to_datetime(df_raw[col_datum], errors="coerce", dayfirst=True)
     need_retry = d1.isna()
     if need_retry.any():
@@ -269,29 +280,29 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
     df_raw[col_datum] = d1
     df_ok = df_raw[df_raw[col_datum].notna()].copy()
 
-    # --- schoonmaken ---
-    # --- schoonmaken ---
-    for col in (col_naam, col_teamcoach, col_locatie, col_bus_tram):
-        df_ok[col] = df_ok[col].astype("string").str.strip()
+    # --- schoonmaken basisvelden (NIET 'voertuig' hier doen) ---
+    for col in (col_naam, col_teamcoach, col_locatie, col_bus_tram, "Link"):
+        if col in df_ok.columns:
+            df_ok[col] = df_ok[col].astype("string").str.strip()
 
-# ✅ Voertuig: altijd tekst, maar .0 wegfilteren
-if col_voertuig in df_ok.columns:
-    df_ok[col_voertuig] = (
-        df_ok[col_voertuig]
-        .astype(str)
-        .str.replace(r"\.0$", "", regex=True)  # 2209.0 → 2209
-        .str.strip()
-    )
+    # ✅ Voertuig (Z): altijd tekst en “.0” afknippen
+    if col_voertuig in df_ok.columns:
+        df_ok[col_voertuig] = (
+            df_ok[col_voertuig]
+            .astype(str)
+            .str.replace(r"\.0$", "", regex=True)  # 2209.0 -> 2209
+            .str.strip()
+        )
 
     # --- Actief (Ja/Neen -> bool) ---
     def _actief_bool(x):
         s = ("" if pd.isna(x) else str(x)).strip().lower()
-        if s in {"ja", "j", "yes", "y"}:  return True
-        if s in {"neen", "nee", "n", "no"}: return False
+        if s in {"ja","j","yes","y"}:   return True
+        if s in {"neen","nee","n","no"}: return False
         return False
     df_ok["Actief"] = df_ok[col_actief].apply(_actief_bool)
 
-    # --- basisvelden ---
+    # --- basisafleidingen ---
     df_ok["Datum"] = df_ok[col_datum]
     df_ok["dienstnummer"] = (
         df_ok[col_naam].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
@@ -301,27 +312,24 @@ if col_voertuig in df_ok.columns:
 
     def _clean_display_series(s: pd.Series) -> pd.Series:
         s = s.astype("string").str.strip()
-        bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
+        bad = s.isna() | s.eq("") | s.str.lower().isin({"nan","none","<na>"})
         return s.mask(bad, "onbekend")
 
-    # --- weergavekolommen ---
+    # --- displaykolommen ---
     df_ok["volledige naam_disp"] = _clean_display_series(df_ok[col_naam])
     df_ok["teamcoach_disp"]      = _clean_display_series(df_ok[col_teamcoach])
     df_ok["Locatie_disp"]        = _clean_display_series(df_ok[col_locatie])
 
-    # BELANGRIJK: laat 'Bus/ Tram' werken zoals vroeger
+    # Belangrijk: origineel Bus/Tram blijft je hoofd-“Voertuigtype”
     df_ok["BusTram_disp"]        = _clean_display_series(df_ok[col_bus_tram])
-
-    # NIEUW: aparte weergave voor kolom 'voertuig' (Z)
+    # Nieuw: apart zichtbaar veld voor kolom Z
     df_ok["Voertuig_disp"]       = _clean_display_series(df_ok[col_voertuig])
 
     options = {
         "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
         "locatie":   sorted(df_ok["Locatie_disp"].dropna().unique().tolist()),
-        # bestaande filter blijft op Bus/Tram draaien:
-        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),
-        # NIEUW: aparte opties voor 'voertuig' (kolom Z):
-        "voertuig_nieuw": sorted(df_ok["Voertuig_disp"].dropna().unique().tolist()),
+        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),        # origineel
+        "voertuig_nieuw": sorted(df_ok["Voertuig_disp"].dropna().unique().tolist()),  # kolom Z
         "kwartaal":  sorted(df_ok["KwartaalP"].dropna().astype(str).unique().tolist()),
         "min_datum": df_ok["Datum"].min().normalize(),
         "max_datum": df_ok["Datum"].max().normalize(),
