@@ -654,13 +654,13 @@ def run_dashboard():
             return c
     return None
 
-veh_col = find_col(res, "voertuig")
-act_col = find_col(res, "actief")
-...
-# Kolommen voor weergave
-kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-if veh_col: kol.append(veh_col)
-if act_col: kol.append(act_col)
+    veh_col = find_col(res, "voertuig")
+    act_col = find_col(res, "actief")
+    ...
+    # Kolommen voor weergave
+    kol = ["Datum", "Locatie_disp", "BusTram_disp"]
+    if veh_col: kol.append(veh_col)
+    if act_col: kol.append(act_col)
 
     # ===== Tabs =====
     chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab, analyse_tab = st.tabs(
