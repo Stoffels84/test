@@ -653,11 +653,12 @@ def run_dashboard():
         picked = st.sidebar.multiselect(label, opts, default=[all_label], key=key)
         return options if (all_label in picked or not picked) else picked
 
+    # ===== Options uit load_schade_prepared =====
     teamcoach_options = options["teamcoach"]
     locatie_options   = options["locatie"]
     voertuig_options  = options["voertuig"]
-    kwartaal_options  = options["kwartaal"]
-
+    jaar_options      = options["jaar"]          # ⬅️ vervangt kwartaal_options
+    
     with st.sidebar:
         st.image("logo.png", use_container_width=True)
         st.header("🔍 Filters")
@@ -666,14 +667,15 @@ def run_dashboard():
         selected_locaties    = _ms_all("Locatie",   locatie_options,   "— Alle locaties —",   "flt_loc")
         selected_voertuigen  = _ms_all("Voertuig",  voertuig_options,  "— Alle voertuigen —", "flt_vt")
     
-        # 🔹 Filter op jaar (vervangt kwartaal)
+        # ⬇️ NIEUW: filter op JAAR i.p.v. kwartaal
         selected_jaren = st.multiselect(
             "Jaar",
-            options["jaar"],
+            options=jaar_options,
             default=[],
             key="flt_jaar"
         )
     
+        # Stel date_from/date_to afgeleid van jaarselectie (of defaults)
         if selected_jaren:
             date_from = pd.to_datetime(min(selected_jaren) + "-01-01")
             date_to   = pd.to_datetime(max(selected_jaren) + "-12-31")
@@ -681,27 +683,25 @@ def run_dashboard():
             date_from = options["min_datum"]
             date_to   = options["max_datum"]
     
-        # Resetknop
+        # (optioneel) knoppen
         if st.button("♻️ Reset filters"):
             for k in ["flt_tc", "flt_loc", "flt_vt", "flt_jaar"]:
-                if k in st.session_state:
-                    del st.session_state[k]
+                st.session_state.pop(k, None)
             st.rerun()
     
-        # Cache wissen knop
         if st.button("🧹 Cache wissen"):
             st.cache_data.clear()
-            st.success("Cache gewist – data wordt opnieuw ingeladen bij volgende actie.")
+            st.success("Cache gewist – data wordt opnieuw ingeladen.")
             st.rerun()
-
-
+    
+    # ===== Filter toepassen =====
     mask = (
         df["teamcoach_disp"].isin(selected_teamcoaches)
         & df["Locatie_disp"].isin(selected_locaties)
         & df["BusTram_disp"].isin(selected_voertuigen)
-        & (df["Jaar"].isin(selected_jaren) if selected_jaren else True)
+        & (df["Jaar"].isin(selected_jaren) if selected_jaren else True)   # ⬅️ jaarfilter
     )
-
+    
     df_filtered = df.loc[mask].copy()
     start = pd.to_datetime(date_from)
     end   = pd.to_datetime(date_to) + pd.Timedelta(days=1)
