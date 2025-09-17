@@ -303,34 +303,15 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
     df_ok["Actief"] = df_ok[col_actief].apply(_actief_bool)
 
     # --- basisafleidingen ---
-    df_ok["Datum"] = df_ok[col_datum]
-    df_ok["dienstnummer"] = (
-        df_ok[col_naam].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
-    )
+ # ✨ Nieuw: jaar i.p.v. kwartaal
     df_ok["Jaar"] = df_ok["Datum"].dt.year.astype(str)
-
-
-    def _clean_display_series(s: pd.Series) -> pd.Series:
-        s = s.astype("string").str.strip()
-        bad = s.isna() | s.eq("") | s.str.lower().isin({"nan","none","<na>"})
-        return s.mask(bad, "onbekend")
-
-    # --- displaykolommen ---
-    df_ok["volledige naam_disp"] = _clean_display_series(df_ok[col_naam])
-    df_ok["teamcoach_disp"]      = _clean_display_series(df_ok[col_teamcoach])
-    df_ok["Locatie_disp"]        = _clean_display_series(df_ok[col_locatie])
-
-    # Belangrijk: origineel Bus/Tram blijft je hoofd-“Voertuigtype”
-    df_ok["BusTram_disp"]        = _clean_display_series(df_ok[col_bus_tram])
-    # Nieuw: apart zichtbaar veld voor kolom Z
-    df_ok["Voertuig_disp"]       = _clean_display_series(df_ok[col_voertuig])
-
+    
     options = {
         "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
         "locatie":   sorted(df_ok["Locatie_disp"].dropna().unique().tolist()),
-        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),        # origineel
-        "voertuig_nieuw": sorted(df_ok["Voertuig_disp"].dropna().unique().tolist()),  # kolom Z
-        "kwartaal":  sorted(df_ok["KwartaalP"].dropna().astype(str).unique().tolist()),
+        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),
+        "voertuig_nieuw": sorted(df_ok["Voertuig_disp"].dropna().unique().tolist()),
+        "jaar":      sorted(df_ok["Jaar"].dropna().unique().tolist()),
         "min_datum": df_ok["Datum"].min().normalize(),
         "max_datum": df_ok["Datum"].max().normalize(),
     }
