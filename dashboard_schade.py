@@ -813,27 +813,34 @@ def run_dashboard():
         if "BusTram_disp" not in df_filtered.columns:
             st.info("Kolom voor voertuigtype niet gevonden.")
         else:
-            # Tellingen per voertuigtype
-            counts = (
-                df_filtered["BusTram_disp"]
-                .fillna("onbekend")
-                .value_counts(dropna=False)
-                .sort_values(ascending=False)
+            # ✅ NIEUW: tel enkel Actief = True
+            active_df = (
+                df_filtered[df_filtered["Actief"] == True].copy()
+                if "Actief" in df_filtered.columns else
+                df_filtered.copy()
             )
     
-            if counts.empty:
-                st.info("Geen schadegevallen binnen de huidige filters.")
+            if active_df.empty:
+                st.info("Geen actieve schadegevallen binnen de huidige filters.")
             else:
+                # Tellingen per voertuigtype (alleen actieve records)
+                counts = (
+                    active_df["BusTram_disp"]
+                    .fillna("onbekend")
+                    .value_counts(dropna=False)
+                    .sort_values(ascending=False)
+                )
+    
                 c1, c2 = st.columns(2)
                 c1.metric("Unieke voertuigtypes", int(counts.shape[0]))
-                c2.metric("Totaal schadegevallen", int(len(df_filtered)))
+                c2.metric("Totaal schadegevallen", int(len(active_df)))  # alleen Actief=True
     
                 st.markdown("### 📦 Overzicht (klik open per voertuigtype)")
     
-                work_all = df_filtered.copy()
+                work_all = active_df.copy()
                 work_all["Maand"] = work_all["Datum"].dt.to_period("M").dt.to_timestamp()
     
-                # — Accordeon per voertuigtype
+                # — Accordeon per voertuigtype (alleen Actief=True)
                 for vtype, total in counts.items():
                     with st.expander(f"{vtype} — {int(total)} schades", expanded=False):
                         sub = work_all[work_all["BusTram_disp"] == vtype].copy()
@@ -890,8 +897,8 @@ def run_dashboard():
                 st.dataframe(sum_df_total, use_container_width=True)
     
                 st.markdown("### 📈 Totaal: schades per maand per voertuigtype")
-                if {"Datum", "BusTram_disp"}.issubset(df_filtered.columns):
-                    work = df_filtered.copy()
+                if {"Datum", "BusTram_disp"}.issubset(active_df.columns):
+                    work = active_df.copy()
                     work["Maand"] = work["Datum"].dt.to_period("M").dt.to_timestamp()
                     monthly_all = (
                         work.groupby(["Maand", "BusTram_disp"])
