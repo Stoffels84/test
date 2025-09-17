@@ -307,8 +307,8 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
     df_ok["dienstnummer"] = (
         df_ok[col_naam].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
     )
-    df_ok["KwartaalP"] = df_ok["Datum"].dt.to_period("Q")
-    df_ok["Kwartaal"]  = df_ok["KwartaalP"].astype(str)
+    df_ok["Jaar"] = df_ok["Datum"].dt.year.astype(str)
+
 
     def _clean_display_series(s: pd.Series) -> pd.Series:
         s = s.astype("string").str.strip()
@@ -650,29 +650,47 @@ def run_dashboard():
     with st.sidebar:
         st.image("logo.png", use_container_width=True)
         st.header("🔍 Filters")
+    
         selected_teamcoaches = _ms_all("Teamcoach", teamcoach_options, "— Alle teamcoaches —", "flt_tc")
         selected_locaties    = _ms_all("Locatie",   locatie_options,   "— Alle locaties —",   "flt_loc")
         selected_voertuigen  = _ms_all("Voertuig",  voertuig_options,  "— Alle voertuigen —", "flt_vt")
-        selected_kwartalen   = _ms_all("Kwartaal",  kwartaal_options,  "— Alle kwartalen —",  "flt_kw")
-
-        if selected_kwartalen:
-            per_idx  = pd.PeriodIndex(selected_kwartalen, freq="Q")
-            date_from = per_idx.start_time.min().normalize()
-            date_to   = per_idx.end_time.max().normalize()
+    
+        # 🔹 Filter op jaar (vervangt kwartaal)
+        selected_jaren = st.multiselect(
+            "Jaar",
+            options["jaar"],
+            default=[],
+            key="flt_jaar"
+        )
+    
+        if selected_jaren:
+            date_from = pd.to_datetime(min(selected_jaren) + "-01-01")
+            date_to   = pd.to_datetime(max(selected_jaren) + "-12-31")
         else:
             date_from = options["min_datum"]
             date_to   = options["max_datum"]
+    
+        # Resetknop
+        if st.button("♻️ Reset filters"):
+            for k in ["flt_tc", "flt_loc", "flt_vt", "flt_jaar"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.rerun()
+    
+        # Cache wissen knop
+        if st.button("🧹 Cache wissen"):
+            st.cache_data.clear()
+            st.success("Cache gewist – data wordt opnieuw ingeladen bij volgende actie.")
+            st.rerun()
 
-    # Filter toepassen
-    apply_quarters = bool(selected_kwartalen)
-    sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if apply_quarters else None
 
     mask = (
         df["teamcoach_disp"].isin(selected_teamcoaches)
         & df["Locatie_disp"].isin(selected_locaties)
         & df["BusTram_disp"].isin(selected_voertuigen)
-        & (df["KwartaalP"].isin(sel_periods) if apply_quarters else True)
+        & (df["Jaar"].isin(selected_jaren) if selected_jaren else True)
     )
+
     df_filtered = df.loc[mask].copy()
     start = pd.to_datetime(date_from)
     end   = pd.to_datetime(date_to) + pd.Timedelta(days=1)
