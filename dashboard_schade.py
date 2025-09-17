@@ -304,17 +304,47 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
 
     # --- basisafleidingen ---
  # ✨ Nieuw: jaar i.p.v. kwartaal
+    # --- basisafleidingen ---
+    df_ok["Datum"] = df_ok[col_datum]
+
+    # Dienstnummer
+    df_ok["dienstnummer"] = (
+        df_ok[col_naam].astype(str)
+        .str.extract(r"^(\d+)", expand=False)
+        .astype("string")
+        .str.strip()
+    )
+
+    # ✅ Jaar i.p.v. kwartaal
     df_ok["Jaar"] = df_ok["Datum"].dt.year.astype(str)
-    
+
+    # Helper voor nette displaywaarden
+    def _clean_display_series(s: pd.Series) -> pd.Series:
+        s = s.astype("string").str.strip()
+        bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
+        return s.mask(bad, "onbekend")
+
+    # ✅ DISPLAY-kolommen ZEKER aanmaken vóór options
+    df_ok["volledige naam_disp"] = _clean_display_series(df_ok[col_naam])
+    df_ok["teamcoach_disp"]      = _clean_display_series(df_ok[col_teamcoach])
+    df_ok["Locatie_disp"]        = _clean_display_series(df_ok[col_locatie])
+    df_ok["BusTram_disp"]        = _clean_display_series(df_ok[col_bus_tram])   # origineel
+    df_ok["Voertuig_disp"]       = _clean_display_series(df_ok[col_voertuig])   # kolom Z (zonder .0 eerder gefixt)
+
+    # ---------- options veilig opbouwen ----------
+    def _opts(df: pd.DataFrame, col: str) -> list[str]:
+        return sorted(df[col].dropna().unique().tolist()) if col in df.columns else []
+
     options = {
-        "teamcoach": sorted(df_ok["teamcoach_disp"].dropna().unique().tolist()),
-        "locatie":   sorted(df_ok["Locatie_disp"].dropna().unique().tolist()),
-        "voertuig":  sorted(df_ok["BusTram_disp"].dropna().unique().tolist()),
-        "voertuig_nieuw": sorted(df_ok["Voertuig_disp"].dropna().unique().tolist()),
-        "jaar":      sorted(df_ok["Jaar"].dropna().unique().tolist()),
-        "min_datum": df_ok["Datum"].min().normalize(),
-        "max_datum": df_ok["Datum"].max().normalize(),
+        "teamcoach":     _opts(df_ok, "teamcoach_disp"),
+        "locatie":       _opts(df_ok, "Locatie_disp"),
+        "voertuig":      _opts(df_ok, "BusTram_disp"),     # originele voertuigtype-filter
+        "voertuig_nieuw":_opts(df_ok, "Voertuig_disp"),    # extra filter op kolom Z (optioneel)
+        "jaar":          _opts(df_ok, "Jaar"),
+        "min_datum":     df_ok["Datum"].min().normalize(),
+        "max_datum":     df_ok["Datum"].max().normalize(),
     }
+
     return df_ok, options
 
 
