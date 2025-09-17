@@ -996,155 +996,112 @@ def run_dashboard():
 
 
     # ===== Tab 4: Opzoeken =====
-    # ===== Tab 4: Opzoeken =====
-    with opzoeken_tab:
-        st.subheader("🔎 Opzoeken op personeelsnummer")
-    
-        zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092", key="zoek_pnr_input")
-        m = re.findall(r"\d+", str(zoek or "").strip())
-        pnr = m[0] if m else ""
-    
-        if not pnr:
-            st.info("Geef een personeelsnummer in om resultaten te zien.")
-            st.stop()
-    
-        # Data voor dit PNR binnen huidige filters en in volledige dataset
-        res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
-        res_all = df[df["dienstnummer"].astype(str).str.strip() == pnr].copy()
-    
-        # Basis-info (naam/teamcoach)
-        if not res.empty:
-            naam_disp = res["volledige naam_disp"].iloc[0]
-            teamcoach_disp = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
-            naam_raw = res["volledige naam"].iloc[0] if "volledige naam" in res.columns else naam_disp
-        elif not res_all.empty:
-            naam_disp = res_all["volledige naam_disp"].iloc[0]
-            teamcoach_disp = res_all["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res_all.columns else "onbekend"
-            naam_raw = res_all["volledige naam"].iloc[0] if "volledige naam" in res_all.columns else naam_disp
-        else:
-            ex_info = st.session_state.get("excel_info", {})
-            naam_disp = (ex_info.get(pnr, {}) or {}).get("naam") or ""
-            teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
-            naam_raw = naam_disp
-            st.error("❌ Helaas, die chauffeur bestaat nog niet. Probeer opnieuw.")
-    
-        # Naam netjes opschonen (pnr/nummer vooraan weghalen)
-        try:
-            s = str(naam_raw or "").strip()
-            patroon = rf"^\s*({re.escape(pnr)}|\d+)\s*[-:–—]?\s*"
-            naam_clean = re.sub(patroon, "", s)
-        except Exception:
-            naam_clean = naam_disp
-    
-        chauffeur_label = f"{pnr} {naam_clean}".strip() if naam_clean else str(pnr)
-    
-        # Status uit coachingslijsten (lopend/voltooid/…)
-        set_lopend   = set(map(str, st.session_state.get("coaching_ids", set())))
-        set_voltooid = set(map(str, st.session_state.get("gecoachte_ids", set())))
-    
-        if pnr in set_voltooid:   # Voltooid krijgt voorrang
-            beo_raw = (st.session_state.get("excel_info", {}).get(pnr, {}) or {}).get("beoordeling", "")
-            b = str(beo_raw or "").strip().lower()
-            if b in {"zeer goed", "goed"}:
-                status_lbl, status_emoji = "Goed", "🟢"
-            elif b == "voldoende":
-                status_lbl, status_emoji = "Voldoende", "🟠"
-            elif b in {"onvoldoende", "slecht", "zeer slecht"}:
-                status_lbl, status_emoji = ("Onvoldoende" if b == "onvoldoende" else "Slecht"), "🔴"
+    # ===== Tab 2: Voertuig =====
+        with voertuig_tab:
+            st.subheader("🚘 Schadegevallen per voertuigtype")
+        
+            if "BusTram_disp" not in df_filtered.columns:
+                st.info("Kolom voor voertuigtype niet gevonden.")
             else:
-                status_lbl, status_emoji = "Voltooid (geen beoordeling)", "🟡"
-            status_bron = f"bron: Voltooide coachings (beoordeling: {beo_raw or '—'})"
-        elif pnr in set_lopend:
-            status_lbl, status_emoji = "Lopend", "⚫"
-            status_bron = "bron: Coaching (lopend)"
-        else:
-            status_lbl, status_emoji = "Niet aangevraagd", "⚪"
-            status_bron = "bron: Coachingslijst.xlsx"
-    
-        # Header info
-        st.markdown(f"**👤 Chauffeur:** {chauffeur_label}")
-        st.markdown(f"**🧑‍💼 Teamcoach:** {teamcoach_disp}")
-        st.markdown(f"**🎯 Coachingstatus:** {status_emoji} {status_lbl} · _{status_bron}_")
-    
-        # Datums coaching (met kleurtjes waar mogelijk)
-        coaching_rows = []
-        coach_df = st.session_state.get("coachings_df")
-        if (isinstance(coach_df, pd.DataFrame) and not coach_df.empty
-                and {"dienstnummer", "Datum coaching"}.issubset(set(coach_df.columns))):
-            mask = coach_df["dienstnummer"].astype(str).str.strip() == str(pnr).strip()
-            rows = coach_df.loc[mask, ["Datum coaching", "Beoordeling"]].copy()
-            if not rows.empty:
-                rows["Datum coaching"] = pd.to_datetime(rows["Datum coaching"], errors="coerce", dayfirst=True)
-                rows = rows.dropna(subset=["Datum coaching"])
-                for _, r in rows.iterrows():
-                    dstr = r["Datum coaching"].strftime("%d-%m-%Y")
-                    rate = str(r.get("Beoordeling", "") or "").strip().lower()
-                    dot = _beoordeling_emoji(rate).strip() or ""
-                    coaching_rows.append((dstr, dot))
-        if not coaching_rows:
-            # fallback: excel_info
-            ex_info = st.session_state.get("excel_info", {})
-            if pnr in ex_info:
-                raw = (
-                    (ex_info[pnr] or {}).get("coaching_datums")
-                    or (ex_info[pnr] or {}).get("Datum coaching")
-                    or (ex_info[pnr] or {}).get("datum_coaching")
+                # Tellingen per voertuigtype
+                counts = (
+                    df_filtered["BusTram_disp"]
+                    .fillna("onbekend")
+                    .value_counts(dropna=False)
+                    .sort_values(ascending=False)
                 )
-                if isinstance(raw, (list, tuple, set)):
-                    coaching_rows = [(str(x).strip(), "") for x in raw if str(x).strip()]
-                elif isinstance(raw, str) and raw.strip():
-                    coaching_rows = [(d.strip(), "") for d in re.split(r"[;,]\s*", raw.strip()) if d.strip()]
-    
-        if coaching_rows:
-            st.markdown("**📅 Datum coaching:**")
-            try:
-                coaching_rows.sort(key=lambda t: datetime.strptime(t[0], "%d-%m-%Y"))
-            except Exception:
-                pass
-            for d, dot in coaching_rows:
-                st.markdown(f"- {dot} {d}".strip())
-        else:
-            st.markdown("**📅 Datum coaching:** —")
-    
-        st.markdown("---")
-    
-        # Resultatentabel (huidige filters)
-        st.metric("Aantal schadegevallen", int(len(res)))
-        if res.empty:
-            st.caption("Geen schadegevallen binnen de huidige filters.")
-            st.stop()
-    
-        res = res.sort_values("Datum", ascending=False).copy()
         
-        heeft_link = "Link" in res.columns
-        if heeft_link:
-            res["URL"] = res["Link"].apply(extract_url)
+                if counts.empty:
+                    st.info("Geen schadegevallen binnen de huidige filters.")
+                else:
+                    c1, c2 = st.columns(2)
+                    c1.metric("Unieke voertuigtypes", int(counts.shape[0]))
+                    c2.metric("Totaal schadegevallen", int(len(df_filtered)))
         
-        # ✅ 'Actief (AA)' -> 'Actief' (Ja/Neen)
-        if "Actief" in res.columns:
-            res["Actief"] = res["Actief"].map({True: "Ja", False: "Neen"})
+                    st.markdown("### 📦 Overzicht (klik open per voertuigtype)")
         
-        # ✅ kolomvolgorde, zonder haakjes in headers
-        kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-        if "Voertuig_disp" in res.columns:
-            kol.append("Voertuig_disp")      # header wordt 'Voertuig'
-        if "Actief" in res.columns:
-            kol.append("Actief")             # header wordt 'Actief'
-        if heeft_link:
-            kol.append("URL")
+                    work_all = df_filtered.copy()
+                    work_all["Maand"] = work_all["Datum"].dt.to_period("M").dt.to_timestamp()
         
-        column_config = {
-            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-            "Locatie_disp": st.column_config.TextColumn("Locatie"),
-            "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
-        }
-        if "Voertuig_disp" in res.columns:
-            column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")
-        if heeft_link:
-            column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+                    # — Accordeon per voertuigtype
+                    for vtype, total in counts.items():
+                        with st.expander(f"{vtype} — {int(total)} schades", expanded=False):
+                            sub = work_all[work_all["BusTram_disp"] == vtype].copy()
         
-        st.dataframe(res[kol], column_config=column_config, use_container_width=True)
-
+                            kpi1, kpi2, kpi3 = st.columns(3)
+                            with kpi1:
+                                st.metric("Schades", int(len(sub)))
+                            with kpi2:
+                                st.metric("Unieke chauffeurs", int(sub["dienstnummer"].astype(str).nunique()))
+                            with kpi3:
+                                d_min, d_max = sub["Datum"].min(), sub["Datum"].max()
+                                periode = f"{d_min:%d-%m-%Y} – {d_max:%d-%m-%Y}" if pd.notna(d_min) and pd.notna(d_max) else "—"
+                                st.metric("Periode", periode)
+        
+                            st.markdown("**Samenvatting per locatie**")
+                            sum_df = (
+                                sub.groupby("Locatie_disp", dropna=False)
+                                   .size()
+                                   .sort_values(ascending=False)
+                                   .rename("Schades")
+                                   .rename_axis("Locatie")
+                                   .reset_index()
+                            )
+                            st.dataframe(sum_df.head(25), use_container_width=True)
+        
+                            st.markdown("**Schades per maand**")
+                            monthly = (
+                                sub.groupby("Maand")
+                                   .size()
+                                   .rename("Schades")
+                                   .reset_index()
+                                   .sort_values("Maand")
+                            )
+                            if monthly.empty:
+                                st.caption("Geen maanddata binnen de huidige filters.")
+                            else:
+                                full_idx = pd.period_range(
+                                    sub["Datum"].min().to_period("M"),
+                                    sub["Datum"].max().to_period("M"),
+                                    freq="M"
+                                ).to_timestamp()
+                                monthly = (
+                                    monthly.set_index("Maand")
+                                           .reindex(full_idx)
+                                           .fillna(0)
+                                           .rename_axis("Maand")
+                                           .reset_index()
+                                )
+                                st.line_chart(monthly.set_index("Maand")["Schades"], use_container_width=True)
+        
+                    st.markdown("---")
+                    st.markdown("### 📊 Totale samenvatting per voertuigtype")
+                    sum_df_total = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
+                    st.dataframe(sum_df_total, use_container_width=True)
+        
+                    st.markdown("### 📈 Totaal: schades per maand per voertuigtype")
+                    if {"Datum", "BusTram_disp"}.issubset(df_filtered.columns):
+                        work = df_filtered.copy()
+                        work["Maand"] = work["Datum"].dt.to_period("M").dt.to_timestamp()
+                        monthly_all = (
+                            work.groupby(["Maand", "BusTram_disp"])
+                                .size()
+                                .rename("Schades")
+                                .reset_index()
+                        )
+                        pivot = (
+                            monthly_all.pivot(index="Maand", columns="BusTram_disp", values="Schades")
+                                       .sort_index()
+                        )
+                        full_idx = pd.period_range(
+                            work["Datum"].min().to_period("M"),
+                            work["Datum"].max().to_period("M"),
+                            freq="M"
+                        ).to_timestamp()
+                        pivot = pivot.reindex(full_idx).fillna(0).astype(int)
+                        st.line_chart(pivot, use_container_width=True)
+                    else:
+                        st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
 
 
     # ===== Tab 5: Coaching =====
