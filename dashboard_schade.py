@@ -1436,19 +1436,7 @@ def run_dashboard():
             if show_population and median_all_staff is not None:
                 ax.legend()
             st.pyplot(fig)
-    
-            # Top-% hoogste PNR’s (schades)
-            thr = expanded["PNR"].quantile(1 - top_pct / 100.0)
-            share_top = (expanded["PNR"] >= thr).mean() * 100.0
-            st.markdown(
-                f"**Top {top_pct}% hoogste personeelsnummers** zijn goed voor **~{share_top:.1f}%** van alle schades in deze selectie."
-            )
-    
-            # Mediaan-split (schades)
-            med = expanded["PNR"].median()
-            low_share = (expanded["PNR"] < med).mean() * 100.0
-            high_share = 100.0 - low_share
-            st.markdown(f"**Onder mediaan (schades)**: ~{low_share:.1f}% · **Boven mediaan (schades)**: ~{high_share:.1f}% van de schades.")
+  
     
         # 2) Overall instellingen
         st.markdown("#### 🔧 Weergave-instellingen")
