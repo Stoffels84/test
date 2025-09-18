@@ -1169,17 +1169,6 @@ def run_dashboard():
         if heeft_link:
             kol.append("URL")
     
-        column_config = {
-            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-            "Locatie_disp": st.column_config.TextColumn("Locatie"),
-            "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
-        }
-        if "Voertuig_disp" in res_to_show.columns:
-            column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")
-        if heeft_link:
-            column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-    
-        st.dataframe(res_to_show[kol], column_config=column_config, use_container_width=True)
 
     
         # Link klikbaar
