@@ -1390,185 +1390,106 @@ def run_dashboard():
     # ===== Tab 6: Analyse =====
     # ===== Tab 6: Analyse =====
     with analyse_tab:
-        st.subheader("📐 Analyse: lage ↔ hoge personeelsnummers")
+        st.subheader("📐 Analyse personeelsnummers (HASTUS)")
 
-        # 1) Dataset-keuze
-        use_filters = st.checkbox(
-            "Gebruik huidige filters (uit = volledige dataset)",
-            value=True,
-            key="pnr_dist_use_filters"
-        )
-        df_basis = df_filtered if use_filters else df
+        # ── Bron: HASTUS-serie met personeelsnummers als integers (ingelezen bij start dashboard)
+        hs_series: pd.Series | None = st.session_state.get("hastus_pnrs_series_int")
 
-        # -------- helpers --------
-        import matplotlib.pyplot as plt
+        # ── Helpers
+        def _pnr_kpis(series_int: pd.Series) -> dict:
+            pnrs = series_int.dropna().astype(int)
+            return {
+                "totaal_uniek": int(pnrs.drop_duplicates().shape[0]),
+                "min": int(pnrs.min()),
+                "max": int(pnrs.max()),
+                "mediaan": int(pnrs.median()),
+            }
 
-        def _pnr_stats_and_expanded(df_in: pd.DataFrame):
-            """Return per_pnr (PNR, Schades) en expanded (1 rij = 1 schade) voor een subset."""
-            pnr_series = (
-                df_in["dienstnummer"]
-                .dropna()
-                .astype(str)
-                .str.extract(r"(\d+)", expand=False)
-                .dropna()
-            )
-            if pnr_series.empty:
-                return None, None
-            pnr_series = pnr_series.astype(int).rename("PNR")
-            per_pnr = (
-                pnr_series.value_counts()
-                .sort_index()
-                .rename_axis("PNR")
-                .reset_index(name="Schades")
-            )
-            expanded = per_pnr.loc[per_pnr.index.repeat(per_pnr["Schades"])].reset_index(drop=True)
-            return per_pnr, expanded
-
-        def _overall_population_defaults():
+        def _pnr_bins_hastus(series_int: pd.Series, bin_size: int = 10000, include_empty_bins: bool = True) -> pd.DataFrame:
             """
-            Prefer 'data hastus' als bron voor totaal personeel en mediaan PNR.
-            Val terug op 'contact' tabblad wanneer nodig.
+            Bereken verdeling van unieke personeelsnummers per 'bin_size'.
+            Geeft een nette tabel met kolommen: Range, Aantal PNRs, Lower, Upper.
             """
-            # 1) HASTUS
-            hs_set = st.session_state.get("hastus_pnrs_set", set())
-            hs_series = st.session_state.get("hastus_pnrs_series_int")
-            if hs_set:
-                auto_total_staff = len(hs_set)
-                median_all_staff = int(hs_series.median()) if hs_series is not None and not hs_series.empty else None
-                return auto_total_staff, median_all_staff
+            if series_int is None or series_int.empty:
+                return pd.DataFrame(columns=["Range", "Aantal PNRs", "Lower", "Upper"])
 
-            # 2) Fallback: 'contact'
-            auto_total_staff = None
-            median_all_staff = None
-            try:
-                contacts = load_contact_map()
-                all_pnrs = (
-                    pd.Series(list(contacts.keys()), dtype="string")
-                      .str.extract(r"(\d+)", expand=False)
-                      .dropna()
-                      .astype(int)
-                )
-                if not all_pnrs.empty:
-                    auto_total_staff = int(all_pnrs.nunique())
-                    median_all_staff = int(all_pnrs.median())
-            except Exception:
-                pass
-            return auto_total_staff, median_all_staff
+            pnrs_unique = series_int.dropna().astype(int).drop_duplicates().sort_values()
 
-        def _render_subset_block(df_in: pd.DataFrame, title: str, show_population: bool, n_bins: int, top_pct: int):
-            """Render KPI's + histogram + top% + mediaan-split voor gegeven subset."""
-            per_pnr, expanded = _pnr_stats_and_expanded(df_in)
-            if per_pnr is None or expanded is None or expanded.empty:
-                st.info(f"Geen geldige personeelsnummers in selectie: {title}.")
-                return
+            # Bin-ondergrenzen bepalen per uniek PNR
+            lowers = (pnrs_unique // bin_size) * bin_size
+            counts = lowers.value_counts().sort_index()
 
-            st.markdown(f"### {title}")
+            # Optioneel alle intervallen opnemen (ook lege), voor mooie continue weergave
+            if include_empty_bins:
+                low_min = int((pnrs_unique.min() // bin_size) * bin_size)
+                low_max = int((pnrs_unique.max() // bin_size) * bin_size)
+                full_index = pd.Index(range(low_min, low_max + 1, bin_size))
+                counts = counts.reindex(full_index, fill_value=0)
 
-            # Populatie (alleen in overall blok)
-            if show_population:
-                auto_total_staff, median_all_staff = _overall_population_defaults()
-                total_staff_default = auto_total_staff or 598
-                total_staff = st.number_input(
-                    "Handmatig totaal personeelsnummers",
-                    min_value=1,
-                    value=total_staff_default,
-                    step=1,
-                    help="Overschrijf indien je personeelsbestand gewijzigd is.",
-                    key=f"total_staff_{title}"
-                )
-            else:
-                total_staff, median_all_staff = None, None
-
-            # KPI’s
-            cols = st.columns(4)
-            with cols[0]:
-                st.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
-            with cols[1]:
-                st.metric("Totaal schades", int(per_pnr["Schades"].sum()))
-            with cols[2]:
-                st.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
-            with cols[3]:
-                st.metric("Gemiddeld PNR (gewogen)", int(round(expanded["PNR"].mean())))
-
-            if show_population:
-                c5, c6, c7 = st.columns(3)
-                with c5:
-                    coverage = (per_pnr.shape[0] / total_staff) * 100.0
-                    st.metric("Dekking personeel met schade", f"{coverage:.1f}%")
-                with c6:
-                    rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
-                    st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
-                with c7:
-                    st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
-
-            # Histogram
-            fig, ax = plt.subplots(figsize=(8, 4))
-            ax.hist(expanded["PNR"], bins=n_bins, edgecolor="black")
-            if show_population and median_all_staff is not None:
-                ax.axvline(median_all_staff, color="green", linestyle="-.", linewidth=2,
-                           label="Mediaan PNR (alle medewerkers)")
-            ax.set_xlabel("Personeelsnummer")
-            ax.set_ylabel("Aantal schades")
-            ax.set_title(f"Histogram schades per PNR — {title}")
-            if show_population and median_all_staff is not None:
-                ax.legend()
-            st.pyplot(fig)
-
-        # 🔢 NIEUW: overzicht per 10.000 PNR
-        def _pnr_bins_overview(df_in: pd.DataFrame, bin_size: int = 10000):
-            """Maak een overzicht van aantal unieke PNR's per bin van bin_size."""
-            pnrs = (
-                df_in["dienstnummer"]
-                .dropna()
-                .astype(str)
-                .str.extract(r"(\d+)", expand=False)
-                .dropna()
-                .astype(int)
-            )
-            if pnrs.empty:
-                return pd.DataFrame(columns=["Range", "Aantal PNRs"])
-            
-            bins = (pnrs // bin_size) * bin_size
-            counts = bins.value_counts().sort_index()
-            
             rows = []
             for lower, count in counts.items():
                 upper = lower + bin_size - 1
                 rows.append({
                     "Range": f"{lower:05d} – {upper:05d}",
-                    "Aantal PNRs": int(count)
+                    "Aantal PNRs": int(count),
+                    "Lower": int(lower),
+                    "Upper": int(upper),
                 })
             return pd.DataFrame(rows)
 
-        # 2) Overall instellingen
-        st.markdown("#### 🔧 Weergave-instellingen")
-        n_bins_overall = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins_overall")
-        top_pct_overall = st.slider("Aandeel hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct_overall")
-
-        # 3) Overall (alle teamcoaches/filters)
-        _render_subset_block(
-            df_basis,
-            "Totaal (huidige selectie)",
-            show_population=True,
-            n_bins=n_bins_overall,
-            top_pct=top_pct_overall
+        # ── UI-instellingen
+        st.markdown("### 🔧 Instellingen")
+        bin_size = st.number_input(
+            "Bin-grootte",
+            min_value=1000,
+            step=1000,
+            value=10000,
+            help="Aantal opeenvolgende personeelsnummers per interval (standaard 10.000).",
+            key="pnr_bin_size"
+        )
+        include_empty = st.checkbox(
+            "Toon lege intervallen",
+            value=True,
+            help="Handig voor een doorlopende verdeling, ook als er geen PNR's in een interval vallen.",
+            key="pnr_bins_include_empty"
         )
 
-        st.caption(
-            "ℹ️ Histogrammen en KPI’s zijn gebaseerd op PNR’s met schades in de huidige selectie. "
-            "In het totaalblok kun je optioneel het totaal personeelsbestand instellen en (indien beschikbaar) "
-            "de mediaan PNR van alle medewerkers laten tonen."
-        )
+        st.markdown("---")
 
-        # 4) Extra: verdeling per 10.000
-        st.markdown("### 📊 Verdeling personeelsnummers per 10.000")
-        df_bins = _pnr_bins_overview(df_basis, bin_size=10000)
-        if df_bins.empty:
-            st.info("Geen geldige personeelsnummers gevonden.")
+        # ── Data + KPI’s
+        if hs_series is None or hs_series.empty:
+            st.info("Geen personeelsnummers beschikbaar uit tabblad **data hastus**.")
         else:
-            st.dataframe(df_bins, use_container_width=True)
-            st.bar_chart(df_bins.set_index("Range")["Aantal PNRs"], use_container_width=True)
+            kpis = _pnr_kpis(hs_series)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Totaal unieke PNR’s", f"{kpis['totaal_uniek']}")
+            c2.metric("Laagste PNR", f"{kpis['min']}")
+            c3.metric("Hoogste PNR", f"{kpis['max']}")
+            c4.metric("Mediaan PNR", f"{kpis['mediaan']}")
 
+            st.markdown("### 📊 Verdeling personeelsnummers per interval")
+            df_bins = _pnr_bins_hastus(hs_series, bin_size=bin_size, include_empty_bins=include_empty)
+
+            # Tabel
+            st.dataframe(
+                df_bins[["Range", "Aantal PNRs"]],
+                use_container_width=True
+            )
+
+            # Grafiek
+            st.bar_chart(
+                df_bins.set_index("Range")["Aantal PNRs"],
+                use_container_width=True
+            )
+
+            # Export
+            st.download_button(
+                "⬇️ Download verdeling (CSV)",
+                df_bins[["Range", "Aantal PNRs", "Lower", "Upper"]].to_csv(index=False).encode("utf-8"),
+                file_name=f"pnr_verdeling_per_{bin_size}.csv",
+                mime="text/csv",
+                key="dl_pnr_bins_csv"
+            )
 
 # =========================
 # main
