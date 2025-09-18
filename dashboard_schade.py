@@ -1033,7 +1033,7 @@ def run_dashboard():
     
         if not pnr:
             st.info("Geef een personeelsnummer in om resultaten te zien.")
-            st.stop()
+
     
         # Resultaten binnen huidige filters en in volledige dataset (fallback voor naam/teamcoach)
         res = df_filtered[df_filtered["dienstnummer"].astype(str).str.strip() == pnr].copy()
