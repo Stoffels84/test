@@ -349,50 +349,50 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
 
 
 
-        if not os.path.exists(path):
-            return set(), None
-        try:
-            xls = pd.ExcelFile(path)
-        except Exception:
-            return set(), None
-    
-        # sheet naam tolerant zoeken
-        target = None
-        for sh in xls.sheet_names:
-            s = str(sh).strip().lower()
-            if s in {"data hastus", "data_hastus", "hastus", "hastus data"}:
-                target = sh
-                break
-        if target is None:
-            return set(), None
-    
-        try:
-            df = pd.read_excel(xls, sheet_name=target, header=None, usecols="A")
-        except Exception:
-            return set(), None
-    
-        if df.empty:
-            return set(), None
-    
-        # alles naar cijfers; alleen geldige pnr's behouden
-        s = (
-            df.iloc[:, 0]
-              .astype(str)
-              .str.extract(r"(\d+)", expand=False)
-              .dropna()
-              .str.strip()
-        )
-        if s.empty:
-            return set(), None
-    
-        # set met string-PNR's + (optioneel) int-series voor statistiek
-        set_pnrs = set(s.tolist())
-        try:
-            series_int = s.astype(int)
-        except Exception:
-            series_int = None
-    
-        return set_pnrs, series_int
+            if not os.path.exists(path):
+                return set(), None
+            try:
+                xls = pd.ExcelFile(path)
+            except Exception:
+                return set(), None
+        
+            # sheet naam tolerant zoeken
+            target = None
+            for sh in xls.sheet_names:
+                s = str(sh).strip().lower()
+                if s in {"data hastus", "data_hastus", "hastus", "hastus data"}:
+                    target = sh
+                    break
+            if target is None:
+                return set(), None
+        
+            try:
+                df = pd.read_excel(xls, sheet_name=target, header=None, usecols="A")
+            except Exception:
+                return set(), None
+        
+            if df.empty:
+                return set(), None
+        
+            # alles naar cijfers; alleen geldige pnr's behouden
+            s = (
+                df.iloc[:, 0]
+                  .astype(str)
+                  .str.extract(r"(\d+)", expand=False)
+                  .dropna()
+                  .str.strip()
+            )
+            if s.empty:
+                return set(), None
+        
+            # set met string-PNR's + (optioneel) int-series voor statistiek
+            set_pnrs = set(s.tolist())
+            try:
+                series_int = s.astype(int)
+            except Exception:
+                series_int = None
+        
+            return set_pnrs, series_int
 
 
 
