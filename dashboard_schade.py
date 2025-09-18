@@ -348,6 +348,54 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
     return df_ok, options
 
 
+
+        if not os.path.exists(path):
+            return set(), None
+        try:
+            xls = pd.ExcelFile(path)
+        except Exception:
+            return set(), None
+    
+        # sheet naam tolerant zoeken
+        target = None
+        for sh in xls.sheet_names:
+            s = str(sh).strip().lower()
+            if s in {"data hastus", "data_hastus", "hastus", "hastus data"}:
+                target = sh
+                break
+        if target is None:
+            return set(), None
+    
+        try:
+            df = pd.read_excel(xls, sheet_name=target, header=None, usecols="A")
+        except Exception:
+            return set(), None
+    
+        if df.empty:
+            return set(), None
+    
+        # alles naar cijfers; alleen geldige pnr's behouden
+        s = (
+            df.iloc[:, 0]
+              .astype(str)
+              .str.extract(r"(\d+)", expand=False)
+              .dropna()
+              .str.strip()
+        )
+        if s.empty:
+            return set(), None
+    
+        # set met string-PNR's + (optioneel) int-series voor statistiek
+        set_pnrs = set(s.tolist())
+        try:
+            series_int = s.astype(int)
+        except Exception:
+            series_int = None
+    
+        return set_pnrs, series_int
+
+
+
 # ========= Coachingslijst inlezen =========
 @st.cache_data(show_spinner=False)
 def lees_coachingslijst(pad="Coachingslijst.xlsx", _v=None):
@@ -622,6 +670,11 @@ def run_dashboard():
 
     # Data laden
     df, options = load_schade_prepared()
+        # ▼ HASTUS-personeelsnummers beschikbaar maken
+        hastus_set, hastus_series_int = load_hastus_pnrs()
+        st.session_state["hastus_pnrs_set"] = hastus_set
+        st.session_state["hastus_pnrs_series_int"] = hastus_series_int
+
     
     # ▼ Nieuw: mtime van Coachingslijst als cache-sleutel
     coachings_pad = "Coachingslijst.xlsx"
@@ -1058,6 +1111,12 @@ def run_dashboard():
                 teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
                 naam_raw = naam_disp
                 st.error("❌ Helaas, die chauffeur bestaat nog niet. Probeer opnieuw.")
+
+                # ➕ NIEUW: bestaat het PNR wel in personeelslijst (HASTUS)?
+                hs_set = st.session_state.get("hastus_pnrs_set", set())
+                if hs_set and pnr in hs_set:
+                    st.info("ℹ️ Dit personeelsnummer bestaat in 'data hastus', maar heeft (nog) geen schadegevallen in de selectie.")
+
     
             # 4) Nettere weergavenaam (pnr/leading streepjes weghalen)
             try:
