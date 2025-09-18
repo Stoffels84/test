@@ -1131,6 +1131,9 @@ def run_dashboard():
         # ------------------------
         # Resultaat (metric + tabel)
         # ------------------------
+        # ------------------------
+        # Resultaat (metric + tabel)
+        # ------------------------
         st.markdown("---")
     
         if res.empty:
@@ -1140,18 +1143,44 @@ def run_dashboard():
     
         res = res.sort_values("Datum", ascending=False).copy()
     
-        # ✅ Metric telt enkel Actief=True
+        # ✅ Metric én tabel tonen alleen Actief=True
         has_actief_bool = "Actief" in res.columns
         res_active = res[res["Actief"] == True].copy() if has_actief_bool else res.copy()
+    
         st.metric("Aantal schadegevallen", int(len(res_active)))
     
-        # Optioneel: tabel beperken tot enkel Actief=True
-        only_active_view = st.checkbox(
-            "Toon enkel actieve records in de tabel",
-            value=True if has_actief_bool else False,
-            help="De metric hierboven telt sowieso enkel actieve schades."
-        )
-        res_to_show = res_active if (only_active_view and has_actief_bool) else res
+        res_to_show = res_active
+    
+        # Link klikbaar
+        heeft_link = "Link" in res_to_show.columns
+        if heeft_link:
+            res_to_show["URL"] = res_to_show["Link"].apply(extract_url)
+    
+        # Actief als 'Ja/Neen'
+        if has_actief_bool:
+            res_to_show["Actief"] = res_to_show["Actief"].map({True: "Ja", False: "Neen"})
+    
+        # Kolomvolgorde: Datum, Locatie, Bus/Tram, Voertuig (Z), Actief, Link
+        kol = ["Datum", "Locatie_disp", "BusTram_disp"]
+        if "Voertuig_disp" in res_to_show.columns:
+            kol.append("Voertuig_disp")
+        if "Actief" in res_to_show.columns:
+            kol.append("Actief")
+        if heeft_link:
+            kol.append("URL")
+    
+        column_config = {
+            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+            "Locatie_disp": st.column_config.TextColumn("Locatie"),
+            "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
+        }
+        if "Voertuig_disp" in res_to_show.columns:
+            column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")
+        if heeft_link:
+            column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+    
+        st.dataframe(res_to_show[kol], column_config=column_config, use_container_width=True)
+
     
         # Link klikbaar
         heeft_link = "Link" in res_to_show.columns
