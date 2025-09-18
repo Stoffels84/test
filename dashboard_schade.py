@@ -664,8 +664,8 @@ def run_dashboard():
         st.header("🔍 Filters")
     
         selected_teamcoaches = _ms_all("Teamcoach", teamcoach_options, "— Alle teamcoaches —", "flt_tc")
-        selected_locaties    = _ms_all("Locatie",   locatie_options,   "— Alle locaties —",   "flt_loc")
         selected_voertuigen  = _ms_all("Voertuig",  voertuig_options,  "— Alle voertuigen —", "flt_vt")
+
     
         # ⬇️ NIEUW: filter op JAAR i.p.v. kwartaal
         selected_jaren = st.multiselect(
@@ -697,10 +697,10 @@ def run_dashboard():
     # ===== Filter toepassen =====
     mask = (
         df["teamcoach_disp"].isin(selected_teamcoaches)
-        & df["Locatie_disp"].isin(selected_locaties)
         & df["BusTram_disp"].isin(selected_voertuigen)
-        & (df["Jaar"].isin(selected_jaren) if selected_jaren else True)   # ⬅️ jaarfilter
+        & (df["Jaar"].isin(selected_jaren) if selected_jaren else True)
     )
+
     
     df_filtered = df.loc[mask].copy()
     start = pd.to_datetime(date_from)
