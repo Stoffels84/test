@@ -1491,6 +1491,144 @@ def run_dashboard():
                 key="dl_pnr_bins_csv"
             )
 
+
+
+
+
+    
+                # ===== Tab 6: Analyse =====
+    
+        # 1) Dataset-keuze
+        use_filters = st.checkbox(
+            "Gebruik huidige filters (uit = volledige dataset)",
+            value=True,
+            key="pnr_dist_use_filters"
+        )
+        df_basis = df_filtered if use_filters else df
+    
+        # -------- helpers --------
+        import matplotlib.pyplot as plt
+    
+        def _pnr_stats_and_expanded(df_in: pd.DataFrame):
+            """Return per_pnr (PNR, Schades) en expanded (1 rij = 1 schade) voor een subset."""
+            pnr_series = (
+                df_in["dienstnummer"]
+                .dropna()
+                .astype(str)
+                .str.extract(r"(\d+)", expand=False)
+                .dropna()
+            )
+            if pnr_series.empty:
+                return None, None
+            pnr_series = pnr_series.astype(int).rename("PNR")
+            per_pnr = (
+                pnr_series.value_counts()
+                .sort_index()
+                .rename_axis("PNR")
+                .reset_index(name="Schades")
+            )
+            expanded = per_pnr.loc[per_pnr.index.repeat(per_pnr["Schades"])].reset_index(drop=True)
+            return per_pnr, expanded
+    
+        def _overall_population_defaults():
+            """Optioneel totaal personeel en mediaan PNR (alle medewerkers) uit 'contact'."""
+            auto_total_staff = None
+            median_all_staff = None
+            try:
+                contacts = load_contact_map()  # tab 'contact' in 'schade met macro.xlsm'
+                all_pnrs = (
+                    pd.Series(list(contacts.keys()), dtype="string")
+                    .str.extract(r"(\d+)", expand=False)
+                    .dropna()
+                    .astype(int)
+                )
+                if not all_pnrs.empty:
+                    auto_total_staff = int(all_pnrs.nunique())
+                    median_all_staff = int(all_pnrs.median())
+            except Exception:
+                pass
+            return auto_total_staff, median_all_staff
+    
+        def _render_subset_block(df_in: pd.DataFrame, title: str, show_population: bool, n_bins: int, top_pct: int):
+            """Render KPI's + histogram + top% + mediaan-split voor gegeven subset."""
+            per_pnr, expanded = _pnr_stats_and_expanded(df_in)
+            if per_pnr is None or expanded is None or expanded.empty:
+                st.info(f"Geen geldige personeelsnummers in selectie: {title}.")
+                return
+    
+            st.markdown(f"### {title}")
+    
+            # Populatie (alleen in overall blok)
+            if show_population:
+                auto_total_staff, median_all_staff = _overall_population_defaults()
+                total_staff_default = auto_total_staff or 598
+                total_staff = st.number_input(
+                    "Handmatig totaal personeelsnummers",
+                    min_value=1,
+                    value=total_staff_default,
+                    step=1,
+                    help="Overschrijf indien je personeelsbestand gewijzigd is.",
+                    key=f"total_staff_{title}"
+                )
+            else:
+                total_staff, median_all_staff = None, None
+    
+            # KPI’s
+            cols = st.columns(4)
+            with cols[0]:
+                st.metric("Unieke PNR’s met schade", int(per_pnr.shape[0]))
+            with cols[1]:
+                st.metric("Totaal schades", int(per_pnr["Schades"].sum()))
+            with cols[2]:
+                st.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
+            with cols[3]:
+                st.metric("Gemiddeld PNR (gewogen)", int(round(expanded["PNR"].mean())))
+    
+            if show_population:
+                c5, c6, c7 = st.columns(3)
+                with c5:
+                    coverage = (per_pnr.shape[0] / total_staff) * 100.0
+                    st.metric("Dekking personeel met schade", f"{coverage:.1f}%")
+                with c6:
+                    rate_per_100 = (per_pnr["Schades"].sum() / total_staff) * 100.0
+                    st.metric("Schadegraad (per 100 medewerkers)", f"{rate_per_100:.2f}")
+                with c7:
+                    st.metric("Mediaan PNR (alle medewerkers)", "—" if median_all_staff is None else median_all_staff)
+    
+            # Histogram
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.hist(expanded["PNR"], bins=n_bins, edgecolor="black")
+            if show_population and median_all_staff is not None:
+                ax.axvline(median_all_staff, color="green", linestyle="-.", linewidth=2,
+                           label="Mediaan PNR (alle medewerkers)")
+            ax.set_xlabel("Personeelsnummer")
+            ax.set_ylabel("Aantal schades")
+            ax.set_title(f"Histogram schades per PNR — {title}")
+            if show_population and median_all_staff is not None:
+                ax.legend()
+            st.pyplot(fig)
+  
+    
+        # 2) Overall instellingen
+        st.markdown("#### 🔧 Weergave-instellingen")
+        n_bins_overall = st.slider("Aantal bins (intervallen)", 10, 100, 30, step=5, key="pnr_hist_bins_overall")
+        top_pct_overall = st.slider("Aandeel hoogste PNR’s (top %)", 5, 50, 20, step=5, key="pnr_top_pct_overall")
+    
+        # 3) Overall (alle teamcoaches/filters)
+        _render_subset_block(
+            df_basis,
+            "Totaal (huidige selectie)",
+            show_population=True,
+            n_bins=n_bins_overall,
+            top_pct=top_pct_overall
+        )
+    
+        st.caption(
+            "ℹ️ Histogrammen en KPI’s zijn gebaseerd op PNR’s met schades in de huidige selectie. "
+            "In het totaalblok kun je optioneel het totaal personeelsbestand instellen en (indien beschikbaar) "
+            "de mediaan PNR van alle medewerkers laten tonen."
+        )
+
 # =========================
 # main
 # =========================
