@@ -734,16 +734,26 @@ def run_dashboard():
         ["🧑‍✈️ Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching", "📐 Analyse"]
     )
 
-
-
-    # ===== Tab 1: Chauffeur (negeert sidebar-filters) =====
+    # ===== Tab 1: Chauffeur — alle schades, mét sidebarfilters =====
     with chauffeur_tab:
-        st.subheader("📂 Schadegevallen per chauffeur (ongefilterd)")
+        st.subheader("📂 Schadegevallen per chauffeur")
     
-        # ▶︎ Gebruik de volledige dataset, niet df_filtered
-        source_df = df.copy()
+        # Neem altijd de volledige, ongereduceerde dataset (actief + niet-actief)
+        source_df = st.session_state.get("df_all", df).copy()
     
-        # -- hulpfunctie voor kolomnaam-resolutie --
+        # Zelfde filters als de rest van de app (maar géén Actief-filter)
+        mask_all = (
+            source_df["teamcoach_disp"].isin(selected_teamcoaches)
+            & source_df["BusTram_disp"].isin(selected_voertuigen)
+            & (source_df["Jaar"].isin(selected_jaren) if selected_jaren else True)
+        )
+        start = pd.to_datetime(date_from)
+        end   = pd.to_datetime(date_to) + pd.Timedelta(days=1)
+    
+        source_df = source_df.loc[mask_all].copy()
+        source_df = source_df[(source_df["Datum"] >= start) & (source_df["Datum"] < end)]
+    
+        # Kolomnaam-resolutie
         def resolve_col(df_in: pd.DataFrame, candidates: list[str]) -> str | None:
             for c in candidates:
                 if c in df_in.columns:
@@ -759,78 +769,71 @@ def run_dashboard():
             ["volledige naam_disp", "volledige_naam_disp", "naam_display", "displaynaam"]
         )
     
-        if not COL_NAAM:
-            st.error(
-                "Kon geen kolom voor chauffeur vinden in de ongefilterde dataset. "
-                f"Beschikbare kolommen: {list(source_df.columns)}"
+        if not COL_NAAM or source_df.empty:
+            st.info("Geen schadegevallen binnen de huidige filters.")
+            st.stop()
+    
+        grp = (
+            source_df
+            .groupby(COL_NAAM, dropna=False)
+            .size()
+            .sort_values(ascending=False)
+            .reset_index(name="aantal")
+            .rename(columns={COL_NAAM: "chauffeur_raw"})
+        )
+    
+        totaal_schades = int(grp["aantal"].sum())
+        aantal_ch = int(grp.shape[0])
+    
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Aantal chauffeurs (met schade)", aantal_ch)
+        c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, aantal_ch), 2))
+        c3.metric("Totaal aantal schades", totaal_schades)
+    
+        st.markdown("---")
+    
+        # Displaynaam-map
+        disp_map = {}
+        if COL_NAAM_DISP and COL_NAAM_DISP in source_df.columns:
+            disp_map = (
+                source_df[[COL_NAAM, COL_NAAM_DISP]]
+                .dropna().drop_duplicates()
+                .set_index(COL_NAAM)[COL_NAAM_DISP]
+                .to_dict()
             )
-        else:
-            grp = (
-                source_df
-                .groupby(COL_NAAM, dropna=False)
-                .size()
-                .sort_values(ascending=False)
-                .reset_index(name="aantal")
-                .rename(columns={COL_NAAM: "chauffeur_raw"})
-            )
     
-            if grp.empty:
-                st.info("Geen schadegevallen in de totale dataset.")
-            else:
-                totaal_schades = int(grp["aantal"].sum())
-                aantal_ch = int(grp.shape[0])
+        # Nettere naam (opruimen leading pnr + streepjes)
+        import re
+        def _pretty_name(raw: str, disp: str | None) -> str:
+            base = (disp or raw or "").strip()
+            base = re.sub(r"^\s*\d+\s*[-:–—]?\s*", "", base)
+            base = re.sub(r"\s*-\s*-\s*", " ", base)
+            base = re.sub(r"\s*[-–—:]\s*$", "", base)
+            base = re.sub(r"\s{2,}", " ", base).strip()
+            if not base or base.lower() in {"onbekend","nan","none","-"}:
+                m = re.match(r"^\s*(\d+)", str(raw))
+                return m.group(1) if m else (disp or raw or "").strip()
+            return base
     
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.metric("Aantal chauffeurs (met schade)", aantal_ch)
-                c2.metric("Gemiddeld aantal schades", round(totaal_schades / max(1, aantal_ch), 2))
-                c3.metric("Totaal aantal schades", totaal_schades)
+        # Badges zonder errors
+        from functools import lru_cache
+        @lru_cache(maxsize=None)
+        def _badge_safe(raw):
+            try: return badge_van_chauffeur(raw) or ""
+            except Exception: return ""
     
-                st.markdown("---")
+        # (optioneel) handmatig aantal chauffeurs metric
+        st.markdown("#### Handmatig aantal chauffeurs")
+        handmatig_aantal = st.number_input("Handmatig aantal chauffeurs", min_value=1, value=598, step=1)
+        st.metric("Gemiddeld aantal schades (handmatig)",
+                  round(totaal_schades / max(1, handmatig_aantal), 2))
     
-                # displaynaam-map op basis van de volledige dataset
-                if COL_NAAM_DISP and COL_NAAM_DISP in source_df.columns:
-                    disp_map = (
-                        source_df[[COL_NAAM, COL_NAAM_DISP]]
-                        .dropna()
-                        .drop_duplicates()
-                        .set_index(COL_NAAM)[COL_NAAM_DISP]
-                        .to_dict()
-                    )
-                else:
-                    disp_map = {}
+        st.markdown("---")
     
-                # Handmatig aantal chauffeurs (blijft)
-                st.markdown("#### Handmatig aantal chauffeurs")
-                handmatig_aantal = st.number_input(
-                    "Handmatig aantal chauffeurs",
-                    min_value=1,
-                    value=598,
-                    step=1
-                )
-                gem_schades_handmatig = round(totaal_schades / max(1, handmatig_aantal), 2)
-                col_m, _ = st.columns([1, 2])
-                with col_m:
-                    st.metric("Gemiddeld aantal schades (handmatig)", gem_schades_handmatig)
-    
-                st.markdown("---")
-    
-                # badges veilig opbouwen
-                from functools import lru_cache
-                @lru_cache(maxsize=None)
-                def _badge_safe(raw):
-                    try:
-                        b = badge_van_chauffeur(raw)
-                        return b or ""
-                    except Exception:
-                        return ""
-    
-                for _, row in grp.iterrows():
-                    raw = str(row["chauffeur_raw"])
-                    disp = disp_map.get(raw, raw)
-                    badge = _badge_safe(raw)
-                    st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
-
+        for _, row in grp.iterrows():
+            raw = str(row["chauffeur_raw"])
+            nice = _pretty_name(raw, disp_map.get(raw))
+            st.markdown(f"**{_badge_safe(raw)}{nice}** — {int(row['aantal'])} schadegevallen")
 
 
 
