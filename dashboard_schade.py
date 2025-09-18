@@ -676,10 +676,10 @@ def run_dashboard():
 
     # Data laden
     df, options = load_schade_prepared()
-        # ▼ HASTUS-personeelsnummers beschikbaar maken
-        hastus_set, hastus_series_int = load_hastus_pnrs()
-        st.session_state["hastus_pnrs_set"] = hastus_set
-        st.session_state["hastus_pnrs_series_int"] = hastus_series_int
+    # ▼ HASTUS-personeelsnummers beschikbaar maken
+    hastus_set, hastus_series_int = load_hastus_pnrs()
+    st.session_state["hastus_pnrs_set"] = hastus_set
+    st.session_state["hastus_pnrs_series_int"] = hastus_series_int
 
     
     # ▼ Nieuw: mtime van Coachingslijst als cache-sleutel
