@@ -1411,7 +1411,7 @@ def run_dashboard():
             with cols[2]:
                 st.metric("Mediaan PNR (gewogen)", int(expanded["PNR"].median()))
             with cols[3]:
-                st.metric("Gemiddeld PNR (gewogen)", round(expanded["PNR"].mean(), 1))
+                st.metric("Gemiddeld PNR (gewogen)", int(round(expanded["PNR"].mean())))
     
             if show_population:
                 c5, c6, c7 = st.columns(3)
