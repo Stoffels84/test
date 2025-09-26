@@ -252,9 +252,9 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
     for nm in [primary_name] + aliases:
         if nm.lower() in lowmap:
             return lowmap[nm.lower()]
-    # fallback op positie (J=9, K=10, Z=25, AA=26)
+    # fallback op positie (J=9, K=10)
     if letter:
-        letters = {"J": 9, "K": 10, "Z": 25, "AA": 26}
+        letters = {"J": 9, "K": 10}
         idx = letters.get(letter.upper())
         if idx is not None and idx < len(df.columns):
             return df.columns[idx]
