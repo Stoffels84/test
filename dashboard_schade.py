@@ -1237,43 +1237,43 @@ def run_dashboard():
         else:
             res = res.sort_values("Datum", ascending=False).copy()
 
-        toon_inactief = st.checkbox("Toon ook niet-actieve schades", value=False, key="opz_toon_inactief")
-        
-        has_actief_bool = "Actief" in res.columns
-        res_view = res.copy()
-        
-        if has_actief_bool and not toon_inactief:
-            res_view = res_view[res_view["Actief"] == True].copy()
-        
-        st.metric("Aantal schadegevallen", int(len(res_view)))
-        
-        # Link klikbaar
-        heeft_link = "Link" in res_view.columns
-        if heeft_link:
-            res_view["URL"] = res_view["Link"].apply(extract_url)
-        
-        if has_actief_bool:
-            res_view["Actief"] = res_view["Actief"].map({True: "Ja", False: "Neen"})
-        
-        kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-        if "Voertuig_disp" in res_view.columns:
-            kol.append("Voertuig_disp")
-        if "Actief" in res_view.columns:
-            kol.append("Actief")
-        if heeft_link:
-            kol.append("URL")
-        
-        column_config = {
-            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-            "Locatie_disp": st.column_config.TextColumn("Locatie"),
-            "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
-        }
-        if "Voertuig_disp" in res_view.columns:
-            column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")
-        if heeft_link:
-            column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-        
-        st.dataframe(res_view[kol], column_config=column_config, use_container_width=True)
+            toon_inactief = st.checkbox("Toon ook niet-actieve schades", value=False, key="opz_toon_inactief")
+            
+            has_actief_bool = "Actief" in res.columns
+            res_view = res.copy()
+            
+            if has_actief_bool and not toon_inactief:
+                res_view = res_view[res_view["Actief"] == True].copy()
+            
+            st.metric("Aantal schadegevallen", int(len(res_view)))
+            
+            # Link klikbaar
+            heeft_link = "Link" in res_view.columns
+            if heeft_link:
+                res_view["URL"] = res_view["Link"].apply(extract_url)
+            
+            if has_actief_bool:
+                res_view["Actief"] = res_view["Actief"].map({True: "Ja", False: "Neen"})
+            
+            kol = ["Datum", "Locatie_disp", "BusTram_disp"]
+            if "Voertuig_disp" in res_view.columns:
+                kol.append("Voertuig_disp")
+            if "Actief" in res_view.columns:
+                kol.append("Actief")
+            if heeft_link:
+                kol.append("URL")
+            
+            column_config = {
+                "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
+            }
+            if "Voertuig_disp" in res_view.columns:
+                column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")
+            if heeft_link:
+                column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+            
+            st.dataframe(res_view[kol], column_config=column_config, use_container_width=True)
 
 
             # Link klikbaar
