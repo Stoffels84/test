@@ -242,35 +242,43 @@ def extract_url(x) -> str | None:
 # =========================
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
-    df_raw = pd.read_excel(path, sheet_name=sheet)
-    df_raw.columns = df_raw.columns.astype(str).str.strip()
-        
-    # --- helper om kolommen robuust te vinden ---
-def _col(df, primary_name, *, aliases=None, letter=None, required=True):
-    aliases = aliases or []
-    lowmap = {c.lower(): c for c in df.columns}
-    for nm in [primary_name] + aliases:
-        if nm.lower() in lowmap:
-            return lowmap[nm.lower()]
-    # fallback op positie (J=9, K=10, Z=25, AA=26)
-    if letter:
-        letters = {"J": 9, "K": 10, "Z": 25, "AA": 26}
-        idx = letters.get(letter.upper())
-        if idx is not None and idx < len(df.columns):
-            return df.columns[idx]
-    if required:
-        raise RuntimeError(f"Vereiste kolom '{primary_name}' niet gevonden op tab '{sheet}'.")
-    return None
+    # --- inlezen ---
+    try:
+        df_raw = pd.read_excel(path, sheet_name=sheet)
+    except Exception as e:
+        raise RuntimeError(f"Kon '{path}' of tabblad '{sheet}' niet lezen: {e}")
 
+    # kolomnamen normaliseren (als Index → naar str)
+    try:
+        df_raw.columns = df_raw.columns.astype(str).str.strip()
+    except Exception as e:
+        raise RuntimeError(f"Kon kolomnamen niet normaliseren: {e}")
+
+    # --- helper om kolommen robuust te vinden ---
+    def _col(df, primary_name, *, aliases=None, letter=None, required=True):
+        aliases = aliases or []
+        lowmap = {c.lower(): c for c in df.columns}
+        for nm in [primary_name] + aliases:
+            if nm.lower() in lowmap:
+                return lowmap[nm.lower()]
+        # fallback op positie (J=9, K=10, Z=25, AA=26) – 0-based index
+        if letter:
+            letters = {"J": 9, "K": 10, "Z": 25, "AA": 26}
+            idx = letters.get(str(letter).upper())
+            if idx is not None and idx < len(df.columns):
+                return df.columns[idx]
+        if required:
+            raise RuntimeError(f"Vereiste kolom '{primary_name}' niet gevonden op tab '{sheet}'.")
+        return None
 
     # --- vereiste kolommen ---
     col_datum     = _col(df_raw, "Datum")
     col_naam      = _col(df_raw, "volledige naam", aliases=["volledige_naam","naam","chauffeur"])
     col_locatie   = _col(df_raw, "Locatie")
     col_teamcoach = _col(df_raw, "teamcoach", aliases=["coach","team coach"])
-    col_bus_tram  = _col(df_raw, "Bus/ Tram")                   # blijft bestaan
-    col_voertuig  = _col(df_raw, "voertuig", letter="J")        # nieuw (Z)
-    col_actief    = _col(df_raw, "actief",  letter="K")        # nieuw (AA: Ja/Neen)
+    col_bus_tram  = _col(df_raw, "Bus/ Tram")                 # origineel
+    col_voertuig  = _col(df_raw, "voertuig", letter="J")      # ⬅️ kolom J
+    col_actief    = _col(df_raw, "actief",  letter="K")       # ⬅️ kolom K
 
     # --- datum normaliseren ---
     d1 = pd.to_datetime(df_raw[col_datum], errors="coerce", dayfirst=True)
@@ -281,12 +289,12 @@ def _col(df, primary_name, *, aliases=None, letter=None, required=True):
     df_raw[col_datum] = d1
     df_ok = df_raw[df_raw[col_datum].notna()].copy()
 
-    # --- schoonmaken basisvelden (NIET 'voertuig' hier doen) ---
+    # --- basisvelden naar string (niet op 'voertuig' hier) ---
     for col in (col_naam, col_teamcoach, col_locatie, col_bus_tram, "Link"):
         if col in df_ok.columns:
             df_ok[col] = df_ok[col].astype("string").str.strip()
 
-    # ✅ Voertuig (Z): altijd tekst en “.0” afknippen
+    # ✅ Voertuig (J): als tekst + “.0” afknippen
     if col_voertuig in df_ok.columns:
         df_ok[col_voertuig] = (
             df_ok[col_voertuig]
@@ -295,7 +303,7 @@ def _col(df, primary_name, *, aliases=None, letter=None, required=True):
             .str.strip()
         )
 
-    # --- Actief (Ja/Neen -> bool) ---
+    # --- Actief (K: Ja/Neen -> bool) ---
     def _actief_bool(x):
         s = ("" if pd.isna(x) else str(x)).strip().lower()
         if s in {"ja","j","yes","y"}:   return True
@@ -303,12 +311,10 @@ def _col(df, primary_name, *, aliases=None, letter=None, required=True):
         return False
     df_ok["Actief"] = df_ok[col_actief].apply(_actief_bool)
 
-    # --- basisafleidingen ---
- # ✨ Nieuw: jaar i.p.v. kwartaal
-    # --- basisafleidingen ---
+    # --- afleidingen ---
     df_ok["Datum"] = df_ok[col_datum]
 
-    # Dienstnummer
+    # Dienstnummer uit naam
     df_ok["dienstnummer"] = (
         df_ok[col_naam].astype(str)
         .str.extract(r"^(\d+)", expand=False)
@@ -316,37 +322,37 @@ def _col(df, primary_name, *, aliases=None, letter=None, required=True):
         .str.strip()
     )
 
-    # ✅ Jaar i.p.v. kwartaal
+    # Jaar
     df_ok["Jaar"] = df_ok["Datum"].dt.year.astype(str)
 
-    # Helper voor nette displaywaarden
+    # nette displayseries
     def _clean_display_series(s: pd.Series) -> pd.Series:
         s = s.astype("string").str.strip()
         bad = s.isna() | s.eq("") | s.str.lower().isin({"nan", "none", "<na>"})
         return s.mask(bad, "onbekend")
 
-    # ✅ DISPLAY-kolommen ZEKER aanmaken vóór options
     df_ok["volledige naam_disp"] = _clean_display_series(df_ok[col_naam])
     df_ok["teamcoach_disp"]      = _clean_display_series(df_ok[col_teamcoach])
     df_ok["Locatie_disp"]        = _clean_display_series(df_ok[col_locatie])
-    df_ok["BusTram_disp"]        = _clean_display_series(df_ok[col_bus_tram])   # origineel
-    df_ok["Voertuig_disp"]       = _clean_display_series(df_ok[col_voertuig])   # kolom Z (zonder .0 eerder gefixt)
+    df_ok["BusTram_disp"]        = _clean_display_series(df_ok[col_bus_tram])
+    df_ok["Voertuig_disp"]       = _clean_display_series(df_ok[col_voertuig])
 
-    # ---------- options veilig opbouwen ----------
+    # opties
     def _opts(df: pd.DataFrame, col: str) -> list[str]:
         return sorted(df[col].dropna().unique().tolist()) if col in df.columns else []
 
     options = {
         "teamcoach":     _opts(df_ok, "teamcoach_disp"),
         "locatie":       _opts(df_ok, "Locatie_disp"),
-        "voertuig":      _opts(df_ok, "BusTram_disp"),     # originele voertuigtype-filter
-        "voertuig_nieuw":_opts(df_ok, "Voertuig_disp"),    # extra filter op kolom Z (optioneel)
+        "voertuig":      _opts(df_ok, "BusTram_disp"),
+        "voertuig_nieuw":_opts(df_ok, "Voertuig_disp"),
         "jaar":          _opts(df_ok, "Jaar"),
         "min_datum":     df_ok["Datum"].min().normalize(),
         "max_datum":     df_ok["Datum"].max().normalize(),
     }
 
     return df_ok, options
+
 
 # ========= HASTUS-personeelsnummers inlezen =========
 @st.cache_data(show_spinner=False, ttl=3600)
