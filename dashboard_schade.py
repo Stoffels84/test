@@ -269,8 +269,8 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
     col_locatie   = _col(df_raw, "Locatie")
     col_teamcoach = _col(df_raw, "teamcoach", aliases=["coach","team coach"])
     col_bus_tram  = _col(df_raw, "Bus/ Tram")                   # blijft bestaan
-    col_voertuig  = _col(df_raw, "voertuig", letter="Z")        # nieuw (Z)
-    col_actief    = _col(df_raw, "actief",  letter="AA")        # nieuw (AA: Ja/Neen)
+    col_voertuig  = _col(df_raw, "voertuig", letter="J")        # nieuw (Z)
+    col_actief    = _col(df_raw, "actief",  letter="K")        # nieuw (AA: Ja/Neen)
 
     # --- datum normaliseren ---
     d1 = pd.to_datetime(df_raw[col_datum], errors="coerce", dayfirst=True)
