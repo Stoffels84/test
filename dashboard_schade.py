@@ -1224,46 +1224,61 @@ def run_dashboard():
         st.markdown("---")
 
         # 7) Tabel met ACTIEVE schades voor dit PNR (zoals je had)
+        # 7) Tabel met schades voor dit PNR (toon Ja én Neen)
         if res.empty:
             st.metric("Aantal schadegevallen", 0)
             st.caption("Geen schadegevallen binnen de huidige filters.")
         else:
             res = res.sort_values("Datum", ascending=False).copy()
-
-            # Alleen actieve tonen/tellen
+        
             has_actief_bool = "Actief" in res.columns
-            res_active = res[res["Actief"] == True].copy() if has_actief_bool else res.copy()
-            st.metric("Aantal schadegevallen", int(len(res_active)))
-
+            res_view = res.copy()  # ← geen filter meer, dus Ja + Neen allebei tonen
+        
+            # Optioneel: gebruiker kan nog filteren op Actief/Neen
+            if has_actief_bool:
+                actief_filter = st.selectbox(
+                    "Filter op actief",
+                    ["Alles", "Alleen 'Ja'", "Alleen 'Neen'"],
+                    index=0,
+                    key="opz_actief_filter"
+                )
+                if actief_filter == "Alleen 'Ja'":
+                    res_view = res_view[res_view["Actief"] == True]
+                elif actief_filter == "Alleen 'Neen'":
+                    res_view = res_view[res_view["Actief"] == False]
+        
+            st.metric("Aantal schadegevallen", int(len(res_view)))
+        
             # Link klikbaar
-            heeft_link = "Link" in res_active.columns
+            heeft_link = "Link" in res_view.columns
             if heeft_link:
-                res_active["URL"] = res_active["Link"].apply(extract_url)
-
+                res_view["URL"] = res_view["Link"].apply(extract_url)
+        
             # Actief als 'Ja/Neen' voor weergave
             if has_actief_bool:
-                res_active["Actief"] = res_active["Actief"].map({True: "Ja", False: "Neen"})
-
-            # Kolomvolgorde: Datum, Locatie, Bus/Tram, Voertuig (Z), Actief, Link
+                res_view["Actief"] = res_view["Actief"].map({True: "Ja", False: "Neen"}).fillna("—")
+        
+            # Kolomvolgorde
             kol = ["Datum", "Locatie_disp", "BusTram_disp"]
-            if "Voertuig_disp" in res_active.columns:
+            if "Voertuig_disp" in res_view.columns:
                 kol.append("Voertuig_disp")
-            if "Actief" in res_active.columns:
+            if "Actief" in res_view.columns:
                 kol.append("Actief")
             if heeft_link:
                 kol.append("URL")
-
+        
             column_config = {
                 "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
                 "Locatie_disp": st.column_config.TextColumn("Locatie"),
                 "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
             }
-            if "Voertuig_disp" in res_active.columns:
-                column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")  # Z-kolom (zonder .0)
+            if "Voertuig_disp" in res_view.columns:
+                column_config["Voertuig_disp"] = st.column_config.TextColumn("Voertuig")
             if heeft_link:
                 column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
+        
+            st.dataframe(res_view[kol], column_config=column_config, use_container_width=True)
 
-            st.dataframe(res_active[kol], column_config=column_config, use_container_width=True)
 
 
     
