@@ -247,20 +247,20 @@ def extract_url(x) -> str | None:
         
         # --- helper om kolommen robuust te vinden ---
         def _col(df, primary_name, *, aliases=None, letter=None, required=True):
-        aliases = aliases or []
-        lowmap = {c.lower(): c for c in df.columns}
-        for nm in [primary_name] + aliases:
-            if nm.lower() in lowmap:
-                return lowmap[nm.lower()]
-        # fallback op positie (J=9, K=10)
-        if letter:
-            letters = {"J": 9, "K": 10}
-            idx = letters.get(letter.upper())
-            if idx is not None and idx < len(df.columns):
-                return df.columns[idx]
-        if required:
-            raise RuntimeError(f"Vereiste kolom '{primary_name}' niet gevonden op tab '{sheet}'.")
-        return None
+            aliases = aliases or []
+            lowmap = {c.lower(): c for c in df.columns}
+            for nm in [primary_name] + aliases:
+                if nm.lower() in lowmap:
+                    return lowmap[nm.lower()]
+            # fallback op positie (J=9, K=10)
+            if letter:
+                letters = {"J": 9, "K": 10}
+                idx = letters.get(letter.upper())
+                if idx is not None and idx < len(df.columns):
+                    return df.columns[idx]
+            if required:
+                raise RuntimeError(f"Vereiste kolom '{primary_name}' niet gevonden op tab '{sheet}'.")
+            return None
 
 
     # --- vereiste kolommen ---
