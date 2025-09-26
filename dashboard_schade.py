@@ -240,11 +240,11 @@ def extract_url(x) -> str | None:
 # =========================
 # Data laden / voorbereiden
 # =========================
-@st.cache_data(show_spinner=False, ttl=3600)
+    @st.cache_data(show_spinner=False, ttl=3600)
     def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
         df_raw = pd.read_excel(path, sheet_name=sheet)
         df_raw.columns = df_raw.columns.astype(str).str.strip()
-    
+        
         # --- helper om kolommen robuust te vinden ---
         def _col(df, primary_name, *, aliases=None, letter=None, required=True):
         aliases = aliases or []
