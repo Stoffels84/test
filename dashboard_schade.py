@@ -63,65 +63,42 @@ def norm_vv(s: pd.Series) -> pd.Series:
 # ============================================================
 # 📥 Data inladen
 # ============================================================
+# ------------------ SIDEBAR: alleen maandkeuze ------------------
 with st.sidebar:
-    st.subheader("📥 Data")
-    upload = st.file_uploader("Laad Excel (Data-sheet verplicht)", type=["xlsx", "xlsm"], key="upload_v2")
-    st.caption("Kolommen: datum, bedrag, categorie, (optioneel) vast/variabel")
+    st.subheader("📅 Kies maand")
 
+    # opruimen van oude datum-state keys (veilig als ze niet bestaan)
+    for k in ("date_from", "date_to", "default_start", "default_end"):
+        st.session_state.pop(k, None)
 
-@st.cache_data(show_spinner=False)
-def laad_data_default_or_bytes(file_bytes: bytes | None, *, pad="huishoud.xlsx") -> pd.DataFrame:
-    src = io.BytesIO(file_bytes) if file_bytes else pad
-    df = pd.read_excel(src, sheet_name="Data", engine="openpyxl")
-    df.columns = df.columns.str.strip().str.lower()
+    # beschikbare maanden bepalen op basis van je data
+    aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
+    # hou volgorde volgens MAANDEN_NL
+    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
 
-    verplicht = ["datum", "bedrag", "categorie"]
-    ontbreekt = [k for k in verplicht if k not in df.columns]
-    if ontbreekt:
-        raise ValueError(f"Ontbrekende kolommen: {', '.join(ontbreekt)}")
+    # default = laatste aanwezige maand
+    default_maand = (
+        st.query_params.get("month")
+        if st.query_params.get("month") in beschikbare_maanden
+        else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
+    )
 
-    df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
-    df["bedrag"] = pd.to_numeric(df["bedrag"], errors="coerce")
-    df["categorie"] = df["categorie"].astype(str).str.strip().str.title()
-    if "vast/variabel" not in df.columns:
-        df["vast/variabel"] = "Onbekend"
+    geselecteerde_maand = st.selectbox(
+        "📆 Maand",
+        beschikbare_maanden,
+        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
+        key="maand_select_v2",
+    )
 
-    df["vast/variabel"] = norm_vv(df["vast/variabel"])  # normalize
+# optioneel: maand in de URL houden (bookmarkbaar)
+st.query_params["month"] = geselecteerde_maand
 
-    df = df.dropna(subset=["datum", "bedrag", "categorie"]).copy()
-    df = df[df["categorie"].str.strip() != ""]
-
-    # Datum helpers
-    df["maand"] = df["datum"].dt.month
-    df["jaar"] = df["datum"].dt.year
-    df["maand_naam"] = df["maand"].apply(lambda m: MAANDEN_NL[int(m)-1] if pd.notnull(m) else "")
-    df["maand_naam"] = df["maand_naam"].astype(maand_type)
-
-    # Tekens normaliseren (optioneel): als alles positief is, maak uitgaven negatief
-    cat_low = df["categorie"].astype(str).str.strip().str.lower()
-    income_mask = is_income(cat_low)
-    if (
-        df.loc[~income_mask, "bedrag"].ge(0).mean() > 0.95
-        and df.loc[income_mask, "bedrag"].ge(0).mean() > 0.95
-    ):
-        df.loc[~income_mask, "bedrag"] = -df.loc[~income_mask, "bedrag"].abs()
-
-    return df
-
-
-# Laad data
-try:
-    file_bytes = upload.getvalue() if upload is not None else None
-    df = laad_data_default_or_bytes(file_bytes)
-    st.success("✅ Data geladen!")
-    with st.expander("📄 Voorbeeld van de data"):
-        st.dataframe(df.head(), use_container_width=True)
-except FileNotFoundError:
-    st.warning("Geen bestand gevonden en geen upload. Maak een 'huishoud.xlsx' met sheet 'Data'.")
+# ------------------ FILTER: alleen op gekozen maand ------------------
+df_filtered = df[df["maand_naam"] == geselecteerde_maand].copy()
+if df_filtered.empty:
+    st.warning("⚠️ Geen data voor deze maand.")
     st.stop()
-except Exception as e:
-    st.error(f"❌ Fout bij het laden: {e}")
-    st.stop()
+
 
 
 # ============================================================
