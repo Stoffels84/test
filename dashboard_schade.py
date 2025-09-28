@@ -63,42 +63,65 @@ def norm_vv(s: pd.Series) -> pd.Series:
 # ============================================================
 # 📥 Data inladen
 # ============================================================
-# ------------------ SIDEBAR: alleen maandkeuze ------------------
 with st.sidebar:
-    st.subheader("📅 Kies maand")
+    st.subheader("📥 Data")
+    upload = st.file_uploader("Laad Excel (Data-sheet verplicht)", type=["xlsx", "xlsm"], key="upload_v2")
+    st.caption("Kolommen: datum, bedrag, categorie, (optioneel) vast/variabel")
 
-    # opruimen van oude datum-state keys (veilig als ze niet bestaan)
-    for k in ("date_from", "date_to", "default_start", "default_end"):
-        st.session_state.pop(k, None)
 
-    # beschikbare maanden bepalen op basis van je data
-    aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
-    # hou volgorde volgens MAANDEN_NL
-    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
+@st.cache_data(show_spinner=False)
+def laad_data_default_or_bytes(file_bytes: bytes | None, *, pad="huishoud.xlsx") -> pd.DataFrame:
+    src = io.BytesIO(file_bytes) if file_bytes else pad
+    df = pd.read_excel(src, sheet_name="Data", engine="openpyxl")
+    df.columns = df.columns.str.strip().str.lower()
 
-    # default = laatste aanwezige maand
-    default_maand = (
-        st.query_params.get("month")
-        if st.query_params.get("month") in beschikbare_maanden
-        else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
-    )
+    verplicht = ["datum", "bedrag", "categorie"]
+    ontbreekt = [k for k in verplicht if k not in df.columns]
+    if ontbreekt:
+        raise ValueError(f"Ontbrekende kolommen: {', '.join(ontbreekt)}")
 
-    geselecteerde_maand = st.selectbox(
-        "📆 Maand",
-        beschikbare_maanden,
-        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
-        key="maand_select_v2",
-    )
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
+    df["bedrag"] = pd.to_numeric(df["bedrag"], errors="coerce")
+    df["categorie"] = df["categorie"].astype(str).str.strip().str.title()
+    if "vast/variabel" not in df.columns:
+        df["vast/variabel"] = "Onbekend"
 
-# optioneel: maand in de URL houden (bookmarkbaar)
-st.query_params["month"] = geselecteerde_maand
+    df["vast/variabel"] = norm_vv(df["vast/variabel"])  # normalize
 
-# ------------------ FILTER: alleen op gekozen maand ------------------
-df_filtered = df[df["maand_naam"] == geselecteerde_maand].copy()
-if df_filtered.empty:
-    st.warning("⚠️ Geen data voor deze maand.")
+    df = df.dropna(subset=["datum", "bedrag", "categorie"]).copy()
+    df = df[df["categorie"].str.strip() != ""]
+
+    # Datum helpers
+    df["maand"] = df["datum"].dt.month
+    df["jaar"] = df["datum"].dt.year
+    df["maand_naam"] = df["maand"].apply(lambda m: MAANDEN_NL[int(m)-1] if pd.notnull(m) else "")
+    df["maand_naam"] = df["maand_naam"].astype(maand_type)
+
+    # Tekens normaliseren (optioneel): als alles positief is, maak uitgaven negatief
+    cat_low = df["categorie"].astype(str).str.strip().str.lower()
+    income_mask = is_income(cat_low)
+    if (
+        df.loc[~income_mask, "bedrag"].ge(0).mean() > 0.95
+        and df.loc[income_mask, "bedrag"].ge(0).mean() > 0.95
+    ):
+        df.loc[~income_mask, "bedrag"] = -df.loc[~income_mask, "bedrag"].abs()
+
+    return df
+
+
+# Laad data
+try:
+    file_bytes = upload.getvalue() if upload is not None else None
+    df = laad_data_default_or_bytes(file_bytes)
+    st.success("✅ Data geladen!")
+    with st.expander("📄 Voorbeeld van de data"):
+        st.dataframe(df.head(), use_container_width=True)
+except FileNotFoundError:
+    st.warning("Geen bestand gevonden en geen upload. Maak een 'huishoud.xlsx' met sheet 'Data'.")
     st.stop()
-
+except Exception as e:
+    st.error(f"❌ Fout bij het laden: {e}")
+    st.stop()
 
 
 # ============================================================
@@ -267,8 +290,8 @@ with t_overzicht:
         # 2) uitgaven tov inkomen
         perc_all = None
         fig_exp_all = None
-        ink_all = df_filtered[is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
-        uit_all = df_filtered[~is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
+        ink_all = df[is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
+        uit_all = df[~is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
         if not pd.isna(ink_all) and abs(ink_all) > 1e-9:
             perc_all = float(abs(uit_all) / abs(ink_all) * 100.0)
             axis_max = max(120, min(200, (int(perc_all // 10) + 2) * 10))
@@ -531,16 +554,8 @@ with t_whatif:
 with t_data:
     st.subheader("📦 Gegevens")
     st.dataframe(df_filtered.sort_values("datum"), use_container_width=True)
-import io
-buf = io.BytesIO()
-df_filtered.to_csv(buf, index=False)  # niets retourneren, alleen schrijven
-buf.seek(0)  # terug naar begin!
-st.download_button(
-    "⬇️ Download CSV (filter)",
-    data=buf,  # je mag direct de buffer geven
-    file_name="huishoud_filtered.csv",
-    mime="text/csv",
-)
-
+    buf = io.BytesIO()
+    df_filtered.to_csv(buf, index=False).encode()
+    st.download_button("⬇️ Download CSV (filter)", data=buf.getvalue(), file_name="huishoud_filtered.csv", mime="text/csv")
 
 st.caption("© Huishoudboekje V2 — gemaakt met Streamlit.")
