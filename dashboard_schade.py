@@ -290,8 +290,8 @@ with t_overzicht:
         # 2) uitgaven tov inkomen
         perc_all = None
         fig_exp_all = None
-        ink_all = df[is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
-        uit_all = df[~is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
+        ink_all = df_filtered[is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
+        uit_all = df_filtered[~is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
         if not pd.isna(ink_all) and abs(ink_all) > 1e-9:
             perc_all = float(abs(uit_all) / abs(ink_all) * 100.0)
             axis_max = max(120, min(200, (int(perc_all // 10) + 2) * 10))
