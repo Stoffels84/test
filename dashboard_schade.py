@@ -555,15 +555,15 @@ with t_data:
     st.subheader("📦 Gegevens")
     st.dataframe(df_filtered.sort_values("datum"), use_container_width=True)
 import io
-    buf = io.BytesIO()
-    df_filtered.to_csv(buf, index=False)  # niets retourneren, alleen schrijven
-    buf.seek(0)  # terug naar begin!
-    st.download_button(
-        "⬇️ Download CSV (filter)",
-        data=buf,  # je mag direct de buffer geven
-        file_name="huishoud_filtered.csv",
-        mime="text/csv",
-    )
+buf = io.BytesIO()
+df_filtered.to_csv(buf, index=False)  # niets retourneren, alleen schrijven
+buf.seek(0)  # terug naar begin!
+st.download_button(
+    "⬇️ Download CSV (filter)",
+    data=buf,  # je mag direct de buffer geven
+    file_name="huishoud_filtered.csv",
+    mime="text/csv",
+)
 
 
 st.caption("© Huishoudboekje V2 — gemaakt met Streamlit.")
