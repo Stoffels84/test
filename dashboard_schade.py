@@ -184,15 +184,25 @@ default_maand = (
     if st.query_params.get("month") in beschikbare_maanden
     else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
 )
-with st.sidebar:
-    geselecteerde_maand = st.selectbox(
-        "📆 Kies maand",
-        beschikbare_maanden,
-        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
-        key="maand_select_v2",
+with t_maand:
+    st.header("📆 Maandoverzicht")
+
+    aanweziger = df_filtered["maand_naam"].dropna().astype(str).unique().tolist()
+    maanden_tab = [m for m in MAANDEN_NL if m in aanweziger]
+    default_maand_tab = st.query_params.get("month") if st.query_params.get("month") in maanden_tab else (maanden_tab[-1] if maanden_tab else MAANDEN_NL[0])
+
+    geselecteerde_maand_tab = st.selectbox(
+        "📆 Kies een maand",
+        maanden_tab,
+        index=(maanden_tab.index(default_maand_tab) if maanden_tab else 0),
+        key="maand_select_tab",
     )
-# Sync in URL
-st.query_params["month"] = geselecteerde_maand
+    st.query_params["month"] = geselecteerde_maand_tab
+
+    df_maand = df_filtered[df_filtered["maand_naam"].astype(str) == geselecteerde_maand_tab].copy()
+    ...
+    # Gebruik vanaf hier overal 'geselecteerde_maand_tab' in de Maand-tab.
+
 
 
 # ============================================================
