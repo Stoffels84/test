@@ -512,45 +512,7 @@ with t_budget:
         )
         st.plotly_chart(fig_b, use_container_width=True)
 
-    # Prognose einde maand
-    st.subheader("🔮 Prognose einde van de maand")
-    if not df_maand.empty:
-        laatste_datum = df_maand["datum"].max()
-        jaar, mnd = laatste_datum.year, laatste_datum.month
-        mask_ym = (
-            (df_filtered["datum"].dt.year == jaar)
-            & (df_filtered["datum"].dt.month == mnd)
-            & (~is_income(df_filtered["categorie"].astype(str).str.lower()))
-        )
-        df_ym = df_filtered[mask_ym].copy()
-        if not df_ym.empty:
-            uitg_tmv = abs(df_ym[df_ym["datum"] <= laatste_datum]["bedrag"].sum())
-            spent_per_cat = (
-                df_ym[df_ym["datum"] <= laatste_datum].groupby("categorie")["bedrag"].sum().abs()
-            )
-            budget_per_cat = (
-                budget_join.set_index("categorie")["budget"].astype(float)
-                if "budget" in budget_join.columns else pd.Series(dtype=float)
-            )
-            resterend_per_cat = (budget_per_cat - spent_per_cat).clip(lower=0).fillna(0)
-            proj = float(uitg_tmv + resterend_per_cat.sum())
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Uitgaven t/m vandaag", euro(uitg_tmv))
-            c2.metric("Voorspelling maandtotaal", euro(proj))
-            c3.metric("Nog te verwachten", euro(proj - uitg_tmv))
-
-            totaal_budget = pd.to_numeric(budget_join["budget"], errors="coerce").sum(skipna=True)
-            if not np.isnan(totaal_budget) and totaal_budget > 0:
-                if proj > totaal_budget:
-                    st.error(f"⚠️ Verwachte uitgaven ({euro(proj)}) liggen boven totaalbudget ({euro(totaal_budget)}).")
-                else:
-                    st.success(f"✅ Verwachte uitgaven ({euro(proj)}) liggen binnen totaalbudget ({euro(totaal_budget)}).")
-            st.caption("Prognose gebaseerd op budgetten: resterend = max(0, budget − uitgegeven).")
-        else:
-            st.info("Geen uitgaven gevonden voor de gekozen jaar-maand.")
-    else:
-        st.info("Geen data in de geselecteerde maand voor prognose.")
+    
 
 # -------------- Wat-als --------------
 with t_whatif:
