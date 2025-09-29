@@ -125,67 +125,26 @@ except Exception as e:
 
 
 # ============================================================
-# 🧭 Filters (met Query Params + Reset)
+# 🧭 Filters — géén datumfilter (werk met alle data)
 # ============================================================
-qp = st.query_params
-
-if "default_start" not in st.session_state:
-    st.session_state.default_start = df["datum"].min().date()
-    st.session_state.default_end = df["datum"].max().date()
-
-# Init state from query params if present
-if "date_from" in qp:
-    try:
-        st.session_state.date_from = pd.to_datetime(qp.get("date_from")).date()
-    except Exception:
-        st.session_state.date_from = st.session_state.default_start
-else:
-    st.session_state.date_from = st.session_state.get("date_from", st.session_state.default_start)
-
-if "date_to" in qp:
-    try:
-        st.session_state.date_to = pd.to_datetime(qp.get("date_to")).date()
-    except Exception:
-        st.session_state.date_to = st.session_state.default_end
-else:
-    st.session_state.date_to = st.session_state.get("date_to", st.session_state.default_end)
-
-with st.sidebar:
-    st.subheader("📅 Periode")
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        start_datum = st.date_input("Van", st.session_state.date_from, key="date_from")
-        eind_datum = st.date_input("Tot", st.session_state.date_to, key="date_to")
-    with c2:
-        if st.button("🔄 Reset"):
-            st.session_state.date_from = st.session_state.default_start
-            st.session_state.date_to = st.session_state.default_end
-            st.query_params["date_from"] = str(st.session_state.default_start)
-            st.query_params["date_to"] = str(st.session_state.default_end)
-            st.rerun()
-
-# Keep query params in sync
-st.query_params["date_from"] = str(start_datum)
-st.query_params["date_to"] = str(eind_datum)
-
-# Filter toepassen
-mask = (df["datum"] >= pd.to_datetime(start_datum)) & (df["datum"] <= pd.to_datetime(eind_datum))
-df_filtered = df.loc[mask].copy()
-df_filtered["maand_naam"] = df_filtered["maand_naam"].astype(maand_type)
+# Gebruik de volledige dataset zonder start/stop filters
+df_filtered = df.copy()
 
 if df_filtered.empty:
-    st.warning("⚠️ Geen data in deze periode.")
+    st.warning("⚠️ Geen data beschikbaar.")
     st.stop()
 
-# Maandselectie
-aanwezig = set(df_filtered["maand_naam"].dropna().astype(str).tolist())
+# Maandselectie (blijft in sidebar, over alle maanden in de data)
+aanwezig = set(df["maand_naam"].dropna().astype(str).tolist())
 beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
 
+# Default: laatste aanwezige maand
 default_maand = (
     st.query_params.get("month")
     if st.query_params.get("month") in beschikbare_maanden
     else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
 )
+
 with st.sidebar:
     geselecteerde_maand = st.selectbox(
         "📆 Kies maand",
@@ -193,8 +152,11 @@ with st.sidebar:
         index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
         key="maand_select_v2",
     )
-# Sync in URL
-st.query_params["month"] = geselecteerde_maand
+
+# Sync alleen de maand in de URL (optioneel)
+if st.query_params.get("month") != geselecteerde_maand:
+    st.query_params["month"] = geselecteerde_maand
+
 
 
 # ============================================================
