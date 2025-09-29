@@ -227,15 +227,27 @@ t_overzicht, t_maand, t_budget, t_whatif, t_data = st.tabs([
 ])
 
 # -------------- Overzicht --------------
+# -------------- Overzicht --------------
 with t_overzicht:
-    st.subheader("📅 Overzicht geselecteerde periode")
+    st.subheader("📅 Overzicht")
 
-    # Kies de scope voor deze tab:
-    # - Wil je ALLE data? zet df_scope = df
-    # - Wil je de GESELECTEERDE PERIODE? zet df_scope = df_filtered
-    df_scope = df_filtered
+    # ── Bereik kiezen: alle data of de gekozen maand uit de Maand-tab
+    gekozen_maand = st.session_state.get("maand_select_tab")
+    opties = ["Alle data"] + (["Gekozen maand"] if gekozen_maand else [])
+    bereik = st.radio("Bereik", opties, index=0, horizontal=True)
 
-    # KPI's op basis van df_scope
+    if bereik == "Gekozen maand" and gekozen_maand:
+        df_scope = df[df["maand_naam"].astype(str) == gekozen_maand].copy()
+        bereik_label = f"geselecteerde maand: {gekozen_maand}"
+    else:
+        df_scope = df.copy()
+        bereik_label = "alle data"
+
+    if df_scope.empty:
+        st.info("⚠️ Geen data in het gekozen bereik.")
+        st.stop()
+
+    # ── KPI's
     cat_scope = df_scope["categorie"].astype(str).str.strip().str.lower()
     is_loon_scope = is_income(cat_scope)
 
@@ -250,36 +262,33 @@ with t_overzicht:
     c3.metric("📎 Variabele kosten", euro(uitgaven_var), f"{pct(uitgaven_var, inkomen, absolute=True)} van inkomen")
     c4.metric("💰 Totaal saldo", euro(netto), f"{pct(netto, inkomen, signed=True)} van inkomen")
 
-    # Gauges
+    # ── Gauges
     try:
-        scores_all = []
-
-        # --- Gemiddelde financiële gezondheid (binnen df_scope) ---
-        for _, df_month in df_scope.groupby(df_scope["datum"].dt.to_period("M"), sort=True):
-            if df_month.empty:
+        # 1) Gemiddelde financiële gezondheid (per maand binnen df_scope, daarna gemiddelde)
+        scores = []
+        for _, m in df_scope.groupby(df_scope["datum"].dt.to_period("M"), sort=True):
+            if m.empty:
                 continue
-
-            cat = df_month["categorie"].astype(str).str.strip().str.lower()
-            is_loon = is_income(cat)
-            inc  = df_month[is_loon]["bedrag"].sum()
-            exp  = df_month[~is_loon]["bedrag"].sum()
+            cat = m["categorie"].astype(str).str.strip().str.lower()
+            inc = m[is_income(cat)]["bedrag"].sum()
+            exp = m[~is_income(cat)]["bedrag"].sum()
             saldo = inc + exp
 
             # componenten
-            sparen_pct = _safe_div(saldo, inc)                       # doel ~20%
+            sparen_pct = _safe_div(saldo, inc)  # doel ≈ 20%
             score_sparen = _clamp(sparen_pct / 0.2 if not pd.isna(sparen_pct) else np.nan, 0, 1)
 
             vaste_ratio = np.nan
-            if "vast/variabel" in df_month.columns:
-                vaste_lasten = df_month[(df_month["vast/variabel"] == "Vast") & (~is_loon)]["bedrag"].sum()
-                vaste_ratio  = _safe_div(abs(vaste_lasten), abs(inc) if inc != 0 else np.nan)
-            score_vast = np.nan if pd.isna(vaste_ratio) else (1.0 - _clamp((vaste_ratio - 0.5) / 0.5, 0, 1))
+            if "vast/variabel" in m.columns:
+                vaste_lasten = m[(m["vast/variabel"] == "Vast") & (~is_income(cat))]["bedrag"].sum()
+                vaste_ratio = _safe_div(abs(vaste_lasten), abs(inc) if inc != 0 else np.nan)
+            score_vast = np.nan if pd.isna(vaste_ratio) else (1 - _clamp((vaste_ratio - 0.5) / 0.5, 0, 1))
 
-            # ⬇️ NIEUW: strafcomponent als uitgaven > inkomen
+            # ⬇️ extra strafcomponent als uitgaven > inkomen
             spend_ratio = _safe_div(abs(exp), abs(inc))
-            score_spend = 1 - _clamp(spend_ratio - 1.0, 0, 1)  # >100% => snel richting 0
+            score_spend = 1 - _clamp(spend_ratio - 1.0, 0, 1)  # >100% => snel naar 0
 
-            # weging: sparen 0.5, vaste lasten 0.3, uitgavenratio 0.2
+            # weging
             components = []
             if not pd.isna(score_sparen): components.append((score_sparen, 0.5))
             if not pd.isna(score_vast):   components.append((score_vast,   0.3))
@@ -287,57 +296,68 @@ with t_overzicht:
 
             if components:
                 score = sum(s*w for s, w in components) / sum(w for _, w in components)
-                scores_all.append(score)
+                scores.append(score)
 
         fig_avg = None
-        if scores_all:
-            avg_score = int(round((sum(scores_all) / len(scores_all)) * 100))
+        if scores:
+            avg_score = int(round(np.mean(scores) * 100))
             fig_avg = go.Figure(go.Indicator(
                 mode="gauge+number",
                 value=avg_score,
                 number={'suffix': "/100"},
-                gauge={'axis': {'range': [0, 100]},
-                       'bar': {'thickness': 0.3},
-                       'steps': [
-                           {'range': [0, 50], 'color': '#fca5a5'},
-                           {'range': [50, 65], 'color': '#fcd34d'},
-                           {'range': [65, 80], 'color': '#a7f3d0'},
-                           {'range': [80, 100], 'color': '#86efac'},
-                       ]}
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'thickness': 0.3},
+                    'steps': [
+                        {'range': [0, 50],  'color': '#fca5a5'},
+                        {'range': [50, 65], 'color': '#fcd34d'},
+                        {'range': [65, 80], 'color': '#a7f3d0'},
+                        {'range': [80, 100],'color': '#86efac'},
+                    ],
+                }
             ))
             fig_avg.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
 
-        # --- Uitgaven t.o.v. inkomen (binnen dezelfde scope!) ---
-        fig_exp_all = None
-        if not pd.isna(inkomen) and abs(inkomen) > 1e-9:
-            perc_all = float(abs(uitgaven_vast + uitgaven_var) / abs(inkomen) * 100.0)
-            axis_max = max(120, min(200, (int(perc_all // 10) + 2) * 10))
-            fig_exp_all = go.Figure(go.Indicator(
+        # 2) Uitgaven t.o.v. inkomen (zelfde scope)
+        fig_exp = None
+        if abs(inkomen) > 1e-9:
+            perc = float(abs(uitgaven_vast + uitgaven_var) / abs(inkomen) * 100.0)
+            axis_max = max(120, min(200, (int(perc // 10) + 2) * 10))
+            fig_exp = go.Figure(go.Indicator(
                 mode="gauge+number",
-                value=perc_all,
-                number={'suffix': '%'},
-                gauge={'axis': {'range': [0, axis_max]},
-                       'bar': {'thickness': 0.3},
-                       'steps': [
-                           {'range': [0, 33.33], 'color': '#86efac'},
-                           {'range': [33.33, 100], 'color': '#fcd34d'},
-                           {'range': [100, axis_max], 'color': '#fca5a5'},
-                       ],
-                       'threshold': {'line': {'color': 'black', 'width': 2},
-                                     'thickness': 0.75, 'value': 100}}
+                value=perc,
+                number={'suffix': "%"},
+                gauge={
+                    'axis': {'range': [0, axis_max]},
+                    'bar': {'thickness': 0.3},
+                    'steps': [
+                        {'range': [0, 33.33],   'color': '#86efac'},
+                        {'range': [33.33, 100], 'color': '#fcd34d'},
+                        {'range': [100, axis_max], 'color': '#fca5a5'},
+                    ],
+                    'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}
+                }
             ))
-            fig_exp_all.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
+            fig_exp.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
 
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🎯 Gemiddelde gezondheid")
-            st.plotly_chart(fig_avg, use_container_width=True) if fig_avg else st.info("Onvoldoende gegevens voor de score.")
+            if fig_avg is not None:
+                _ = st.plotly_chart(fig_avg, use_container_width=True)
+            else:
+                st.info("Onvoldoende gegevens voor de score.")
         with col2:
             st.subheader("🎯 Uitgaven t.o.v. inkomen")
-            st.plotly_chart(fig_exp_all, use_container_width=True) if fig_exp_all else st.info("Geen inkomen gevonden.")
-            st.caption("Groen < 33.3%, geel 33.3–100%, rood ≥ 100%.")
+            if fig_exp is not None:
+                _ = st.plotly_chart(fig_exp, use_container_width=True)
+                st.caption("Bereik: " + bereik_label + " — Groen < 33.3%, geel 33.3–100%, rood ≥ 100%.")
+            else:
+                st.info("Geen inkomen gevonden.")
+
     except Exception as e:
         st.warning(f"Kon gauges niet tekenen: {e}")
+
 
 
 # -------------- Maand --------------
