@@ -408,20 +408,38 @@ with t_maand:
 
 
     # -- Topcategorieën in de maand --
-    top = (
-        df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
-        .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"].sum().abs()
-        .reset_index()
-        .sort_values("bedrag", ascending=False)
-        .head(12)
+    # Alle categorieën in de gekozen maand (niet alleen toppers) en verticaal tonen
+alles = (
+    df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
+    .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"]
+    .sum()
+    .abs()
+    .reset_index()
+)
+
+if not alles.empty:
+    # Sorteer op bedrag (groot -> klein) en zet categorie op y-as
+    alles = alles.sort_values("bedrag", ascending=True)
+
+    fig_top = px.bar(
+        alles,
+        x="bedrag",
+        y="categorie",
+        color="vast/variabel",
+        orientation="h",  # horizontale balken → categorieën staan verticaal onder elkaar
+        title=f"Uitgaven per categorie — {geselecteerde_maand}",
+        labels={"bedrag": "€", "categorie": "Categorie", "vast/variabel": "Type"}
     )
-    if not top.empty:
-        fig_top = px.bar(
-            top, x="categorie", y="bedrag", color="vast/variabel",
-            title=f"Top uitgaven — {geselecteerde_maand}",
-            labels={"bedrag": "€", "categorie": "Categorie", "vast/variabel": "Type"}
-        )
-        st.plotly_chart(fig_top, use_container_width=True)
+    # Zorg dat de y-as de volgorde van het totaal respecteert
+    fig_top.update_layout(
+        yaxis=dict(categoryorder="total ascending"),
+        height=max(350, 26 * alles["categorie"].nunique() + 120),  # automatische hoogte
+        margin=dict(l=10, r=10, t=40, b=10),
+    )
+    st.plotly_chart(fig_top, use_container_width=True)
+else:
+    st.info("Geen uitgaven voor de geselecteerde maand.")
+
 
 
 
