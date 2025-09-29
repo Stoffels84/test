@@ -321,7 +321,7 @@ with t_overzicht:
 with t_maand:
     st.header("📆 Maandoverzicht")
 
-    # -- Maandkeuze (in de tab) --
+    # -- Maandkeuze --
     aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
     beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
     default_maand = (
@@ -336,7 +336,7 @@ with t_maand:
         index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
         key="maand_select_tab",
     )
-    st.query_params["month"] = geselecteerde_maand  # (optioneel) bookmarkbaar
+    st.query_params["month"] = geselecteerde_maand
 
     st.subheader(f"🗓️ Overzicht voor {geselecteerde_maand}")
 
@@ -361,23 +361,60 @@ with t_maand:
     c3.metric("📎 Variabele kosten (maand)", euro(uit_var_m))
     c4.metric("💰 Netto (maand)", euro(netto_m))
 
+    # -- Topcategorieën in de maand met budgetvergelijking --
+    # Budgetten ophalen
+    budget_state = st.session_state.get("budget_state", pd.DataFrame(columns=["categorie", "budget"]))
+    budget_map = budget_state.set_index("categorie")["budget"].to_dict()
 
-
-    # -- Topcategorieën in de maand --
     top = (
         df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
         .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"].sum().abs()
         .reset_index()
-        .sort_values("bedrag", ascending=False)
-        .head(12)
     )
+
     if not top.empty:
-        fig_top = px.bar(
-            top, x="categorie", y="bedrag", color="vast/variabel",
+        # Voeg budget en status toe
+        top["budget"] = top["categorie"].map(budget_map)
+        top["over_budget"] = top["budget"].notna() & (top["bedrag"] > top["budget"])
+
+        fig_top = go.Figure()
+
+        # Budget bars
+        fig_top.add_bar(
+            name="Budget",
+            x=top["categorie"],
+            y=top["budget"].fillna(0),
+            marker_color="steelblue"
+        )
+
+        # Uitgaven binnen budget
+        binnen = top[~top["over_budget"]]
+        fig_top.add_bar(
+            name="Uitgave (binnen)",
+            x=binnen["categorie"],
+            y=binnen["bedrag"],
+            marker_color="lightblue"
+        )
+
+        # Uitgaven boven budget (rood)
+        boven = top[top["over_budget"]]
+        fig_top.add_bar(
+            name="Uitgave (boven)",
+            x=boven["categorie"],
+            y=boven["bedrag"],
+            marker_color="crimson"
+        )
+
+        fig_top.update_layout(
+            barmode="group",
             title=f"Top uitgaven — {geselecteerde_maand}",
-            labels={"bedrag": "€", "categorie": "Categorie", "vast/variabel": "Type"}
+            xaxis_title="Categorie",
+            yaxis_title="€",
+            margin=dict(l=10, r=10, t=40, b=10),
+            legend_title_text="type",
         )
         st.plotly_chart(fig_top, use_container_width=True)
+
 
 
 
