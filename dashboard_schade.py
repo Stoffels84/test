@@ -114,8 +114,6 @@ try:
     file_bytes = upload.getvalue() if upload is not None else None
     df = laad_data_default_or_bytes(file_bytes)
     st.success("✅ Data geladen!")
-    with st.expander("📄 Voorbeeld van de data"):
-        st.dataframe(df.head(), use_container_width=True)
 except FileNotFoundError:
     st.warning("Geen bestand gevonden en geen upload. Maak een 'huishoud.xlsx' met sheet 'Data'.")
     st.stop()
