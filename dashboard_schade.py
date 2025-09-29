@@ -439,66 +439,78 @@ with t_maand:
     totals["boven_budget"] = totals["budget"].notna() & (totals["totaal_cat"] > totals["budget"])
 
     # 5) Hoofd-barchart (alle categorieën, y = categorie)
-    if not bars_df.empty:
-        # Sorteer y-as op totaal (groot → klein) voor leesbaarheid
-        sort_order = totals.sort_values("totaal_cat", ascending=True)["categorie"].tolist()
-        bars_df["categorie"] = pd.Categorical(bars_df["categorie"], categories=sort_order, ordered=True)
-        bars_df = bars_df.sort_values(["categorie", "vast/variabel"])
+    # --- 5) Hoofd-barchart (alle categorieën, y = categorie) ---
 
-        fig_top = px.bar(
-            bars_df,
-            x="bedrag_abs",
-            y="categorie",
-            color="vast/variabel",
-            orientation="h",
-            title=f"Uitgaven per categorie — {geselecteerde_maand}",
-            labels={"bedrag_abs": "€", "categorie": "Categorie", "vast/variabel": "Type"},
-        )
+if not bars_df.empty:
+    # Sorteer y-as op totaal (groot → klein)
+    sort_order = totals.sort_values("totaal_cat", ascending=True)["categorie"].tolist()
+    bars_df["categorie"] = pd.Categorical(bars_df["categorie"], categories=sort_order, ordered=True)
+    bars_df = bars_df.sort_values(["categorie", "vast/variabel"])
 
-        # 6) Rode omlijning als totale uitgave voor categorie > budget
-        over = totals[totals["boven_budget"]].copy()
-        if not over.empty:
-            # Zelfde volgorde voor y-as
-            over["categorie"] = pd.Categorical(over["categorie"], categories=sort_order, ordered=True)
-            over = over.sort_values("categorie")
+    # Join: vlag 'boven budget' per categorie
+    bars_df = bars_df.merge(totals[["categorie", "boven_budget", "budget", "totaal_cat"]],
+                            on="categorie", how="left")
 
-            # Transparante bars met alleen een rode rand ter omlijning over de volle lengte (totaal)
-            fig_top.add_trace(
-                go.Bar(
-                    x=over["totaal_cat"],
-                    y=over["categorie"],
-                    orientation="h",
-                    marker=dict(
-                        color="rgba(0,0,0,0)",              # geen vulling
-                        line=dict(color="red", width=3),     # rode omlijning
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
+    # Nieuw kleurveld: rood als boven budget, anders Vast/Variabel-kleur behouden
+    bars_df["kleur"] = np.where(
+        bars_df["boven_budget"], "🚨 Boven budget", bars_df["vast/variabel"]
+    )
 
-            # Extra accent: dunne lijn op het budgetniveau
-            if over["budget"].notna().any():
-                fig_top.add_trace(
-                    go.Scatter(
-                        x=over["budget"],
-                        y=over["categorie"],
-                        mode="markers",
-                        marker=dict(symbol="line-ns", size=20),  # klein marker-lijntje
-                        name="Budget (markering)",
-                        hovertemplate="Budget: %{x:.2f}<extra></extra>",
-                    )
-                )
+    # (optioneel) nette namen voor legend
+    color_map = {
+        "Vast": "#1f77b4",         # jouw vaste kleur (donkerblauw)
+        "Variabel": "#8ec7ff",     # jouw variabele kleur (lichtblauw)
+        "🚨 Boven budget": "red"    # overschrijding: rood
+    }
 
-        # Layout: categorievolgorde + dynamische hoogte
-        fig_top.update_layout(
-            yaxis=dict(categoryorder="array", categoryarray=sort_order),
-            height=max(350, 26 * len(sort_order) + 120),
-            margin=dict(l=10, r=10, t=40, b=10),
-            barmode="group",  # behoudt Vast/Variabel naast elkaar
-        )
+    # Hover extra info: budget + totaalsom
+    bars_df["budget_txt"] = bars_df["budget"].apply(lambda x: euro(x) if pd.notna(x) else "—")
+    bars_df["totaal_txt"] = bars_df["totaal_cat"].apply(euro)
 
-        st.plotly_chart(fig_top, use_container_width=True)
+    fig_top = px.bar(
+        bars_df,
+        x="bedrag_abs",
+        y="categorie",
+        color="kleur",
+        orientation="h",
+        title=f"Uitgaven per categorie — {geselecteerde_maand}",
+        labels={"bedrag_abs": "€", "categorie": "Categorie", "kleur": "Legenda"},
+        color_discrete_map=color_map,
+        hover_data={
+            "budget_txt": True,
+            "totaal_txt": True,
+            "vast/variabel": True,
+            "bedrag_abs": ":.2f",
+            "kleur": False,
+            "budget": False,
+            "totaal_cat": False,
+        },
+    )
+
+    # Layout: categorievolgorde + dynamische hoogte
+    fig_top.update_layout(
+        yaxis=dict(categoryorder="array", categoryarray=sort_order),
+        height=max(350, 26 * len(sort_order) + 120),
+        margin=dict(l=10, r=10, t=40, b=10),
+        barmode="group",
+        legend_title_text="",
+    )
+
+    # Duidelijke hovertekst
+    fig_top.update_traces(
+        hovertemplate="Categorie: %{y}<br>Bedrag: € %{x:.2f}<br>Type: %{customdata[0]}<br>"
+                      "Budget: %{customdata[1]}<br>Totaal cat.: %{customdata[2]}<extra></extra>",
+        customdata=np.stack([
+            bars_df["vast/variabel"],
+            bars_df["budget_txt"],
+            bars_df["totaal_txt"]
+        ], axis=-1)
+    )
+
+    st.plotly_chart(fig_top, use_container_width=True)
+
+    # (optioneel) tabelletje eronder ongewijzigd laten
+
 
         # Tabelletje eronder (optioneel, handig om verschillen te zien)
         with st.expander("📋 Detailtabel (totaal vs budget)"):
