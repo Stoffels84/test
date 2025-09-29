@@ -114,6 +114,8 @@ try:
     file_bytes = upload.getvalue() if upload is not None else None
     df = laad_data_default_or_bytes(file_bytes)
     st.success("✅ Data geladen!")
+    with st.expander("📄 Voorbeeld van de data"):
+        st.dataframe(df.head(), use_container_width=True)
 except FileNotFoundError:
     st.warning("Geen bestand gevonden en geen upload. Maak een 'huishoud.xlsx' met sheet 'Data'.")
     st.stop()
@@ -184,25 +186,15 @@ default_maand = (
     if st.query_params.get("month") in beschikbare_maanden
     else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
 )
-with t_maand:
-    st.header("📆 Maandoverzicht")
-
-    aanweziger = df_filtered["maand_naam"].dropna().astype(str).unique().tolist()
-    maanden_tab = [m for m in MAANDEN_NL if m in aanweziger]
-    default_maand_tab = st.query_params.get("month") if st.query_params.get("month") in maanden_tab else (maanden_tab[-1] if maanden_tab else MAANDEN_NL[0])
-
-    geselecteerde_maand_tab = st.selectbox(
-        "📆 Kies een maand",
-        maanden_tab,
-        index=(maanden_tab.index(default_maand_tab) if maanden_tab else 0),
-        key="maand_select_tab",
+with st.sidebar:
+    geselecteerde_maand = st.selectbox(
+        "📆 Kies maand",
+        beschikbare_maanden,
+        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
+        key="maand_select_v2",
     )
-    st.query_params["month"] = geselecteerde_maand_tab
-
-    df_maand = df_filtered[df_filtered["maand_naam"].astype(str) == geselecteerde_maand_tab].copy()
-    ...
-    # Gebruik vanaf hier overal 'geselecteerde_maand_tab' in de Maand-tab.
-
+# Sync in URL
+st.query_params["month"] = geselecteerde_maand
 
 
 # ============================================================
@@ -235,140 +227,103 @@ t_overzicht, t_maand, t_budget, t_whatif, t_data = st.tabs([
 ])
 
 # -------------- Overzicht --------------
-# -------------- Overzicht --------------
 with t_overzicht:
-    st.subheader("📅 Overzicht")
-
-    # ── Bereik kiezen: alle data of de gekozen maand uit de Maand-tab
-    gekozen_maand = st.session_state.get("maand_select_tab")
-    opties = ["Alle data"] + (["Gekozen maand"] if gekozen_maand else [])
-    bereik = st.radio("Bereik", opties, index=0, horizontal=True)
-
-    if bereik == "Gekozen maand" and gekozen_maand:
-        df_scope = df[df["maand_naam"].astype(str) == gekozen_maand].copy()
-        bereik_label = f"geselecteerde maand: {gekozen_maand}"
-    else:
-        df_scope = df.copy()
-        bereik_label = "alle data"
-
-    if df_scope.empty:
-        st.info("⚠️ Geen data in het gekozen bereik.")
-        st.stop()
-
-    # ── KPI's
-    cat_scope = df_scope["categorie"].astype(str).str.strip().str.lower()
-    is_loon_scope = is_income(cat_scope)
-
-    inkomen = df_scope[is_loon_scope]["bedrag"].sum()
-    uitgaven_vast = df_scope[(~is_loon_scope) & (df_scope["vast/variabel"] == "Vast")]["bedrag"].sum()
-    uitgaven_var  = df_scope[(~is_loon_scope) & (df_scope["vast/variabel"] == "Variabel")]["bedrag"].sum()
-    netto = inkomen + uitgaven_vast + uitgaven_var
-
+    st.subheader("📅 Overzicht geselecteerde periode")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📈 Inkomen", euro(inkomen))
     c2.metric("📌 Vaste kosten", euro(uitgaven_vast), f"{pct(uitgaven_vast, inkomen, absolute=True)} van inkomen")
     c3.metric("📎 Variabele kosten", euro(uitgaven_var), f"{pct(uitgaven_var, inkomen, absolute=True)} van inkomen")
     c4.metric("💰 Totaal saldo", euro(netto), f"{pct(netto, inkomen, signed=True)} van inkomen")
 
-    # ── Gauges
+    # Gauges
+    # 1) gemiddelde financiële gezondheid (alle maanden binnen volledige df)
     try:
-        # 1) Gemiddelde financiële gezondheid (per maand binnen df_scope, daarna gemiddelde)
-        scores = []
-        for _, m in df_scope.groupby(df_scope["datum"].dt.to_period("M"), sort=True):
-            if m.empty:
-                continue
-            cat = m["categorie"].astype(str).str.strip().str.lower()
-            inc = m[is_income(cat)]["bedrag"].sum()
-            exp = m[~is_income(cat)]["bedrag"].sum()
-            saldo = inc + exp
+        scores_all = []
+        spaar_pct_list, vaste_pct_list = [], []
 
-            # componenten
-            sparen_pct = _safe_div(saldo, inc)  # doel ≈ 20%
-            score_sparen = _clamp(sparen_pct / 0.2 if not pd.isna(sparen_pct) else np.nan, 0, 1)
+        for ym, df_month in df.groupby(df["datum"].dt.to_period("M"), sort=True):
+            if df_month.empty:
+                continue
+            cat = df_month["categorie"].astype(str).str.strip().str.lower()
+            is_loon = is_income(cat)
+            ink = df_month[is_loon]["bedrag"].sum()
+            uitg = df_month[~is_loon]["bedrag"].sum()
+            saldo = ink + uitg
+
+            sparen_pct = _safe_div(saldo, ink)
+            spaar_pct_list.append(sparen_pct * 100 if not pd.isna(sparen_pct) else np.nan)
 
             vaste_ratio = np.nan
-            if "vast/variabel" in m.columns:
-                vaste_lasten = m[(m["vast/variabel"] == "Vast") & (~is_income(cat))]["bedrag"].sum()
-                vaste_ratio = _safe_div(abs(vaste_lasten), abs(inc) if inc != 0 else np.nan)
-            score_vast = np.nan if pd.isna(vaste_ratio) else (1 - _clamp((vaste_ratio - 0.5) / 0.5, 0, 1))
+            if "vast/variabel" in df_month.columns:
+                vaste_lasten = df_month[(df_month["vast/variabel"] == "Vast") & (~is_loon)]["bedrag"].sum()
+                vaste_ratio = _safe_div(abs(vaste_lasten), abs(ink) if ink != 0 else np.nan)
+            vaste_pct_list.append(vaste_ratio * 100 if not pd.isna(vaste_ratio) else np.nan)
 
-            # ⬇️ extra strafcomponent als uitgaven > inkomen
-            spend_ratio = _safe_div(abs(exp), abs(inc))
-            score_spend = 1 - _clamp(spend_ratio - 1.0, 0, 1)  # >100% => snel naar 0
+            score_sparen = _clamp(sparen_pct / 0.2 if not pd.isna(sparen_pct) else np.nan, 0, 1)
+            score_vast = np.nan if pd.isna(vaste_ratio) else (1.0 - _clamp((vaste_ratio - 0.5) / 0.5, 0, 1))
 
-            # weging
-            components = []
-            if not pd.isna(score_sparen): components.append((score_sparen, 0.5))
-            if not pd.isna(score_vast):   components.append((score_vast,   0.3))
-            if not pd.isna(score_spend):  components.append((score_spend,  0.2))
-
-            if components:
-                score = sum(s*w for s, w in components) / sum(w for _, w in components)
-                scores.append(score)
+            components = {"Sparen": (score_sparen, 0.5), "Vaste lasten": (score_vast, 0.5)}
+            avail = {k: v for k, (v, w) in components.items() if not pd.isna(v)}
+            if not avail:
+                continue
+            total_weight = sum([components[k][1] for k in avail.keys()])
+            score_0_1 = sum([components[k][0] * components[k][1] for k in avail.keys()]) / total_weight
+            scores_all.append(score_0_1)
 
         fig_avg = None
-        if scores:
-            avg_score = int(round(np.mean(scores) * 100))
+        if scores_all:
+            avg_score = int(round((sum(scores_all) / len(scores_all)) * 100))
             fig_avg = go.Figure(go.Indicator(
                 mode="gauge+number",
                 value=avg_score,
                 number={'suffix': "/100"},
-                gauge={
-                    'axis': {'range': [0, 100]},
-                    'bar': {'thickness': 0.3},
-                    'steps': [
-                        {'range': [0, 50],  'color': '#fca5a5'},
-                        {'range': [50, 65], 'color': '#fcd34d'},
-                        {'range': [65, 80], 'color': '#a7f3d0'},
-                        {'range': [80, 100],'color': '#86efac'},
-                    ],
-                }
+                gauge={'axis': {'range': [0, 100]}, 'bar': {'thickness': 0.3},
+                       'steps': [
+                           {'range': [0, 50], 'color': '#fca5a5'},
+                           {'range': [50, 65], 'color': '#fcd34d'},
+                           {'range': [65, 80], 'color': '#a7f3d0'},
+                           {'range': [80, 100], 'color': '#86efac'},
+                       ]}
             ))
             fig_avg.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
 
-        # 2) Uitgaven t.o.v. inkomen (zelfde scope)
-        fig_exp = None
-        if abs(inkomen) > 1e-9:
-            perc = float(abs(uitgaven_vast + uitgaven_var) / abs(inkomen) * 100.0)
-            axis_max = max(120, min(200, (int(perc // 10) + 2) * 10))
-            fig_exp = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=perc,
-                number={'suffix': "%"},
-                gauge={
-                    'axis': {'range': [0, axis_max]},
-                    'bar': {'thickness': 0.3},
-                    'steps': [
-                        {'range': [0, 33.33],   'color': '#86efac'},
-                        {'range': [33.33, 100], 'color': '#fcd34d'},
-                        {'range': [100, axis_max], 'color': '#fca5a5'},
-                    ],
-                    'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}
-                }
+        # 2) uitgaven tov inkomen
+        perc_all = None
+        fig_exp_all = None
+        ink_all = df_filtered[is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
+        uit_all = df_filtered[~is_income(df["categorie"].astype(str).str.lower())]["bedrag"].sum()
+        if not pd.isna(ink_all) and abs(ink_all) > 1e-9:
+            perc_all = float(abs(uit_all) / abs(ink_all) * 100.0)
+            axis_max = max(120, min(200, (int(perc_all // 10) + 2) * 10))
+            fig_exp_all = go.Figure(go.Indicator(
+                mode="gauge+number", value=perc_all, number={'suffix': '%'},
+                gauge={'axis': {'range': [0, axis_max]}, 'bar': {'thickness': 0.3},
+                       'steps': [
+                           {'range': [0, 33.33], 'color': '#86efac'},
+                           {'range': [33.33, 100], 'color': '#fcd34d'},
+                           {'range': [100, axis_max], 'color': '#fca5a5'},
+                       ],
+                       'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}}
             ))
-            fig_exp.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
+            fig_exp_all.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
 
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🎯 Gemiddelde gezondheid")
-            if fig_avg is not None:
-                _ = st.plotly_chart(fig_avg, use_container_width=True)
+            if fig_avg:
+                st.plotly_chart(fig_avg, use_container_width=True)
             else:
                 st.info("Onvoldoende gegevens voor de score.")
         with col2:
             st.subheader("🎯 Uitgaven t.o.v. inkomen")
-            if fig_exp is not None:
-                _ = st.plotly_chart(fig_exp, use_container_width=True)
-                st.caption("Bereik: " + bereik_label + " — Groen < 33.3%, geel 33.3–100%, rood ≥ 100%.")
+            if fig_exp_all:
+                st.plotly_chart(fig_exp_all, use_container_width=True)
+                st.caption("Groen < 33.3%, geel 33.3–100%, rood ≥ 100%.")
             else:
-                st.info("Geen inkomen gevonden.")
-
+                st.info("Geen inkomen gevonden in alle data.")
     except Exception as e:
         st.warning(f"Kon gauges niet tekenen: {e}")
 
-
-
-# -------------- Maand --------------
 # -------------- Maand --------------
 # -------------- Maand --------------
 with t_maand:
@@ -389,7 +344,7 @@ with t_maand:
         index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
         key="maand_select_tab",
     )
-    st.query_params["month"] = geselecteerde_maand  # bookmarkbaar
+    st.query_params["month"] = geselecteerde_maand  # (optioneel) bookmarkbaar
 
     st.subheader(f"🗓️ Overzicht voor {geselecteerde_maand}")
 
@@ -414,126 +369,23 @@ with t_maand:
     c3.metric("📎 Variabele kosten (maand)", euro(uit_var_m))
     c4.metric("💰 Netto (maand)", euro(netto_m))
 
-    # =====================================================================
-    # 📊 Alle categorieën verticaal, kleur = Vast/Variabel,
-    #     categorie boven budget = rode omlijning (accent)
-    # =====================================================================
 
-    # 1) Uitgaven per categorie + vast/variabel (voor kleur)
-    bars_df = (
+
+    # -- Topcategorieën in de maand --
+    top = (
         df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
-        .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"]
-        .sum()
-        .abs()
+        .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"].sum().abs()
         .reset_index()
-        .rename(columns={"bedrag": "bedrag_abs"})
+        .sort_values("bedrag", ascending=False)
+        .head(12)
     )
-
-    # 2) Totaal per categorie (voor budgetvergelijking en omlijning)
-    totals = (
-        bars_df.groupby("categorie", as_index=False)["bedrag_abs"]
-        .sum()
-        .rename(columns={"bedrag_abs": "totaal_cat"})
-    )
-
-    # 3) Budget per categorie (uit Budget-tab state, indien beschikbaar)
-    budget_state = st.session_state.get("budget_state")
-    if isinstance(budget_state, pd.DataFrame) and "budget" in budget_state.columns:
-        budget_map = budget_state[["categorie", "budget"]].copy()
-        budget_map["budget"] = pd.to_numeric(budget_map["budget"], errors="coerce")
-    else:
-        budget_map = pd.DataFrame({"categorie": totals["categorie"], "budget": np.nan})
-
-    # 4) Join totals + budget en markeer overschrijding
-    totals = totals.merge(budget_map, on="categorie", how="left")
-    totals["boven_budget"] = totals["budget"].notna() & (totals["totaal_cat"] > totals["budget"])
-
-    # 5) Hoofd-barchart (alle categorieën, y = categorie)
-    # --- 5) Hoofd-barchart (alle categorieën, y = categorie) ---
-
-    if not bars_df.empty:
-        # Sorteer y-as op totaal (groot → klein)
-        sort_order = totals.sort_values("totaal_cat", ascending=True)["categorie"].tolist()
-        bars_df["categorie"] = pd.Categorical(bars_df["categorie"], categories=sort_order, ordered=True)
-        bars_df = bars_df.sort_values(["categorie", "vast/variabel"])
-    
-        # Join: vlag 'boven budget' per categorie
-        bars_df = bars_df.merge(totals[["categorie", "boven_budget", "budget", "totaal_cat"]],
-                                on="categorie", how="left")
-    
-        # Nieuw kleurveld: rood als boven budget, anders Vast/Variabel-kleur behouden
-        bars_df["kleur"] = np.where(
-            bars_df["boven_budget"], "🚨 Boven budget", bars_df["vast/variabel"]
-        )
-    
-        # (optioneel) nette namen voor legend
-        color_map = {
-            "Vast": "#1f77b4",         # jouw vaste kleur (donkerblauw)
-            "Variabel": "#8ec7ff",     # jouw variabele kleur (lichtblauw)
-            "🚨 Boven budget": "red"    # overschrijding: rood
-        }
-    
-        # Hover extra info: budget + totaalsom
-        bars_df["budget_txt"] = bars_df["budget"].apply(lambda x: euro(x) if pd.notna(x) else "—")
-        bars_df["totaal_txt"] = bars_df["totaal_cat"].apply(euro)
-    
+    if not top.empty:
         fig_top = px.bar(
-            bars_df,
-            x="bedrag_abs",
-            y="categorie",
-            color="kleur",
-            orientation="h",
-            title=f"Uitgaven per categorie — {geselecteerde_maand}",
-            labels={"bedrag_abs": "€", "categorie": "Categorie", "kleur": "Legenda"},
-            color_discrete_map=color_map,
-            hover_data={
-                "budget_txt": True,
-                "totaal_txt": True,
-                "vast/variabel": True,
-                "bedrag_abs": ":.2f",
-                "kleur": False,
-                "budget": False,
-                "totaal_cat": False,
-            },
+            top, x="categorie", y="bedrag", color="vast/variabel",
+            title=f"Top uitgaven — {geselecteerde_maand}",
+            labels={"bedrag": "€", "categorie": "Categorie", "vast/variabel": "Type"}
         )
-    
-        # Layout: categorievolgorde + dynamische hoogte
-        fig_top.update_layout(
-            yaxis=dict(categoryorder="array", categoryarray=sort_order),
-            height=max(350, 26 * len(sort_order) + 120),
-            margin=dict(l=10, r=10, t=40, b=10),
-            barmode="group",
-            legend_title_text="",
-        )
-    
-        # Duidelijke hovertekst
-        fig_top.update_traces(
-            hovertemplate="Categorie: %{y}<br>Bedrag: € %{x:.2f}<br>Type: %{customdata[0]}<br>"
-                          "Budget: %{customdata[1]}<br>Totaal cat.: %{customdata[2]}<extra></extra>",
-            customdata=np.stack([
-                bars_df["vast/variabel"],
-                bars_df["budget_txt"],
-                bars_df["totaal_txt"]
-            ], axis=-1)
-        )
-    
         st.plotly_chart(fig_top, use_container_width=True)
-    
-        # (optioneel) tabelletje eronder ongewijzigd laten
-
-
-        # Tabelletje eronder (optioneel, handig om verschillen te zien)
-        with st.expander("📋 Detailtabel (totaal vs budget)"):
-            tbl = totals.assign(
-                Budget=totals["budget"].apply(lambda x: euro(x) if pd.notna(x) else "—"),
-                Totaal=totals["totaal_cat"].apply(euro),
-                Status=np.where(totals["boven_budget"], "🚨 Boven budget", "✅ Binnen budget")
-            )[["categorie", "Totaal", "Budget", "Status"]].rename(columns={"categorie": "Categorie"})
-            st.dataframe(tbl, use_container_width=True)
-    else:
-        st.info("Geen uitgaven voor de geselecteerde maand.")
-
-
 
 
 
@@ -541,41 +393,32 @@ with t_maand:
 with t_budget:
     st.subheader(f"🎯 Budgetten — {geselecteerde_maand}")
 
-    # ⇨ Respecteer de linker filter: werk in deze tab altijd met df_filtered
-    df_scope = df_filtered.copy()
-
-    # Alle vaste categorieën binnen het gefilterde bereik
+    # Alle vaste categorieën
     vaste_cats = (
-        df_scope[df_scope["vast/variabel"].eq("Vast")]["categorie"]
-        .astype(str).str.strip().str.title().dropna().unique()
+        df[df["vast/variabel"].eq("Vast")]["categorie"].astype(str).str.strip().str.title().dropna().unique()
     )
 
-    # Uitgaven in de GEKOZEN maand (alleen vaste), binnen het gefilterde bereik
+    # Uitgaven deze maand (alleen vast)
     uitgaven_mnd_ser = (
-        df_scope[
-            (df_scope["maand_naam"] == geselecteerde_maand)
-            & (~is_income(df_scope["categorie"].astype(str).str.lower()))
-            & (df_scope["vast/variabel"].eq("Vast"))
+        df_filtered[
+            (df_filtered["maand_naam"] == geselecteerde_maand)
+            & (~is_income(df_filtered["categorie"].astype(str).str.lower()))
+            & (df_filtered["vast/variabel"].eq("Vast"))
         ]
         .groupby("categorie")["bedrag"].sum().abs()
     )
 
-    # Gemiddelde per categorie uit voorgaande maanden (binnen het gefilterde bereik)
-    df_m_sel = df_scope[df_scope["maand_naam"].astype(str) == geselecteerde_maand]
-    if df_m_sel.empty:
+    # Gemiddelde per categorie uit voorgaande maanden
+    if df_maand.empty:
         gemiddelde_per_cat = pd.Series(dtype=float)
     else:
-        ref = df_m_sel["datum"].max()
+        ref = df_maand["datum"].max()
         maand_start = pd.Timestamp(ref.year, ref.month, 1)
-        prev = df_scope[
-            (df_scope["datum"] < maand_start)
-            & (df_scope["vast/variabel"].eq("Vast"))
-            & (~is_income(df_scope["categorie"].astype(str).str.lower()))
-        ].copy()
+        prev = df[(df["datum"] < maand_start) & (df["vast/variabel"].eq("Vast")) & (~is_income(df["categorie"].astype(str).str.lower()))].copy()
         if prev.empty:
             gemiddelde_per_cat = pd.Series(dtype=float)
         else:
-            per_mnd_cat = prev.groupby([prev["datum"].dt.to_period("M"), "categorie"])["bedrag"].sum().abs()
+            per_mnd_cat = prev.groupby([prev["datum"].dt.to_period("M"), "categorie"])['bedrag'].sum().abs()
             gemiddelde_per_cat = per_mnd_cat.groupby("categorie").mean()
 
     # Editor-state
@@ -583,11 +426,8 @@ with t_budget:
     if "budget_state" not in st.session_state:
         st.session_state.budget_state = current_cats.assign(budget=np.nan)
     else:
-        st.session_state.budget_state = current_cats.merge(
-            st.session_state.budget_state, on="categorie", how="left"
-        )
+        st.session_state.budget_state = current_cats.merge(st.session_state.budget_state, on="categorie", how="left")
 
-    # Voorstel: vul lege budgetten op met gemiddelde van eerdere maanden (binnen filter)
     if not gemiddelde_per_cat.empty:
         mask_na = st.session_state.budget_state["budget"].isna()
         st.session_state.budget_state.loc[mask_na, "budget"] = (
@@ -602,20 +442,18 @@ with t_budget:
             key="budget_editor_v2",
             column_config={
                 "categorie": st.column_config.TextColumn("Categorie", disabled=True),
-                "budget": st.column_config.NumberColumn(
-                    "Budget (€)", min_value=0.0, step=10.0,
-                    help="Auto = gemiddelde van eerdere maanden (binnen filter); aanpasbaar"
-                )
+                "budget": st.column_config.NumberColumn("Budget (€)", min_value=0.0, step=10.0,
+                                                         help="Auto = gemiddelde vorige maanden; aanpasbaar")
             }
         )
         st.session_state.budget_state = budget_df
 
-    # Samengestelde tabel (binnen filter + gekozen maand)
-    uitgaven_full = uitgaven_mnd_ser.reindex(sorted(vaste_cats)).fillna(0.0).rename("uitgave")
+    # Join & tabel
+    uitgaven_full = (
+        uitgaven_mnd_ser.reindex(sorted(vaste_cats)).fillna(0.0).rename("uitgave")
+    )
     budget_join = (
-        st.session_state.budget_state.set_index("categorie")
-        .join(uitgaven_full, how="left")
-        .reset_index()
+        st.session_state.budget_state.set_index("categorie").join(uitgaven_full, how="left").reset_index()
     )
     budget_join["budget"] = pd.to_numeric(budget_join["budget"], errors="coerce")
     budget_join["uitgave"] = pd.to_numeric(budget_join["uitgave"], errors="coerce").fillna(0)
@@ -634,7 +472,7 @@ with t_budget:
     kol = ["categorie", "Budget", "Uitgave", "Δ (budget - uitgave)", "Status"]
     st.dataframe(tabel.loc[:, kol].rename(columns={"categorie": "Categorie"}), use_container_width=True)
 
-    # Chart (binnen filter)
+    # Chart
     b_plot = budget_join.dropna(subset=["budget"]).copy()
     if not b_plot.empty:
         b_plot = b_plot.sort_values("uitgave", ascending=False)
@@ -645,20 +483,22 @@ with t_budget:
         )
         st.plotly_chart(fig_b, use_container_width=True)
 
-    # Prognose einde maand (binnen filter)
+    # Prognose einde maand
     st.subheader("🔮 Prognose einde van de maand")
-    if not df_m_sel.empty:
-        laatste_datum = df_m_sel["datum"].max()
+    if not df_maand.empty:
+        laatste_datum = df_maand["datum"].max()
         jaar, mnd = laatste_datum.year, laatste_datum.month
         mask_ym = (
-            (df_scope["datum"].dt.year == jaar)
-            & (df_scope["datum"].dt.month == mnd)
-            & (~is_income(df_scope["categorie"].astype(str).str.lower()))
+            (df_filtered["datum"].dt.year == jaar)
+            & (df_filtered["datum"].dt.month == mnd)
+            & (~is_income(df_filtered["categorie"].astype(str).str.lower()))
         )
-        df_ym = df_scope[mask_ym].copy()
+        df_ym = df_filtered[mask_ym].copy()
         if not df_ym.empty:
             uitg_tmv = abs(df_ym[df_ym["datum"] <= laatste_datum]["bedrag"].sum())
-            spent_per_cat = df_ym[df_ym["datum"] <= laatste_datum].groupby("categorie")["bedrag"].sum().abs()
+            spent_per_cat = (
+                df_ym[df_ym["datum"] <= laatste_datum].groupby("categorie")["bedrag"].sum().abs()
+            )
             budget_per_cat = (
                 budget_join.set_index("categorie")["budget"].astype(float)
                 if "budget" in budget_join.columns else pd.Series(dtype=float)
@@ -677,105 +517,51 @@ with t_budget:
                     st.error(f"⚠️ Verwachte uitgaven ({euro(proj)}) liggen boven totaalbudget ({euro(totaal_budget)}).")
                 else:
                     st.success(f"✅ Verwachte uitgaven ({euro(proj)}) liggen binnen totaalbudget ({euro(totaal_budget)}).")
-            st.caption("Prognose gebaseerd op budgetten binnen de huidige filter.")
+            st.caption("Prognose gebaseerd op budgetten: resterend = max(0, budget − uitgegeven).")
         else:
-            st.info("Geen uitgaven gevonden voor de gekozen jaar-maand binnen de filter.")
+            st.info("Geen uitgaven gevonden voor de gekozen jaar-maand.")
     else:
-        st.info("Geen data in de geselecteerde maand binnen de filter voor prognose.")
+        st.info("Geen data in de geselecteerde maand voor prognose.")
 
-
-# -------------- Wat-als --------------
 # -------------- Wat-als --------------
 with t_whatif:
     st.subheader("🧪 Wat-als scenario")
+    extra_inkomen = st.number_input("Extra inkomen per maand (€)", value=0.0, step=50.0)
+    minder_vaste_kosten = st.number_input("Minder vaste kosten per maand (€)", value=0.0, step=50.0)
+    minder_variabele_kosten = st.number_input("Minder variabele kosten per maand (€)", value=0.0, step=50.0)
 
-    # Bereik kiezen (zelfde logica als in Overzicht)
-    gekozen_maand = st.session_state.get("maand_select_tab")
-    opties = ["Alle data"] + (["Gekozen maand"] if gekozen_maand else [])
-    bereik = st.radio("Bereik", opties, index=0, horizontal=True, key="whatif_scope_radio")
-
-    if bereik == "Gekozen maand" and gekozen_maand:
-        df_scope = df[df["maand_naam"].astype(str) == gekozen_maand].copy()
-        bereik_label = f"geselecteerde maand: {gekozen_maand}"
-    else:
-        df_scope = df.copy()
-        bereik_label = "alle data"
-
-    if df_scope.empty:
-        st.info("⚠️ Geen data in dit bereik.")
-        st.stop()
-
-    # Invoer
-    c_a, c_b, c_c = st.columns(3)
-    with c_a:
-        extra_inkomen = st.number_input("Extra inkomen per maand (€)", value=0.0, step=50.0, key="whatif_extra_inc")
-    with c_b:
-        minder_vaste_kosten = st.number_input("Minder vaste kosten per maand (€)", value=0.0, step=50.0, key="whatif_less_fixed")
-    with c_c:
-        minder_variabele_kosten = st.number_input("Minder variabele kosten per maand (€)", value=0.0, step=50.0, key="whatif_less_var")
-
-    # Basisdata op gekozen bereik
-    cat = df_scope["categorie"].astype(str).str.strip().str.lower()
-    is_loon = is_income(cat)
-
-    inkomen_bas = df_scope[is_loon]["bedrag"].sum()
-    vaste_bas   = df_scope[(~is_loon) & (df_scope["vast/variabel"].eq("Vast"))]["bedrag"].sum()
-    var_bas     = df_scope[(~is_loon) & (df_scope["vast/variabel"].eq("Variabel"))]["bedrag"].sum()
-    tot_uitg_bas = vaste_bas + var_bas
-
-    # Aantal maanden in het bereik
-    n_maanden = int(df_scope["datum"].dt.to_period("M").nunique())
+    cat_all_all = df["categorie"].astype(str).str.strip().str.lower()
+    is_loon_all_all = is_income(cat_all_all)
+    inkomen_all = df[is_loon_all_all]["bedrag"].sum()
+    vaste_all = df[(~is_loon_all_all) & (df["vast/variabel"].eq("Vast"))]["bedrag"].sum()
+    variabele_all = df[(~is_loon_all_all) & (df["vast/variabel"].eq("Variabel"))]["bedrag"].sum()
 
     # Bestaande ratio
-    perc_base = abs(tot_uitg_bas) / abs(inkomen_bas) * 100 if abs(inkomen_bas) > 1e-9 else None
+    perc_base = abs((vaste_all + variabele_all) / inkomen_all) * 100 if inkomen_all != 0 else None
 
-    # Simulatie (op maandbasis)
-    inkomen_sim = inkomen_bas + extra_inkomen * n_maanden
-    vaste_sim   = vaste_bas - minder_vaste_kosten * n_maanden
-    var_sim     = var_bas - minder_variabele_kosten * n_maanden
-    tot_uitg_sim = vaste_sim + var_sim
+    maanden = len(df["datum"].dt.to_period("M").unique())
+    inkomen_sim = inkomen_all + extra_inkomen * maanden
+    vaste_sim = vaste_all - minder_vaste_kosten * maanden
+    variabele_sim = variabele_all - minder_variabele_kosten * maanden
+    perc_sim = abs((vaste_sim + variabele_sim) / inkomen_sim) * 100 if inkomen_sim != 0 else None
 
-    perc_sim = abs(tot_uitg_sim) / abs(inkomen_sim) * 100 if abs(inkomen_sim) > 1e-9 else None
-
-    # KPI’s tonen
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Inkomen (basis)",   euro(inkomen_bas))
-    k2.metric("Uitgaven (basis)",  euro(tot_uitg_bas))
-    k3.metric("Maanden in bereik", n_maanden)
-
-    # Gauge + delta
     if perc_sim is not None:
         axis_max = max(120, min(200, (int(perc_sim // 10) + 2) * 10))
         fig_sim = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=perc_sim,
-            number={'suffix': "%"},
-            gauge={
-                'axis': {'range': [0, axis_max]},
-                'bar': {'thickness': 0.3},
-                'steps': [
-                    {'range': [0, 33.33],   'color': '#86efac'},
-                    {'range': [33.33, 100], 'color': '#fcd34d'},
-                    {'range': [100, axis_max], 'color': '#fca5a5'},
-                ],
-                'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}
-            }
+            mode="gauge+number", value=perc_sim, number={'suffix': '%'},
+            gauge={'axis': {'range': [0, axis_max]}, 'bar': {'thickness': 0.3},
+                   'steps': [
+                       {'range': [0, 33.33], 'color': '#86efac'},
+                       {'range': [33.33, 100], 'color': '#fcd34d'},
+                       {'range': [100, axis_max], 'color': '#fca5a5'},
+                   ], 'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}}
         ))
         fig_sim.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
-
-        # Unieke key voorkomt DuplicateElementId
-        _ = st.plotly_chart(fig_sim, use_container_width=True, key="whatif_gauge")
-
+        st.plotly_chart(fig_sim, use_container_width=True)
         if perc_base is not None:
-            st.caption(
-                f"Bereik: {bereik_label} — Uitgaven/inkomen nu: {perc_base:.1f}% → "
-                f"scenario: {perc_sim:.1f}% (Δ {perc_sim - perc_base:+.1f}%)."
-            )
-        else:
-            st.caption(f"Bereik: {bereik_label}")
+            st.caption(f"Δ t.o.v. huidige situatie: {perc_sim - perc_base:+.1f}%")
     else:
-        st.info("Onvoldoende gegevens (inkomen = 0) om de simulatie te tonen.")
-
+        st.info("Onvoldoende gegevens om scenario te berekenen.")
 
 # -------------- Data --------------
 with t_data:
