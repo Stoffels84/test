@@ -531,32 +531,41 @@ with t_maand:
 with t_budget:
     st.subheader(f"🎯 Budgetten — {geselecteerde_maand}")
 
-    # Alle vaste categorieën
+    # ⇨ Respecteer de linker filter: werk in deze tab altijd met df_filtered
+    df_scope = df_filtered.copy()
+
+    # Alle vaste categorieën binnen het gefilterde bereik
     vaste_cats = (
-        df[df["vast/variabel"].eq("Vast")]["categorie"].astype(str).str.strip().str.title().dropna().unique()
+        df_scope[df_scope["vast/variabel"].eq("Vast")]["categorie"]
+        .astype(str).str.strip().str.title().dropna().unique()
     )
 
-    # Uitgaven deze maand (alleen vast)
+    # Uitgaven in de GEKOZEN maand (alleen vaste), binnen het gefilterde bereik
     uitgaven_mnd_ser = (
-        df_filtered[
-            (df_filtered["maand_naam"] == geselecteerde_maand)
-            & (~is_income(df_filtered["categorie"].astype(str).str.lower()))
-            & (df_filtered["vast/variabel"].eq("Vast"))
+        df_scope[
+            (df_scope["maand_naam"] == geselecteerde_maand)
+            & (~is_income(df_scope["categorie"].astype(str).str.lower()))
+            & (df_scope["vast/variabel"].eq("Vast"))
         ]
         .groupby("categorie")["bedrag"].sum().abs()
     )
 
-    # Gemiddelde per categorie uit voorgaande maanden
-    if df_maand.empty:
+    # Gemiddelde per categorie uit voorgaande maanden (binnen het gefilterde bereik)
+    df_m_sel = df_scope[df_scope["maand_naam"].astype(str) == geselecteerde_maand]
+    if df_m_sel.empty:
         gemiddelde_per_cat = pd.Series(dtype=float)
     else:
-        ref = df_maand["datum"].max()
+        ref = df_m_sel["datum"].max()
         maand_start = pd.Timestamp(ref.year, ref.month, 1)
-        prev = df[(df["datum"] < maand_start) & (df["vast/variabel"].eq("Vast")) & (~is_income(df["categorie"].astype(str).str.lower()))].copy()
+        prev = df_scope[
+            (df_scope["datum"] < maand_start)
+            & (df_scope["vast/variabel"].eq("Vast"))
+            & (~is_income(df_scope["categorie"].astype(str).str.lower()))
+        ].copy()
         if prev.empty:
             gemiddelde_per_cat = pd.Series(dtype=float)
         else:
-            per_mnd_cat = prev.groupby([prev["datum"].dt.to_period("M"), "categorie"])['bedrag'].sum().abs()
+            per_mnd_cat = prev.groupby([prev["datum"].dt.to_period("M"), "categorie"])["bedrag"].sum().abs()
             gemiddelde_per_cat = per_mnd_cat.groupby("categorie").mean()
 
     # Editor-state
@@ -564,8 +573,11 @@ with t_budget:
     if "budget_state" not in st.session_state:
         st.session_state.budget_state = current_cats.assign(budget=np.nan)
     else:
-        st.session_state.budget_state = current_cats.merge(st.session_state.budget_state, on="categorie", how="left")
+        st.session_state.budget_state = current_cats.merge(
+            st.session_state.budget_state, on="categorie", how="left"
+        )
 
+    # Voorstel: vul lege budgetten op met gemiddelde van eerdere maanden (binnen filter)
     if not gemiddelde_per_cat.empty:
         mask_na = st.session_state.budget_state["budget"].isna()
         st.session_state.budget_state.loc[mask_na, "budget"] = (
@@ -580,18 +592,20 @@ with t_budget:
             key="budget_editor_v2",
             column_config={
                 "categorie": st.column_config.TextColumn("Categorie", disabled=True),
-                "budget": st.column_config.NumberColumn("Budget (€)", min_value=0.0, step=10.0,
-                                                         help="Auto = gemiddelde vorige maanden; aanpasbaar")
+                "budget": st.column_config.NumberColumn(
+                    "Budget (€)", min_value=0.0, step=10.0,
+                    help="Auto = gemiddelde van eerdere maanden (binnen filter); aanpasbaar"
+                )
             }
         )
         st.session_state.budget_state = budget_df
 
-    # Join & tabel
-    uitgaven_full = (
-        uitgaven_mnd_ser.reindex(sorted(vaste_cats)).fillna(0.0).rename("uitgave")
-    )
+    # Samengestelde tabel (binnen filter + gekozen maand)
+    uitgaven_full = uitgaven_mnd_ser.reindex(sorted(vaste_cats)).fillna(0.0).rename("uitgave")
     budget_join = (
-        st.session_state.budget_state.set_index("categorie").join(uitgaven_full, how="left").reset_index()
+        st.session_state.budget_state.set_index("categorie")
+        .join(uitgaven_full, how="left")
+        .reset_index()
     )
     budget_join["budget"] = pd.to_numeric(budget_join["budget"], errors="coerce")
     budget_join["uitgave"] = pd.to_numeric(budget_join["uitgave"], errors="coerce").fillna(0)
@@ -610,7 +624,7 @@ with t_budget:
     kol = ["categorie", "Budget", "Uitgave", "Δ (budget - uitgave)", "Status"]
     st.dataframe(tabel.loc[:, kol].rename(columns={"categorie": "Categorie"}), use_container_width=True)
 
-    # Chart
+    # Chart (binnen filter)
     b_plot = budget_join.dropna(subset=["budget"]).copy()
     if not b_plot.empty:
         b_plot = b_plot.sort_values("uitgave", ascending=False)
@@ -621,22 +635,20 @@ with t_budget:
         )
         st.plotly_chart(fig_b, use_container_width=True)
 
-    # Prognose einde maand
+    # Prognose einde maand (binnen filter)
     st.subheader("🔮 Prognose einde van de maand")
-    if not df_maand.empty:
-        laatste_datum = df_maand["datum"].max()
+    if not df_m_sel.empty:
+        laatste_datum = df_m_sel["datum"].max()
         jaar, mnd = laatste_datum.year, laatste_datum.month
         mask_ym = (
-            (df_filtered["datum"].dt.year == jaar)
-            & (df_filtered["datum"].dt.month == mnd)
-            & (~is_income(df_filtered["categorie"].astype(str).str.lower()))
+            (df_scope["datum"].dt.year == jaar)
+            & (df_scope["datum"].dt.month == mnd)
+            & (~is_income(df_scope["categorie"].astype(str).str.lower()))
         )
-        df_ym = df_filtered[mask_ym].copy()
+        df_ym = df_scope[mask_ym].copy()
         if not df_ym.empty:
             uitg_tmv = abs(df_ym[df_ym["datum"] <= laatste_datum]["bedrag"].sum())
-            spent_per_cat = (
-                df_ym[df_ym["datum"] <= laatste_datum].groupby("categorie")["bedrag"].sum().abs()
-            )
+            spent_per_cat = df_ym[df_ym["datum"] <= laatste_datum].groupby("categorie")["bedrag"].sum().abs()
             budget_per_cat = (
                 budget_join.set_index("categorie")["budget"].astype(float)
                 if "budget" in budget_join.columns else pd.Series(dtype=float)
@@ -655,11 +667,12 @@ with t_budget:
                     st.error(f"⚠️ Verwachte uitgaven ({euro(proj)}) liggen boven totaalbudget ({euro(totaal_budget)}).")
                 else:
                     st.success(f"✅ Verwachte uitgaven ({euro(proj)}) liggen binnen totaalbudget ({euro(totaal_budget)}).")
-            st.caption("Prognose gebaseerd op budgetten: resterend = max(0, budget − uitgegeven).")
+            st.caption("Prognose gebaseerd op budgetten binnen de huidige filter.")
         else:
-            st.info("Geen uitgaven gevonden voor de gekozen jaar-maand.")
+            st.info("Geen uitgaven gevonden voor de gekozen jaar-maand binnen de filter.")
     else:
-        st.info("Geen data in de geselecteerde maand voor prognose.")
+        st.info("Geen data in de geselecteerde maand binnen de filter voor prognose.")
+
 
 # -------------- Wat-als --------------
 # -------------- Wat-als --------------
