@@ -325,56 +325,69 @@ with t_overzicht:
         st.warning(f"Kon gauges niet tekenen: {e}")
 
 # -------------- Maand --------------
+# -------------- Maand --------------
 with t_maand:
-    st.subheader(f"📆 Overzicht voor {geselecteerde_maand}")
+    st.header("📆 Maandoverzicht")
 
-    # Trend vs vorige maand
-    if not df_maand.empty:
-        ref = df_maand["datum"].max()
-        prev_year, prev_month = ((ref.year - 1, 12) if ref.month == 1 else (ref.year, ref.month - 1))
-        prev_mask = (df_filtered["datum"].dt.year == prev_year) & (df_filtered["datum"].dt.month == prev_month)
-        df_prev = df_filtered[prev_mask].copy()
+    # -- Maandkeuze (in de tab) --
+    aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
+    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
+    default_maand = (
+        st.query_params.get("month")
+        if st.query_params.get("month") in beschikbare_maanden
+        else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
+    )
 
-        def total_of(dfin: pd.DataFrame, *, cat=None, vv=None):
-            d = dfin.copy()
-            cat_col = d["categorie"].astype(str).str.strip().str.lower()
-            income_mask = is_income(cat_col)
-            if cat == "inkomsten":
-                d = d[income_mask]
-            elif cat == "uitgaven":
-                d = d[~income_mask]
-            if vv is not None:
-                d = d[d["vast/variabel"].astype(str).str.strip().str.title().eq(vv)]
-            return d["bedrag"].sum()
+    geselecteerde_maand = st.selectbox(
+        "📆 Kies een maand",
+        beschikbare_maanden,
+        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
+        key="maand_select_tab",
+    )
+    st.query_params["month"] = geselecteerde_maand  # (optioneel) bookmarkbaar
 
-        prev_ink = total_of(df_prev, cat="inkomsten") if not df_prev.empty else 0.0
-        prev_vast = total_of(df_prev, vv="Vast") if not df_prev.empty else 0.0
-        prev_var  = total_of(df_prev, vv="Variabel") if not df_prev.empty else 0.0
-        prev_net  = prev_ink + prev_vast + prev_var
+    st.subheader(f"🗓️ Overzicht voor {geselecteerde_maand}")
 
-        delta_ink = inkomen_m - prev_ink
-        delta_vast = uit_vast_m - prev_vast
-        delta_var = uit_var_m - prev_var
-        delta_net = netto_m - prev_net
+    # -- Filter: alleen gekozen maand --
+    df_maand = df[df["maand_naam"].astype(str) == geselecteerde_maand].copy()
+    if df_maand.empty:
+        st.warning("⚠️ Geen data voor deze maand.")
+        st.stop()
 
-        tc1, tc2, tc3, tc4 = st.columns(4)
-        tc1.metric("📈 Inkomen (trend)", euro(inkomen_m), delta=euro(delta_ink))
-        tc2.metric("📌 Vaste kosten (trend)", euro(uit_vast_m), delta=euro(delta_vast))
-        tc3.metric("📎 Variabele kosten (trend)", euro(uit_var_m), delta=euro(delta_var))
-        tc4.metric("💰 Netto (trend)", euro(netto_m), delta=euro(delta_net))
+    # -- KPI's (maand) --
+    cat_m = df_maand["categorie"].astype(str).str.strip().str.lower()
+    is_loon_m = is_income(cat_m)
 
-        # Top categorieën in de maand
-        top = (
-            df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
-            .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"].sum().abs()
-            .reset_index().sort_values("bedrag", ascending=False).head(12)
+    inkomen_m  = df_maand[is_loon_m]["bedrag"].sum()
+    uit_vast_m = df_maand[(~is_loon_m) & (df_maand["vast/variabel"].astype(str).str.strip().str.title() == "Vast")]["bedrag"].sum()
+    uit_var_m  = df_maand[(~is_loon_m) & (df_maand["vast/variabel"].astype(str).str.strip().str.title() == "Variabel")]["bedrag"].sum()
+    netto_m    = inkomen_m + uit_vast_m + uit_var_m
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📈 Inkomen (maand)", euro(inkomen_m))
+    c2.metric("📌 Vaste kosten (maand)", euro(uit_vast_m))
+    c3.metric("📎 Variabele kosten (maand)", euro(uit_var_m))
+    c4.metric("💰 Netto (maand)", euro(netto_m))
+
+
+
+    # -- Topcategorieën in de maand --
+    top = (
+        df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
+        .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"].sum().abs()
+        .reset_index()
+        .sort_values("bedrag", ascending=False)
+        .head(12)
+    )
+    if not top.empty:
+        fig_top = px.bar(
+            top, x="categorie", y="bedrag", color="vast/variabel",
+            title=f"Top uitgaven — {geselecteerde_maand}",
+            labels={"bedrag": "€", "categorie": "Categorie", "vast/variabel": "Type"}
         )
-        if not top.empty:
-            fig_top = px.bar(top, x="categorie", y="bedrag", color="vast/variabel",
-                             title=f"Top uitgaven — {geselecteerde_maand}", labels={"bedrag": "€"})
-            st.plotly_chart(fig_top, use_container_width=True)
-    else:
-        st.info("Geen transacties in deze maand binnen het filter.")
+        st.plotly_chart(fig_top, use_container_width=True)
+
+
 
 # -------------- Budgetten --------------
 with t_budget:
