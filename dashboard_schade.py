@@ -560,44 +560,97 @@ with t_budget:
         st.info("Geen data in de geselecteerde maand voor prognose.")
 
 # -------------- Wat-als --------------
+# -------------- Wat-als --------------
 with t_whatif:
     st.subheader("🧪 Wat-als scenario")
-    extra_inkomen = st.number_input("Extra inkomen per maand (€)", value=0.0, step=50.0)
-    minder_vaste_kosten = st.number_input("Minder vaste kosten per maand (€)", value=0.0, step=50.0)
-    minder_variabele_kosten = st.number_input("Minder variabele kosten per maand (€)", value=0.0, step=50.0)
 
-    cat_all_all = df["categorie"].astype(str).str.strip().str.lower()
-    is_loon_all_all = is_income(cat_all_all)
-    inkomen_all = df[is_loon_all_all]["bedrag"].sum()
-    vaste_all = df[(~is_loon_all_all) & (df["vast/variabel"].eq("Vast"))]["bedrag"].sum()
-    variabele_all = df[(~is_loon_all_all) & (df["vast/variabel"].eq("Variabel"))]["bedrag"].sum()
+    # Bereik kiezen (zelfde logica als in Overzicht)
+    gekozen_maand = st.session_state.get("maand_select_tab")
+    opties = ["Alle data"] + (["Gekozen maand"] if gekozen_maand else [])
+    bereik = st.radio("Bereik", opties, index=0, horizontal=True, key="whatif_scope_radio")
+
+    if bereik == "Gekozen maand" and gekozen_maand:
+        df_scope = df[df["maand_naam"].astype(str) == gekozen_maand].copy()
+        bereik_label = f"geselecteerde maand: {gekozen_maand}"
+    else:
+        df_scope = df.copy()
+        bereik_label = "alle data"
+
+    if df_scope.empty:
+        st.info("⚠️ Geen data in dit bereik.")
+        st.stop()
+
+    # Invoer
+    c_a, c_b, c_c = st.columns(3)
+    with c_a:
+        extra_inkomen = st.number_input("Extra inkomen per maand (€)", value=0.0, step=50.0, key="whatif_extra_inc")
+    with c_b:
+        minder_vaste_kosten = st.number_input("Minder vaste kosten per maand (€)", value=0.0, step=50.0, key="whatif_less_fixed")
+    with c_c:
+        minder_variabele_kosten = st.number_input("Minder variabele kosten per maand (€)", value=0.0, step=50.0, key="whatif_less_var")
+
+    # Basisdata op gekozen bereik
+    cat = df_scope["categorie"].astype(str).str.strip().str.lower()
+    is_loon = is_income(cat)
+
+    inkomen_bas = df_scope[is_loon]["bedrag"].sum()
+    vaste_bas   = df_scope[(~is_loon) & (df_scope["vast/variabel"].eq("Vast"))]["bedrag"].sum()
+    var_bas     = df_scope[(~is_loon) & (df_scope["vast/variabel"].eq("Variabel"))]["bedrag"].sum()
+    tot_uitg_bas = vaste_bas + var_bas
+
+    # Aantal maanden in het bereik
+    n_maanden = int(df_scope["datum"].dt.to_period("M").nunique())
 
     # Bestaande ratio
-    perc_base = abs((vaste_all + variabele_all) / inkomen_all) * 100 if inkomen_all != 0 else None
+    perc_base = abs(tot_uitg_bas) / abs(inkomen_bas) * 100 if abs(inkomen_bas) > 1e-9 else None
 
-    maanden = len(df["datum"].dt.to_period("M").unique())
-    inkomen_sim = inkomen_all + extra_inkomen * maanden
-    vaste_sim = vaste_all - minder_vaste_kosten * maanden
-    variabele_sim = variabele_all - minder_variabele_kosten * maanden
-    perc_sim = abs((vaste_sim + variabele_sim) / inkomen_sim) * 100 if inkomen_sim != 0 else None
+    # Simulatie (op maandbasis)
+    inkomen_sim = inkomen_bas + extra_inkomen * n_maanden
+    vaste_sim   = vaste_bas - minder_vaste_kosten * n_maanden
+    var_sim     = var_bas - minder_variabele_kosten * n_maanden
+    tot_uitg_sim = vaste_sim + var_sim
 
+    perc_sim = abs(tot_uitg_sim) / abs(inkomen_sim) * 100 if abs(inkomen_sim) > 1e-9 else None
+
+    # KPI’s tonen
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Inkomen (basis)",   euro(inkomen_bas))
+    k2.metric("Uitgaven (basis)",  euro(tot_uitg_bas))
+    k3.metric("Maanden in bereik", n_maanden)
+
+    # Gauge + delta
     if perc_sim is not None:
         axis_max = max(120, min(200, (int(perc_sim // 10) + 2) * 10))
         fig_sim = go.Figure(go.Indicator(
-            mode="gauge+number", value=perc_sim, number={'suffix': '%'},
-            gauge={'axis': {'range': [0, axis_max]}, 'bar': {'thickness': 0.3},
-                   'steps': [
-                       {'range': [0, 33.33], 'color': '#86efac'},
-                       {'range': [33.33, 100], 'color': '#fcd34d'},
-                       {'range': [100, axis_max], 'color': '#fca5a5'},
-                   ], 'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}}
+            mode="gauge+number",
+            value=perc_sim,
+            number={'suffix': "%"},
+            gauge={
+                'axis': {'range': [0, axis_max]},
+                'bar': {'thickness': 0.3},
+                'steps': [
+                    {'range': [0, 33.33],   'color': '#86efac'},
+                    {'range': [33.33, 100], 'color': '#fcd34d'},
+                    {'range': [100, axis_max], 'color': '#fca5a5'},
+                ],
+                'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}
+            }
         ))
         fig_sim.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig_sim, use_container_width=True)
+
+        # Unieke key voorkomt DuplicateElementId
+        _ = st.plotly_chart(fig_sim, use_container_width=True, key="whatif_gauge")
+
         if perc_base is not None:
-            st.caption(f"Δ t.o.v. huidige situatie: {perc_sim - perc_base:+.1f}%")
+            st.caption(
+                f"Bereik: {bereik_label} — Uitgaven/inkomen nu: {perc_base:.1f}% → "
+                f"scenario: {perc_sim:.1f}% (Δ {perc_sim - perc_base:+.1f}%)."
+            )
+        else:
+            st.caption(f"Bereik: {bereik_label}")
     else:
-        st.info("Onvoldoende gegevens om scenario te berekenen.")
+        st.info("Onvoldoende gegevens (inkomen = 0) om de simulatie te tonen.")
+
 
 # -------------- Data --------------
 with t_data:
