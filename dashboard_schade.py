@@ -362,6 +362,7 @@ with t_overzicht:
 
 # -------------- Maand --------------
 # -------------- Maand --------------
+# -------------- Maand --------------
 with t_maand:
     st.header("📆 Maandoverzicht")
 
@@ -380,7 +381,7 @@ with t_maand:
         index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
         key="maand_select_tab",
     )
-    st.query_params["month"] = geselecteerde_maand  # (optioneel) bookmarkbaar
+    st.query_params["month"] = geselecteerde_maand  # bookmarkbaar
 
     st.subheader(f"🗓️ Overzicht voor {geselecteerde_maand}")
 
@@ -405,40 +406,113 @@ with t_maand:
     c3.metric("📎 Variabele kosten (maand)", euro(uit_var_m))
     c4.metric("💰 Netto (maand)", euro(netto_m))
 
+    # =====================================================================
+    # 📊 Alle categorieën verticaal, kleur = Vast/Variabel,
+    #     categorie boven budget = rode omlijning (accent)
+    # =====================================================================
 
-
-    # -- Topcategorieën in de maand --
-    # Alle categorieën in de gekozen maand (niet alleen toppers) en verticaal tonen
-alles = (
-    df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
-    .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"]
-    .sum()
-    .abs()
-    .reset_index()
-)
-
-if not alles.empty:
-    # Sorteer op bedrag (groot -> klein) en zet categorie op y-as
-    alles = alles.sort_values("bedrag", ascending=True)
-
-    fig_top = px.bar(
-        alles,
-        x="bedrag",
-        y="categorie",
-        color="vast/variabel",
-        orientation="h",  # horizontale balken → categorieën staan verticaal onder elkaar
-        title=f"Uitgaven per categorie — {geselecteerde_maand}",
-        labels={"bedrag": "€", "categorie": "Categorie", "vast/variabel": "Type"}
+    # 1) Uitgaven per categorie + vast/variabel (voor kleur)
+    bars_df = (
+        df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
+        .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"]
+        .sum()
+        .abs()
+        .reset_index()
+        .rename(columns={"bedrag": "bedrag_abs"})
     )
-    # Zorg dat de y-as de volgorde van het totaal respecteert
-    fig_top.update_layout(
-        yaxis=dict(categoryorder="total ascending"),
-        height=max(350, 26 * alles["categorie"].nunique() + 120),  # automatische hoogte
-        margin=dict(l=10, r=10, t=40, b=10),
+
+    # 2) Totaal per categorie (voor budgetvergelijking en omlijning)
+    totals = (
+        bars_df.groupby("categorie", as_index=False)["bedrag_abs"]
+        .sum()
+        .rename(columns={"bedrag_abs": "totaal_cat"})
     )
-    st.plotly_chart(fig_top, use_container_width=True)
-else:
-    st.info("Geen uitgaven voor de geselecteerde maand.")
+
+    # 3) Budget per categorie (uit Budget-tab state, indien beschikbaar)
+    budget_state = st.session_state.get("budget_state")
+    if isinstance(budget_state, pd.DataFrame) and "budget" in budget_state.columns:
+        budget_map = budget_state[["categorie", "budget"]].copy()
+        budget_map["budget"] = pd.to_numeric(budget_map["budget"], errors="coerce")
+    else:
+        budget_map = pd.DataFrame({"categorie": totals["categorie"], "budget": np.nan})
+
+    # 4) Join totals + budget en markeer overschrijding
+    totals = totals.merge(budget_map, on="categorie", how="left")
+    totals["boven_budget"] = totals["budget"].notna() & (totals["totaal_cat"] > totals["budget"])
+
+    # 5) Hoofd-barchart (alle categorieën, y = categorie)
+    if not bars_df.empty:
+        # Sorteer y-as op totaal (groot → klein) voor leesbaarheid
+        sort_order = totals.sort_values("totaal_cat", ascending=True)["categorie"].tolist()
+        bars_df["categorie"] = pd.Categorical(bars_df["categorie"], categories=sort_order, ordered=True)
+        bars_df = bars_df.sort_values(["categorie", "vast/variabel"])
+
+        fig_top = px.bar(
+            bars_df,
+            x="bedrag_abs",
+            y="categorie",
+            color="vast/variabel",
+            orientation="h",
+            title=f"Uitgaven per categorie — {geselecteerde_maand}",
+            labels={"bedrag_abs": "€", "categorie": "Categorie", "vast/variabel": "Type"},
+        )
+
+        # 6) Rode omlijning als totale uitgave voor categorie > budget
+        over = totals[totals["boven_budget"]].copy()
+        if not over.empty:
+            # Zelfde volgorde voor y-as
+            over["categorie"] = pd.Categorical(over["categorie"], categories=sort_order, ordered=True)
+            over = over.sort_values("categorie")
+
+            # Transparante bars met alleen een rode rand ter omlijning over de volle lengte (totaal)
+            fig_top.add_trace(
+                go.Bar(
+                    x=over["totaal_cat"],
+                    y=over["categorie"],
+                    orientation="h",
+                    marker=dict(
+                        color="rgba(0,0,0,0)",              # geen vulling
+                        line=dict(color="red", width=3),     # rode omlijning
+                    ),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+
+            # Extra accent: dunne lijn op het budgetniveau
+            if over["budget"].notna().any():
+                fig_top.add_trace(
+                    go.Scatter(
+                        x=over["budget"],
+                        y=over["categorie"],
+                        mode="markers",
+                        marker=dict(symbol="line-ns", size=20),  # klein marker-lijntje
+                        name="Budget (markering)",
+                        hovertemplate="Budget: %{x:.2f}<extra></extra>",
+                    )
+                )
+
+        # Layout: categorievolgorde + dynamische hoogte
+        fig_top.update_layout(
+            yaxis=dict(categoryorder="array", categoryarray=sort_order),
+            height=max(350, 26 * len(sort_order) + 120),
+            margin=dict(l=10, r=10, t=40, b=10),
+            barmode="group",  # behoudt Vast/Variabel naast elkaar
+        )
+
+        st.plotly_chart(fig_top, use_container_width=True)
+
+        # Tabelletje eronder (optioneel, handig om verschillen te zien)
+        with st.expander("📋 Detailtabel (totaal vs budget)"):
+            tbl = totals.assign(
+                Budget=totals["budget"].apply(lambda x: euro(x) if pd.notna(x) else "—"),
+                Totaal=totals["totaal_cat"].apply(euro),
+                Status=np.where(totals["boven_budget"], "🚨 Boven budget", "✅ Binnen budget")
+            )[["categorie", "Totaal", "Budget", "Status"]].rename(columns={"categorie": "Categorie"})
+            st.dataframe(tbl, use_container_width=True)
+    else:
+        st.info("Geen uitgaven voor de geselecteerde maand.")
+
 
 
 
