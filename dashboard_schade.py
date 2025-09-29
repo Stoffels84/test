@@ -184,9 +184,10 @@ netto_m = inkomen_m + uit_vast_m + uit_var_m
 # ============================================================
 # 🧭 Tabs
 # ============================================================
-t_overzicht, t_maand, t_budget, t_whatif, t_data = st.tabs([
-    "Overzicht", "Maand", "Budgetten", "Wat-als", "Data"
+t_overzicht, t_maand, t_budget, t_data = st.tabs([
+    "Overzicht", "Maand", "Budgetten", "Data"
 ])
+
 
 # -------------- Overzicht --------------
 # -------------- Overzicht --------------
@@ -548,45 +549,7 @@ with t_budget:
 
     
 
-# -------------- Wat-als --------------
-with t_whatif:
-    st.subheader("🧪 Wat-als scenario")
-    extra_inkomen = st.number_input("Extra inkomen per maand (€)", value=0.0, step=50.0)
-    minder_vaste_kosten = st.number_input("Minder vaste kosten per maand (€)", value=0.0, step=50.0)
-    minder_variabele_kosten = st.number_input("Minder variabele kosten per maand (€)", value=0.0, step=50.0)
 
-    cat_all_all = df["categorie"].astype(str).str.strip().str.lower()
-    is_loon_all_all = is_income(cat_all_all)
-    inkomen_all = df[is_loon_all_all]["bedrag"].sum()
-    vaste_all = df[(~is_loon_all_all) & (df["vast/variabel"].eq("Vast"))]["bedrag"].sum()
-    variabele_all = df[(~is_loon_all_all) & (df["vast/variabel"].eq("Variabel"))]["bedrag"].sum()
-
-    # Bestaande ratio
-    perc_base = abs((vaste_all + variabele_all) / inkomen_all) * 100 if inkomen_all != 0 else None
-
-    maanden = len(df["datum"].dt.to_period("M").unique())
-    inkomen_sim = inkomen_all + extra_inkomen * maanden
-    vaste_sim = vaste_all - minder_vaste_kosten * maanden
-    variabele_sim = variabele_all - minder_variabele_kosten * maanden
-    perc_sim = abs((vaste_sim + variabele_sim) / inkomen_sim) * 100 if inkomen_sim != 0 else None
-
-    if perc_sim is not None:
-        axis_max = max(120, min(200, (int(perc_sim // 10) + 2) * 10))
-        fig_sim = go.Figure(go.Indicator(
-            mode="gauge+number", value=perc_sim, number={'suffix': '%'},
-            gauge={'axis': {'range': [0, axis_max]}, 'bar': {'thickness': 0.3},
-                   'steps': [
-                       {'range': [0, 33.33], 'color': '#86efac'},
-                       {'range': [33.33, 100], 'color': '#fcd34d'},
-                       {'range': [100, axis_max], 'color': '#fca5a5'},
-                   ], 'threshold': {'line': {'color': 'black', 'width': 2}, 'thickness': 0.75, 'value': 100}}
-        ))
-        fig_sim.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig_sim, use_container_width=True)
-        if perc_base is not None:
-            st.caption(f"Δ t.o.v. huidige situatie: {perc_sim - perc_base:+.1f}%")
-    else:
-        st.info("Onvoldoende gegevens om scenario te berekenen.")
 
 # -------------- Data --------------
 with t_data:
