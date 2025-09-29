@@ -536,26 +536,7 @@ with t_budget:
         chart_df = budget_join.sort_values("categorie").copy()
         mask_over = chart_df["uitgave"] > chart_df["budget"]
 
-        fig_b = go.Figure()
-        fig_b.add_bar(name="Budget", x=chart_df["categorie"], y=chart_df["budget"])
-        fig_b.add_bar(name="Uitgave (binnen)",
-                      x=chart_df.loc[~mask_over, "categorie"],
-                      y=chart_df.loc[~mask_over, "uitgave"])
-        fig_b.add_bar(name="Uitgave (boven)",
-                      x=chart_df.loc[mask_over, "categorie"],
-                      y=chart_df.loc[mask_over, "uitgave"],
-                      marker_color="crimson")
 
-        fig_b.update_layout(
-            barmode="group",
-            title=f"Uitgaven vs. Budget — {geselecteerde_maand}",
-            xaxis_title="Categorie",
-            yaxis_title="€",
-            margin=dict(l=10, r=10, t=40, b=10),
-            legend_title_text="type",
-        )
-        fig_b.update_xaxes(tickangle=-35)
-        st.plotly_chart(fig_b, use_container_width=True)
     else:
         st.info("Geen vaste categorieën gevonden voor deze filter/maand.")
 
