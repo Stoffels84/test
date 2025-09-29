@@ -321,7 +321,7 @@ with t_overzicht:
 with t_maand:
     st.header("📆 Maandoverzicht")
 
-    # -- Maandkeuze --
+    # -- Maandkeuze in de tab --
     aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
     beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
     default_maand = (
@@ -350,9 +350,9 @@ with t_maand:
     cat_m = df_maand["categorie"].astype(str).str.strip().str.lower()
     is_loon_m = is_income(cat_m)
 
-    inkomen_m  = df_maand[is_loon_m]["bedrag"].sum()
-    uit_vast_m = df_maand[(~is_loon_m) & (df_maand["vast/variabel"].astype(str).str.strip().str.title() == "Vast")]["bedrag"].sum()
-    uit_var_m  = df_maand[(~is_loon_m) & (df_maand["vast/variabel"].astype(str).str.strip().str.title() == "Variabel")]["bedrag"].sum()
+    inkomen_m  = df_maand.loc[is_loon_m, "bedrag"].sum()
+    uit_vast_m = df_maand.loc[(~is_loon_m) & (df_maand["vast/variabel"] == "Vast"), "bedrag"].sum()
+    uit_var_m  = df_maand.loc[(~is_loon_m) & (df_maand["vast/variabel"] == "Variabel"), "bedrag"].sum()
     netto_m    = inkomen_m + uit_vast_m + uit_var_m
 
     c1, c2, c3, c4 = st.columns(4)
@@ -361,59 +361,91 @@ with t_maand:
     c3.metric("📎 Variabele kosten (maand)", euro(uit_var_m))
     c4.metric("💰 Netto (maand)", euro(netto_m))
 
-    # -- Topcategorieën in de maand met budgetvergelijking --
-    # Budgetten ophalen
-    budget_state = st.session_state.get("budget_state", pd.DataFrame(columns=["categorie", "budget"]))
-    budget_map = budget_state.set_index("categorie")["budget"].to_dict()
-
-    top = (
-        df_maand[~is_income(df_maand["categorie"].astype(str).str.lower())]
-        .groupby(["categorie", "vast/variabel"], dropna=False)["bedrag"].sum().abs()
+    # -- Top 20 uitgaven per categorie (excl. inkomen) --
+    # Sommeer uitgaven per categorie (abs) en neem top 20
+    uitgaven_per_cat = (
+        df_maand.loc[~is_loon_m]
+        .groupby("categorie", dropna=False)["bedrag"]
+        .sum()
+        .abs()
+        .sort_values(ascending=False)
+        .head(20)
+        .rename("bedrag")
         .reset_index()
     )
 
-    if not top.empty:
-        # Voeg budget en status toe
-        top["budget"] = top["categorie"].map(budget_map)
-        top["over_budget"] = top["budget"].notna() & (top["bedrag"] > top["budget"])
+    if uitgaven_per_cat.empty:
+        st.info("Geen uitgaven gevonden in deze maand.")
+    else:
+        # Budgetten ophalen uit session state (ingegeven in tab Budgetten)
+        budget_state = st.session_state.get("budget_state", pd.DataFrame(columns=["categorie", "budget"]))
+        budget_map = {}
+        if not budget_state.empty and "budget" in budget_state.columns:
+            # Zorg dat categorie-namen identiek gestyled zijn
+            tmp = budget_state.copy()
+            tmp["categorie"] = tmp["categorie"].astype(str).str.strip().str.title()
+            budget_map = tmp.set_index("categorie")["budget"].to_dict()
 
+        # Voeg budget & over-budget flag toe
+        top20 = uitgaven_per_cat.copy()
+        top20["cat_title"] = top20["categorie"].astype(str).str.strip().str.title()
+        top20["budget"] = top20["cat_title"].map(budget_map)
+        # Alleen rood indien er een (positief) budget is én uitgave > budget
+        top20["over_budget"] = top20["budget"].notna() & (top20["budget"] > 0) & (top20["bedrag"] > top20["budget"])
+
+        # --- Plot: Budget vs Uitgave (top 20), overspend in rood ---
+        import plotly.graph_objects as go
         fig_top = go.Figure()
 
-        # Budget bars
+        # Budget-balk (toon 0 als budget onbekend)
         fig_top.add_bar(
             name="Budget",
-            x=top["categorie"],
-            y=top["budget"].fillna(0),
-            marker_color="steelblue"
+            x=top20["cat_title"],
+            y=top20["budget"].fillna(0.0),
         )
 
         # Uitgaven binnen budget
-        binnen = top[~top["over_budget"]]
+        binnen = top20.loc[~top20["over_budget"]]
         fig_top.add_bar(
             name="Uitgave (binnen)",
-            x=binnen["categorie"],
+            x=binnen["cat_title"],
             y=binnen["bedrag"],
-            marker_color="lightblue"
         )
 
         # Uitgaven boven budget (rood)
-        boven = top[top["over_budget"]]
+        boven = top20.loc[top20["over_budget"]]
         fig_top.add_bar(
             name="Uitgave (boven)",
-            x=boven["categorie"],
+            x=boven["cat_title"],
             y=boven["bedrag"],
-            marker_color="crimson"
+            marker_color="crimson",
         )
 
         fig_top.update_layout(
             barmode="group",
-            title=f"Top uitgaven — {geselecteerde_maand}",
+            title=f"Top 20 uitgaven — {geselecteerde_maand}",
             xaxis_title="Categorie",
             yaxis_title="€",
             margin=dict(l=10, r=10, t=40, b=10),
             legend_title_text="type",
         )
+        fig_top.update_xaxes(tickangle=-35)
         st.plotly_chart(fig_top, use_container_width=True)
+
+        # Optionele tabel onder de grafiek (netjes, zelfde top 20)
+        detail = top20[["cat_title", "budget", "bedrag", "over_budget"]].rename(
+            columns={
+                "cat_title": "Categorie",
+                "budget": "Budget",
+                "bedrag": "Uitgave",
+                "over_budget": "Over budget?",
+            }
+        )
+        detail["Budget"] = detail["Budget"].apply(lambda x: euro(x) if pd.notna(x) and x >= 0 else "—")
+        detail["Uitgave"] = detail["Uitgave"].apply(euro)
+        detail["Over budget?"] = detail["Over budget?"].map({True: "🚨 Ja", False: "✅ Nee"})
+        st.dataframe(detail, use_container_width=True)
+
 
 
 
