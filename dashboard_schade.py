@@ -383,10 +383,28 @@ with t_maand:
 # -------------- Budgetten --------------
 # -------------- Budgetten --------------
 with t_budget:
-    st.subheader(f"🎯 Budgetten — {geselecteerde_maand} (alle categorieën)")
+    st.header("🎯 Budgetten")
 
-    # --- Data van de gekozen maand (binnen filter) ---
-    df_mnd = df_filtered[df_filtered["maand_naam"] == geselecteerde_maand].copy()
+    # --- Maandkeuze in de tab (bovenaan) ---
+    aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
+    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
+
+    default_maand = (
+        st.query_params.get("month")
+        if st.query_params.get("month") in beschikbare_maanden
+        else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
+    )
+
+    geselecteerde_maand = st.selectbox(
+        "📆 Kies een maand",
+        beschikbare_maanden,
+        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
+        key="maand_select_budget",
+    )
+    st.query_params["month"] = geselecteerde_maand
+
+    # --- Data van de gekozen maand ---
+    df_mnd = df[df["maand_naam"].astype(str) == geselecteerde_maand].copy()
 
     # --- Alle categorieën (GEEN inkomenscategorieën), over volledige dataset ---
     alle_cats = (
@@ -433,7 +451,7 @@ with t_budget:
             st.session_state.budget_state.loc[mask_na, "categorie"].map(mediaan_per_cat)
         )
 
-    with st.expander("✏️ Stel budgetten in (geldt nu voor alle categorieën)", expanded=False):
+    with st.expander("✏️ Stel budgetten in (geldt voor alle categorieën)", expanded=False):
         budget_df = st.data_editor(
             st.session_state.budget_state,
             num_rows="dynamic",
@@ -470,7 +488,7 @@ with t_budget:
         np.where(budget_join["budget"] > 0, "✅ Binnen budget", "—"),
     )
 
-    # --- Verticale tabel (transposed) met ALLE categorieën als kolommen ---
+    # --- Verticale tabel (transposed) ---
     tabel = budget_join.assign(
         Budget=budget_join["budget"].apply(euro),
         Uitgave=budget_join["uitgave"].apply(euro),
@@ -484,14 +502,14 @@ with t_budget:
     )
     st.dataframe(tabel_verticaal, use_container_width=True)
 
-    # --- Grafiek: categorieën op y-as, ALLE categorieën, overspend in rood ---
+    # --- Verticale chart: categorieën langs y-as, overspend rood ---
     if not budget_join.empty:
         chart_df = budget_join.sort_values("categorie").copy()
         mask_over = chart_df["uitgave"] > chart_df["budget"]
 
         fig_b = go.Figure()
 
-        # Budget (altijd alle categorieën → forceer volledige y-as)
+        # Budget
         fig_b.add_bar(
             name="Budget",
             y=chart_df["categorie"],
@@ -514,9 +532,7 @@ with t_budget:
             marker_color="crimson",
         )
 
-        # Zorg dat ALLE categorieën zichtbaar zijn en volgorde vast ligt
         fig_b.update_yaxes(categoryorder="array", categoryarray=chart_df["categorie"].tolist())
-
         fig_b.update_layout(
             barmode="group",
             title=f"Uitgaven vs. Budget — {geselecteerde_maand}",
@@ -527,7 +543,8 @@ with t_budget:
         )
         st.plotly_chart(fig_b, use_container_width=True)
     else:
-        st.info("Geen categorieën gevonden voor deze filter/maand.")
+        st.info("Geen categorieën gevonden voor deze maand.")
+
 
     
 
