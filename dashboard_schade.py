@@ -420,6 +420,7 @@ with t_maand:
 
 # -------------- Budgetten --------------
 # -------------- Budgetten --------------
+# -------------- Budgetten --------------
 with t_budget:
     st.subheader(f"🎯 Budgetten — {geselecteerde_maand}")
 
@@ -442,8 +443,7 @@ with t_budget:
         if not df_mnd.empty else pd.Series(dtype=float)
     )
 
-    # --- Prefill budgets met MEDIAAN van voorgaande maanden (gehele dataset) ---
-    # Gebruik de laatste datum in de gekozen maand als scheidslijn
+    # --- Prefill budgets met MEDIAAN van voorgaande maanden ---
     if not df_mnd.empty:
         ref = df_mnd["datum"].max()
         maand_start = pd.Timestamp(ref.year, ref.month, 1)
@@ -460,17 +460,16 @@ with t_budget:
     else:
         mediaan_per_cat = pd.Series(dtype=float)
 
-    # --- Editor state (bewaar in session) ---
+    # --- Editor state ---
     base_df = pd.DataFrame({"categorie": vaste_cats})
     if "budget_state" not in st.session_state:
         st.session_state.budget_state = base_df.assign(budget=np.nan)
     else:
-        # Merge om nieuw gevonden categorieën toe te voegen en oude waarden te behouden
         st.session_state.budget_state = (
             base_df.merge(st.session_state.budget_state, on="categorie", how="left")
         )
 
-    # Prefill lege budgets met mediaan (indien beschikbaar)
+    # Prefill lege budgets met mediaan
     if not mediaan_per_cat.empty:
         mask_na = st.session_state.budget_state["budget"].isna()
         st.session_state.budget_state.loc[mask_na, "budget"] = (
@@ -493,7 +492,7 @@ with t_budget:
         )
         st.session_state.budget_state = budget_df
 
-    # --- Join & tabel ---
+    # --- Join & bereken status ---
     uitgaven_full = (
         uitgaven_mnd_ser.reindex(vaste_cats).fillna(0.0).rename("uitgave")
         if len(vaste_cats) else pd.Series(dtype=float)
@@ -509,51 +508,43 @@ with t_budget:
     budget_join["uitgave"] = pd.to_numeric(budget_join["uitgave"], errors="coerce").fillna(0.0)
     budget_join["verschil"] = budget_join["budget"] - budget_join["uitgave"]
 
-    # Statuskolom
     budget_join["Status"] = np.where(
         budget_join["uitgave"] > budget_join["budget"],
         "🚨 Over budget",
         np.where(budget_join["budget"] > 0, "✅ Binnen budget", "—"),
     )
 
-    # Mooie weergave
+    # --- Verticaal maken ---
     tabel = budget_join.assign(
         Budget=budget_join["budget"].apply(euro),
         Uitgave=budget_join["uitgave"].apply(euro),
         **{"Δ (budget - uitgave)": budget_join["verschil"].apply(euro)},
     )
+
     kol = ["categorie", "Budget", "Uitgave", "Δ (budget - uitgave)", "Status"]
-    st.dataframe(
-        tabel.loc[:, kol].rename(columns={"categorie": "Categorie"}),
-        use_container_width=True,
+
+    tabel_verticaal = (
+        tabel.loc[:, kol]               # selecteer
+        .set_index("categorie")         # categorie = kolom
+        .T                              # transposeer → verticale layout
     )
 
-    # --- Chart: verticale staven, alle categorieën, overspend in rood ---
+    st.dataframe(tabel_verticaal, use_container_width=True)
+
+    # --- Chart: verticaal, overspend rood ---
     if not budget_join.empty:
         chart_df = budget_join.sort_values("categorie").copy()
         mask_over = chart_df["uitgave"] > chart_df["budget"]
 
         fig_b = go.Figure()
-
-        # Budget
-        fig_b.add_bar(
-            name="Budget",
-            x=chart_df["categorie"],
-            y=chart_df["budget"],
-        )
-        # Uitgave binnen budget
-        fig_b.add_bar(
-            name="Uitgave (binnen)",
-            x=chart_df.loc[~mask_over, "categorie"],
-            y=chart_df.loc[~mask_over, "uitgave"],
-        )
-        # Uitgave boven budget (rood)
-        fig_b.add_bar(
-            name="Uitgave (boven)",
-            x=chart_df.loc[mask_over, "categorie"],
-            y=chart_df.loc[mask_over, "uitgave"],
-            marker_color="crimson",
-        )
+        fig_b.add_bar(name="Budget", x=chart_df["categorie"], y=chart_df["budget"])
+        fig_b.add_bar(name="Uitgave (binnen)",
+                      x=chart_df.loc[~mask_over, "categorie"],
+                      y=chart_df.loc[~mask_over, "uitgave"])
+        fig_b.add_bar(name="Uitgave (boven)",
+                      x=chart_df.loc[mask_over, "categorie"],
+                      y=chart_df.loc[mask_over, "uitgave"],
+                      marker_color="crimson")
 
         fig_b.update_layout(
             barmode="group",
@@ -567,6 +558,7 @@ with t_budget:
         st.plotly_chart(fig_b, use_container_width=True)
     else:
         st.info("Geen vaste categorieën gevonden voor deze filter/maand.")
+
 
 
     
