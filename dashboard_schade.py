@@ -633,4 +633,4 @@ st.download_button(
 )
 
 
-st.caption("© Huishoudboekje V2 — gemaakt met Streamlit.")
+st.caption("© Huishoudboekje V2 — gemaakt voor Christoff, Bram, Louis Borolo.")
