@@ -145,18 +145,6 @@ default_maand = (
     else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
 )
 
-with st.sidebar:
-    geselecteerde_maand = st.selectbox(
-        "📆 Kies maand",
-        beschikbare_maanden,
-        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
-        key="maand_select_v2",
-    )
-
-# Sync alleen de maand in de URL (optioneel)
-if st.query_params.get("month") != geselecteerde_maand:
-    st.query_params["month"] = geselecteerde_maand
-
 
 
 # ============================================================
