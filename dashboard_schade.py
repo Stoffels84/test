@@ -257,34 +257,50 @@ with t_overzicht:
         st.warning(f"Kon gauges niet tekenen: {e}")
 
 # -------------- Maand --------------
+# -------------- Maand --------------
 with t_maand:
     st.header("📆 Maandoverzicht")
 
-    # Maandkeuze in de tab
-    aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
-    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
-    default_maand = (
-        st.query_params.get("month")
-        if st.query_params.get("month") in beschikbare_maanden
-        else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
-    )
-    geselecteerde_maand = st.selectbox(
-        "📆 Kies een maand",
-        beschikbare_maanden,
-        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
-        key="maand_select_tab",
-    )
-    st.query_params["month"] = geselecteerde_maand
+    # -- Maand & jaar keuze (in de tab) --
+    aanwezige_maanden = df["maand_naam"].dropna().astype(str).unique().tolist()
+    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezige_maanden]
+    aanwezige_jaren = sorted(df["jaar"].dropna().unique().tolist())
+    default_jaar = max(aanwezige_jaren) if aanwezige_jaren else pd.Timestamp.today().year
 
-    st.subheader(f"🗓️ Overzicht voor {geselecteerde_maand}")
+    col_m, col_j = st.columns([2, 1])
+    with col_m:
+        sel_month = st.selectbox(
+            "📆 Kies een maand",
+            beschikbare_maanden,
+            index=(beschikbare_maanden.index(st.query_params.get("month"))
+                   if st.query_params.get("month") in beschikbare_maanden else len(beschikbare_maanden) - 1),
+            key="maand_select_tab",
+        )
+    with col_j:
+        sel_year = st.selectbox(
+            "📅 Kies een jaar",
+            aanwezige_jaren,
+            index=(aanwezige_jaren.index(int(st.query_params.get("year")))
+                   if (st.query_params.get("year") and int(st.query_params.get("year")) in aanwezige_jaren)
+                   else aanwezige_jaren.index(default_jaar)),
+            key="jaar_select_tab",
+        )
 
-    # Filter op maand
-    df_maand = df[df["maand_naam"].astype(str) == geselecteerde_maand].copy()
+    # Sync URL (optioneel)
+    if st.query_params.get("month") != sel_month:
+        st.query_params["month"] = sel_month
+    if st.query_params.get("year") != str(sel_year):
+        st.query_params["year"] = str(sel_year)
+
+    st.subheader(f"🗓️ Overzicht voor {sel_month} {sel_year}")
+
+    # -- Filter: exact gekozen jaar + maand --
+    df_maand = df[(df["jaar"] == sel_year) & (df["maand_naam"].astype(str) == sel_month)].copy()
     if df_maand.empty:
         st.warning("⚠️ Geen data voor deze maand.")
         st.stop()
 
-    # KPI's
+    # -- KPI's (maand) --
     is_loon_m = is_income(df_maand["cat_norm"])
     inkomen_m  = df_maand.loc[is_loon_m, "bedrag"].sum()
     uit_vast_m = df_maand.loc[(~is_loon_m) & (df_maand["vast/variabel"] == "Vast"), "bedrag"].sum()
@@ -297,7 +313,13 @@ with t_maand:
     c3.metric("📎 Variabele kosten (maand)", euro(uit_var_m))
     c4.metric("💰 Netto (maand)", euro(netto_m))
 
-    # Top 20 uitgaven per categorie (excl. inkomen)
+    st.caption(
+        f"Gefilterd: {sel_month} {sel_year} — "
+        f"{df_maand['datum'].min().date()} t/m {df_maand['datum'].max().date()} "
+        f"({len(df_maand)} rijen)"
+    )
+
+    # -- Top 20 uitgaven per categorie (excl. inkomen) --
     uitgaven_per_cat = (
         df_maand.loc[~is_loon_m]
         .groupby("categorie", dropna=False)["bedrag"].sum().abs()
@@ -310,7 +332,7 @@ with t_maand:
     if uitgaven_per_cat.empty:
         st.info("Geen uitgaven gevonden in deze maand.")
     else:
-        # Budgetten uit session state
+        # Budgetten ophalen uit session state (ingegeven in tab Budgetten)
         budget_state = st.session_state.get("budget_state", pd.DataFrame(columns=["categorie", "budget"]))
         budget_map = {}
         if not budget_state.empty and "budget" in budget_state.columns:
@@ -318,13 +340,13 @@ with t_maand:
             tmp["categorie"] = tmp["categorie"].astype(str).str.strip().str.title()
             budget_map = tmp.set_index("categorie")["budget"].to_dict()
 
-        # Budget & over-budget flag
+        # Voeg budget & over-budget flag toe
         top20 = uitgaven_per_cat.copy()
         top20["cat_title"] = top20["categorie"].astype(str).str.strip().str.title()
         top20["budget"] = top20["cat_title"].map(budget_map)
         top20["over_budget"] = top20["budget"].notna() & (top20["budget"] > 0) & (top20["bedrag"] > top20["budget"])
 
-        # Plot (budget vs uitgave; overspend rood)
+        # --- Plot: Budget vs Uitgave (top 20), overspend in rood ---
         fig_top = go.Figure()
         fig_top.add_bar(name="Budget", x=top20["cat_title"], y=top20["budget"].fillna(0.0))
         binnen = top20.loc[~top20["over_budget"]]
@@ -332,13 +354,12 @@ with t_maand:
         boven = top20.loc[top20["over_budget"]]
         fig_top.add_bar(name="Uitgave (boven)", x=boven["cat_title"], y=boven["bedrag"], marker_color="crimson")
 
-        # 🔹 Dynamische hoogte voor betere leesbaarheid
+        # Dynamische hoogte voor betere leesbaarheid
         row_height = 28
         fig_height = max(420, len(top20) * row_height)
-
         fig_top.update_layout(
             barmode="group",
-            title=f"Top 20 uitgaven — {geselecteerde_maand}",
+            title=f"Top 20 uitgaven — {sel_month} {sel_year}",
             xaxis_title="Categorie",
             yaxis_title="€",
             margin=dict(l=10, r=10, t=40, b=10),
@@ -348,19 +369,15 @@ with t_maand:
         fig_top.update_xaxes(tickangle=-35)
         st.plotly_chart(fig_top, use_container_width=True)
 
-        # Optionele tabel
+        # Optionele tabel onder de grafiek (zelfde top 20)
         detail = top20[["cat_title", "budget", "bedrag", "over_budget"]].rename(
-            columns={
-                "cat_title": "Categorie",
-                "budget": "Budget",
-                "bedrag": "Uitgave",
-                "over_budget": "Over budget?",
-            }
+            columns={"cat_title": "Categorie", "budget": "Budget", "bedrag": "Uitgave", "over_budget": "Over budget?"}
         )
         detail["Budget"] = detail["Budget"].apply(lambda x: euro(x) if pd.notna(x) and x >= 0 else "—")
         detail["Uitgave"] = detail["Uitgave"].apply(euro)
         detail["Over budget?"] = detail["Over budget?"].map({True: "🚨 Ja", False: "✅ Nee"})
         st.dataframe(detail, use_container_width=True)
+
 
 # -------------- Budgetten --------------
 with t_budget:
