@@ -380,29 +380,45 @@ with t_maand:
 
 
 # -------------- Budgetten --------------
+# -------------- Budgetten --------------
 with t_budget:
     st.header("🎯 Budgetten")
 
-    # Maandkeuze in de tab
-    aanwezig = df["maand_naam"].dropna().astype(str).unique().tolist()
-    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezig]
-    default_maand = (
-        st.query_params.get("month")
-        if st.query_params.get("month") in beschikbare_maanden
-        else (beschikbare_maanden[-1] if beschikbare_maanden else MAANDEN_NL[0])
-    )
-    geselecteerde_maand = st.selectbox(
-        "📆 Kies een maand",
-        beschikbare_maanden,
-        index=(beschikbare_maanden.index(default_maand) if beschikbare_maanden else 0),
-        key="maand_select_budget",
-    )
-    st.query_params["month"] = geselecteerde_maand
+    # -- Maand & jaar keuze (in de tab) --
+    aanwezige_maanden = df["maand_naam"].dropna().astype(str).unique().tolist()
+    beschikbare_maanden = [m for m in MAANDEN_NL if m in aanwezige_maanden]
+    aanwezige_jaren = sorted(df["jaar"].dropna().unique().tolist())
+    default_jaar = max(aanwezige_jaren) if aanwezige_jaren else pd.Timestamp.today().year
 
-    # Data van gekozen maand
-    df_mnd = df[df["maand_naam"].astype(str) == geselecteerde_maand].copy()
+    col_m, col_j = st.columns([2, 1])
+    with col_m:
+        sel_month_b = st.selectbox(
+            "📆 Kies een maand",
+            beschikbare_maanden,
+            index=(beschikbare_maanden.index(st.query_params.get("month"))
+                   if st.query_params.get("month") in beschikbare_maanden else len(beschikbare_maanden) - 1),
+            key="maand_select_budget",
+        )
+    with col_j:
+        sel_year_b = st.selectbox(
+            "📅 Kies een jaar",
+            aanwezige_jaren,
+            index=(aanwezige_jaren.index(int(st.query_params.get("year")))
+                   if (st.query_params.get("year") and int(st.query_params.get("year")) in aanwezige_jaren)
+                   else aanwezige_jaren.index(default_jaar)),
+            key="jaar_select_budget",
+        )
 
-    # Alle categorieën (excl. inkomen) over volledige dataset
+    # Sync URL (optioneel)
+    if st.query_params.get("month") != sel_month_b:
+        st.query_params["month"] = sel_month_b
+    if st.query_params.get("year") != str(sel_year_b):
+        st.query_params["year"] = str(sel_year_b)
+
+    # -- Data van de gekozen maand + jaar --
+    df_mnd = df[(df["jaar"] == sel_year_b) & (df["maand_naam"].astype(str) == sel_month_b)].copy()
+
+    # -- Alle categorieën (excl. inkomen) over de volledige dataset --
     alle_cats = (
         df.loc[~is_income(df["cat_norm"]), "categorie"]
         .astype(str).str.strip().str.title()
@@ -410,16 +426,14 @@ with t_budget:
     )
     alle_cats = sorted(alle_cats)
 
-    # Uitgaven in de gekozen maand
+    # -- Uitgaven in de gekozen maand+jaar (excl. inkomen) --
     if not df_mnd.empty:
         mask_loon_mnd = is_income(df_mnd["cat_norm"])
-        uitgaven_mnd_ser = (
-            df_mnd.loc[~mask_loon_mnd].groupby("categorie")["bedrag"].sum().abs()
-        )
+        uitgaven_mnd_ser = df_mnd.loc[~mask_loon_mnd].groupby("categorie")["bedrag"].sum().abs()
     else:
         uitgaven_mnd_ser = pd.Series(dtype=float)
 
-    # Prefill budgetten met mediaan van voorgaande maanden (excl. inkomen)
+    # -- Prefill budgetten met mediaan van voorgaande maanden (excl. inkomen) --
     if not df_mnd.empty:
         ref = df_mnd["datum"].max()
         maand_start = pd.Timestamp(ref.year, ref.month, 1)
@@ -432,13 +446,14 @@ with t_budget:
     else:
         mediaan_per_cat = pd.Series(dtype=float)
 
-    # Editor state
+    # -- Editor state (budgetten) --
     base_df = pd.DataFrame({"categorie": alle_cats})
     if "budget_state" not in st.session_state:
         st.session_state.budget_state = base_df.assign(budget=np.nan)
     else:
         st.session_state.budget_state = base_df.merge(st.session_state.budget_state, on="categorie", how="left")
 
+    # Prefill lege budgets met mediaan
     if not mediaan_per_cat.empty:
         mask_na = st.session_state.budget_state["budget"].isna()
         st.session_state.budget_state.loc[mask_na, "budget"] = (
@@ -461,7 +476,7 @@ with t_budget:
         )
         st.session_state.budget_state = budget_df
 
-    # Join & status
+    # -- Join & status --
     uitgaven_full = (
         uitgaven_mnd_ser.reindex(alle_cats).fillna(0.0).rename("uitgave")
         if len(alle_cats) else pd.Series(dtype=float)
@@ -482,19 +497,17 @@ with t_budget:
         np.where(budget_join["budget"] > 0, "✅ Binnen budget", "—"),
     )
 
-    # Verticale tabel (transposed)
+    # -- Verticale tabel (transposed) --
     tabel = budget_join.assign(
         Budget=budget_join["budget"].apply(euro),
         Uitgave=budget_join["uitgave"].apply(euro),
         **{"Δ (budget - uitgave)": budget_join["verschil"].apply(euro)},
     )
     kol = ["categorie", "Budget", "Uitgave", "Δ (budget - uitgave)", "Status"]
-    tabel_verticaal = (
-        tabel.loc[:, kol].set_index("categorie").T
-    )
+    tabel_verticaal = tabel.loc[:, kol].set_index("categorie").T
     st.dataframe(tabel_verticaal, use_container_width=True)
 
-    # Chart met dynamische hoogte + overspend rood
+    # -- Grafiek: categorieën langs y-as, overspend rood, dynamische hoogte --
     if not budget_join.empty:
         chart_df = budget_join.sort_values("categorie").copy()
         mask_over = chart_df["uitgave"] > chart_df["budget"]
@@ -510,7 +523,7 @@ with t_budget:
         fig_height = max(400, len(chart_df) * row_height)
         fig_b.update_layout(
             barmode="group",
-            title=f"Uitgaven vs. Budget — {geselecteerde_maand}",
+            title=f"Uitgaven vs. Budget — {sel_month_b} {sel_year_b}",
             xaxis_title="€",
             yaxis_title="Categorie",
             margin=dict(l=10, r=10, t=40, b=10),
@@ -520,6 +533,7 @@ with t_budget:
         st.plotly_chart(fig_b, use_container_width=True)
     else:
         st.info("Geen categorieën gevonden voor deze maand.")
+
 
 # -------------- Data --------------
 with t_data:
