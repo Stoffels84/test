@@ -158,6 +158,33 @@
             margin-top: 20px;
             height: 280px;
         }
+
+        /* Dashboard (opzoeken) */
+        #dashboard-search-input {
+            padding: 8px;
+            width: 260px;
+            max-width: 100%;
+            margin-right: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        #dashboard-search-button {
+            padding: 8px 14px;
+            font-size: 14px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            background: #f7f7f7;
+            cursor: pointer;
+        }
+        #dashboard-search-button:hover {
+            background: #eaeaea;
+        }
+        #dashboard-info {
+            font-size: 13px;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -182,7 +209,7 @@
         <button class="tab-button" data-tab="tab-chauffeur">2. Chauffeur</button>
         <button class="tab-button" data-tab="tab-voertuig">3. Voertuig</button>
         <button class="tab-button" data-tab="tab-locatie">4. Locatie</button>
-        <button class="tab-button" data-tab="tab-dashboard">5. Dashboard</button>
+        <button class="tab-button" data-tab="tab-dashboard">5. Dashboard (opzoeken)</button>
         <button class="tab-button" data-tab="tab-coaching">6. Coaching</button>
         <button class="tab-button" data-tab="tab-analyse">7. Analyse</button>
     </div>
@@ -289,12 +316,31 @@
         </div>
     </div>
 
-    <!-- TAB 5: DASHBOARD -->
+    <!-- TAB 5: DASHBOARD / OPZOEKEN -->
     <div class="tab-content" id="tab-dashboard">
-        <h2>Dashboard</h2>
-        <p class="placeholder-text">
-            Wordt later uitgewerkt. Hier kunnen samenvattende grafieken en KPI's komen.
-        </p>
+        <h2>Dashboard – Chauffeur opzoeken</h2>
+        <p>Zoek op <strong>personeelsnummer</strong> of <strong>naam</strong>. De resultaten worden gefilterd op het geselecteerde jaar bovenaan.</p>
+
+        <input id="dashboard-search-input" type="text" placeholder="Personeelsnr of naam..." />
+        <button id="dashboard-search-button">Zoeken</button>
+        <div id="dashboard-info">Tip: je kunt een deel van de naam of het nummer ingeven.</div>
+
+        <div class="table-container" style="margin-top:10px;">
+            <table id="dashboard-table">
+                <thead>
+                    <tr>
+                        <th>Datum</th>
+                        <th>Naam</th>
+                        <th>Personeelsnr</th>
+                        <th>Voertuigtype</th>
+                        <th>Locatie</th>
+                        <th>Actief</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 
     <!-- TAB 6: COACHING -->
@@ -334,6 +380,8 @@
     let voertuigColIndex = -1;
     let locatieColIndex = -1;
     let linkColIndex = -1;
+    let personnelColIndex = -1;
+    let activeColIndex = -1;
 
     let chauffeurData = [];
     let voertuigData = [];
@@ -481,7 +529,7 @@
             value = excelSerialToDateString(rawValue);
         }
         const td = document.createElement('td');
-    
+
         if (idx === linkColIndex && value) {
             const href = String(value).trim();
             const a = document.createElement('a');
@@ -489,7 +537,6 @@
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
             a.className = 'table-link';
-            // Tekst die je wil zien bij elke link:
             a.textContent = '=> naar EAF';
             td.appendChild(a);
         } else {
@@ -497,7 +544,6 @@
         }
         return td;
     }
-
 
     // ---- Alle data body opnieuw opbouwen ----
     function rebuildAllDataTableBody(rows) {
@@ -941,6 +987,62 @@
         });
     }
 
+    // ---- Dashboard zoeken op personeelsnr / naam ----
+    function searchDashboard() {
+        const input = document.getElementById('dashboard-search-input');
+        const term = input.value.trim().toLowerCase();
+        const tbodyDash = document.querySelector('#dashboard-table tbody');
+        tbodyDash.innerHTML = '';
+
+        if (!term) {
+            // niets tonen als zoekveld leeg is
+            return;
+        }
+
+        const rows = filteredRows;
+        const results = [];
+
+        rows.forEach(row => {
+            const nameVal = (chauffeurColIndex !== -1 && row[chauffeurColIndex]) ?
+                String(row[chauffeurColIndex]).toLowerCase() : '';
+            const persVal = (personnelColIndex !== -1 && row[personnelColIndex]) ?
+                String(row[personnelColIndex]).toLowerCase() : '';
+
+            if (nameVal.includes(term) || persVal.includes(term)) {
+                results.push(row);
+            }
+        });
+
+        if (results.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 7;
+            td.textContent = 'Geen resultaten gevonden voor deze zoekopdracht (binnen de gekozen jaarfilter).';
+            tr.appendChild(td);
+            tbodyDash.appendChild(tr);
+            return;
+        }
+
+        // kolommen die we willen tonen
+        const cols = [];
+        if (dateColIndex !== -1) cols.push(dateColIndex);
+        if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
+        if (personnelColIndex !== -1) cols.push(personnelColIndex);
+        if (voertuigColIndex !== -1) cols.push(voertuigColIndex);
+        if (locatieColIndex !== -1) cols.push(locatieColIndex);
+        if (activeColIndex !== -1) cols.push(activeColIndex);
+        if (linkColIndex !== -1) cols.push(linkColIndex);
+
+        results.forEach(row => {
+            const tr = document.createElement('tr');
+            cols.forEach(idx => {
+                const td = createCell(idx, row[idx]);
+                tr.appendChild(td);
+            });
+            tbodyDash.appendChild(tr);
+        });
+    }
+
     // ---- Alles heropbouwen wanneer filter verandert ----
     function updateFilterAndViews() {
         filteredRows = getFilteredRows();
@@ -952,6 +1054,8 @@
         updateVoertuigView();
         updateLocatieView();
         buildVoertuigMonthChart(filteredRows);
+        // Dashboard opnieuw toepassen op basis van huidige zoekterm
+        searchDashboard();
 
         const filterText = (yearFilterSelect.value === 'ALL'
             ? 'alle jaren'
@@ -972,6 +1076,16 @@
     });
     yearFilterSelect.addEventListener('change', () => {
         updateFilterAndViews();
+    });
+
+    // Dashboard zoeklisteners
+    document.getElementById('dashboard-search-button').addEventListener('click', () => {
+        searchDashboard();
+    });
+    document.getElementById('dashboard-search-input').addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+            searchDashboard();
+        }
     });
 
     // ---- Init data uit Excel ----
@@ -1033,6 +1147,14 @@
             linkColIndex = findColumnIndexByNames(
                 allHeaders,
                 ['link']
+            );
+            personnelColIndex = findColumnIndexByNames(
+                allHeaders,
+                ['personeelsnr', 'personeelsnummer', 'personeels nr']
+            );
+            activeColIndex = findColumnIndexByNames(
+                allHeaders,
+                ['actief', 'active']
             );
 
             // jaren in filter
