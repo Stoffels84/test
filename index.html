@@ -185,12 +185,11 @@
             </div>
 
             <!-- TAB 6: COACHING -->
-            <div class="tab-content" id="tab-coaching">
-                <h2>Coaching</h2>
-                <p class="placeholder-text">
-                    Wordt later uitgewerkt. Bijvoorbeeld overzicht van coaching-acties per chauffeur.
-                </p>
-            </div>
+<div class="tab-content" id="tab-coaching">
+    <h2>Coaching</h2>
+    <div id="coaching-stats"></div>
+</div>
+
 
             <!-- TAB 7: ANALYSE -->
             <div class="tab-content" id="tab-analyse">
@@ -236,7 +235,7 @@ let coachingHeaders = [];
 let coachingRows = [];
 const coachingMap = {};
 
-// NIEUW: P-nrs die in tabblad "Coaching" staan
+// P-nrs die in tabblad "Coaching" staan
 const coachingPendingSet = new Set();
 
 // tabs (sidebar)
@@ -363,7 +362,7 @@ function getPrimaryCoachingStatusForPnr(pnr) {
     return null;
 }
 
-// de laatste coaching (op datum) voor een P-nr – gebruiken we alleen nog eventueel
+// de laatste coaching (op datum) voor een P-nr – eventueel bruikbaar later
 function getLatestCoachingForPnr(pnr) {
     const entries = getCoachingEntriesForPnr(pnr);
     if (!entries.length) return null;
@@ -380,7 +379,7 @@ function getLatestCoachingForPnr(pnr) {
     return latest;
 }
 
-// NIEUW: checken of P-nr in tabblad "Coaching" staat
+// checken of P-nr in tabblad "Coaching" staat
 function isInCoachingList(pnr) {
     if (pnr === null || pnr === undefined) return false;
     const key = String(pnr).trim();
@@ -1037,6 +1036,86 @@ function searchDashboard() {
     });
 }
 
+// ---------- ANALYSE FUNCTIES (voor tab Coaching) ----------
+
+// 1. Aantal P-nrs in tabblad "Coaching"
+function countPnrInCoaching() {
+    return coachingPendingSet.size;
+}
+
+// 2. Aantal P-nrs in Voltooide coachings (unieke P-nrs)
+function countPnrInVoltooide() {
+    return Object.keys(coachingMap).length;
+}
+
+// 3. Unieke P-nrs in Voltooide coachings (zelfde als 2)
+function countUniquePnrInVoltooide() {
+    return Object.keys(coachingMap).length;
+}
+
+// 4. P-nrs met > 2 schades in schadebestand,
+//    die niet in Voltooide coachings staan en niet in Coaching
+function findHighDamageWithoutCoaching() {
+    if (personnelColIndex === -1) return [];
+
+    const teller = new Map();
+
+    baseRows.forEach(row => {
+        const p = row[personnelColIndex];
+        if (!p) return;
+        const key = String(p).trim();
+        if (!key) return;
+        if (!teller.has(key)) teller.set(key, 0);
+        teller.set(key, teller.get(key) + 1);
+    });
+
+    const resultaat = [];
+
+    teller.forEach((aantal, pnr) => {
+        if (
+            aantal > 2 &&
+            !coachingMap[pnr] &&                 // niet in Voltooide coachings
+            !coachingPendingSet.has(pnr)         // niet in Coaching-tab
+        ) {
+            resultaat.push({ pnr: pnr, aantal: aantal });
+        }
+    });
+
+    return resultaat;
+}
+
+// overzicht in Coaching-tab vullen
+function updateCoachingStats() {
+    const div = document.getElementById('coaching-stats');
+    if (!div) return;
+
+    const pCoaching = countPnrInCoaching();
+    const pVoltooide = countPnrInVoltooide();
+    const pVoltooideUniek = countUniquePnrInVoltooide();
+    const highDamage = findHighDamageWithoutCoaching();
+
+    let html = `
+        <h3>Coaching overzicht</h3>
+        <ul>
+            <li><strong>Aantal P-nrs in tabblad "Coaching":</strong> ${pCoaching}</li>
+            <li><strong>Aantal P-nrs in "Voltooide coachings":</strong> ${pVoltooide}</li>
+            <li><strong>Unieke P-nrs in "Voltooide coachings":</strong> ${pVoltooideUniek}</li>
+            <li><strong>P-nrs &gt; 2 schades zonder coaching:</strong> ${highDamage.length}</li>
+        </ul>
+    `;
+
+    if (highDamage.length > 0) {
+        html += `<h4>P-nrs met &gt; 2 schades en geen coaching:</h4>`;
+        html += `<ul>`;
+        highDamage.forEach(e => {
+            html += `<li>${e.pnr} — ${e.aantal} schades</li>`;
+        });
+        html += `</ul>`;
+    }
+
+    div.innerHTML = html;
+}
+
 // ---------- ALLES HERAUFBOUWEN ----------
 
 function updateFilterAndViews() {
@@ -1152,47 +1231,45 @@ fetch('Coachingslijst.xlsx')
 
         if (!rows.length) {
             console.warn('Coachingslijst.xlsx bevat geen data in tabblad', sheetName);
-            return;
-        }
-
-        coachingHeaders = rows[0];
-        coachingRows = rows.slice(1);
-
-        const pIndex = coachingHeaders.indexOf('P-nr');
-        const ratingIndex = coachingHeaders.indexOf('Beoordeling coaching');
-        const dateIndex = findColumnIndexByNames(coachingHeaders, ['datum', 'datum coaching']);
-
-        if (pIndex === -1 || ratingIndex === -1) {
-            console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in Coachingslijst.xlsx');
-            // we stoppen hier met voltooide coachings, maar proberen nog wel tabblad "Coaching"
         } else {
-            coachingRows.forEach(row => {
-                const p = row[pIndex];
-                const rating = row[ratingIndex];
-                const status = getCoachingStatusByText(rating);
-                if (!p || !status) return;
+            coachingHeaders = rows[0];
+            coachingRows = rows.slice(1);
 
-                let dateObj = null;
-                let dateString = '';
-                if (dateIndex !== -1) {
-                    const rawDate = row[dateIndex];
-                    dateObj = excelSerialToDate(rawDate);
-                    dateString = dateToDisplayString(dateObj);
-                }
+            const pIndex = coachingHeaders.indexOf('P-nr');
+            const ratingIndex = coachingHeaders.indexOf('Beoordeling coaching');
+            const dateIndex = findColumnIndexByNames(coachingHeaders, ['datum', 'datum coaching']);
 
-                const key = String(p).trim();
-                if (!coachingMap[key]) {
-                    coachingMap[key] = [];
-                }
-                coachingMap[key].push({
-                    status: status,
-                    date: dateObj,
-                    dateString: dateString
+            if (pIndex === -1 || ratingIndex === -1) {
+                console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in Coachingslijst.xlsx');
+            } else {
+                coachingRows.forEach(row => {
+                    const p = row[pIndex];
+                    const rating = row[ratingIndex];
+                    const status = getCoachingStatusByText(rating);
+                    if (!p || !status) return;
+
+                    let dateObj = null;
+                    let dateString = '';
+                    if (dateIndex !== -1) {
+                        const rawDate = row[dateIndex];
+                        dateObj = excelSerialToDate(rawDate);
+                        dateString = dateToDisplayString(dateObj);
+                    }
+
+                    const key = String(p).trim();
+                    if (!coachingMap[key]) {
+                        coachingMap[key] = [];
+                    }
+                    coachingMap[key].push({
+                        status: status,
+                        date: dateObj,
+                        dateString: dateString
+                    });
                 });
-            });
+            }
         }
 
-        // ---- NIEUW: tabblad "Coaching" (openstaande / ingeplande coachings) ----
+        // tabblad "Coaching" uitlezen (openstaande / ingeplande coachings)
         if (workbook.SheetNames.includes('Coaching')) {
             const sheet2 = workbook.Sheets['Coaching'];
             const rows2 = XLSX.utils.sheet_to_json(sheet2, { header: 1 });
@@ -1219,13 +1296,14 @@ fetch('Coachingslijst.xlsx')
 
         console.log('CoachingMap:', coachingMap);
         console.log('CoachingPendingSet:', coachingPendingSet);
+
         updateFilterAndViews();
+        updateCoachingStats();
     })
     .catch(err => {
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
-
 
 </body>
 </html>
