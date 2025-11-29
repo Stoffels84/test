@@ -9,370 +9,551 @@
     <!-- Grafieken voor Voertuig-tab -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<style>
-/* ====== Thema & basis ====== */
-:root {
-    --bg-page: #f3f4f6;
-    --bg-box: #ffffff;
-    --border-soft: #d1d5db;
-    --accent: #2563eb;
-    --accent-soft: #dbeafe;
-    --text-main: #111827;
-    --text-muted: #6b7280;
-    --table-header: #f9fafb;
-    --hover-row: #eef2ff;
-    --shadow-soft: 0 8px 22px rgba(0,0,0,0.06);
-    --radius: 12px;
-}
+    <style>
+    /* ====== Thema & basis ====== */
+    :root {
+        --bg-page: #f3f4f6;
+        --bg-sidebar: #111827;
+        --bg-sidebar-soft: #1f2937;
+        --bg-box: #ffffff;
+        --border-soft: #d1d5db;
+        --accent: #2563eb;
+        --accent-soft: #dbeafe;
+        --text-main: #111827;
+        --text-muted: #6b7280;
+        --sidebar-text: #e5e7eb;
+        --table-header: #f9fafb;
+        --hover-row: #eef2ff;
+        --shadow-soft: 0 8px 22px rgba(0,0,0,0.06);
+        --radius: 12px;
+    }
 
-body {
-    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-    margin: 0;
-    padding: 0;
-    background: var(--bg-page);
-    color: var(--text-main);
-}
+    * {
+        box-sizing: border-box;
+    }
 
-/* ====== Container ====== */
-.box {
-    max-width: 1300px;
-    margin: 20px auto;
-    padding: 22px 28px;
-    background: var(--bg-box);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-soft);
-}
+    body {
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: var(--bg-page);
+        color: var(--text-main);
+    }
 
-/* ====== Logo linksboven ====== */
-.logo-title {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 6px;
-}
+    /* ====== Layout met sidebar ====== */
+    .app-layout {
+        display: flex;
+        min-height: 100vh;
+    }
 
-.site-logo {
-    height: 42px;
-    width: auto;
-    object-fit: contain;
-    display: block;
-}
+    .sidebar {
+        width: 230px;
+        background: linear-gradient(to bottom, var(--bg-sidebar), var(--bg-sidebar-soft));
+        color: var(--sidebar-text);
+        padding: 18px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        box-shadow: 4px 0 12px rgba(0,0,0,0.15);
+    }
 
-/* ====== Tabs ====== */
-.tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    border-bottom: 1px solid var(--border-soft);
-    margin-bottom: 12px;
-}
+    .sidebar-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+    }
 
-.tab-button {
-    padding: 7px 14px;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    background: #f3f4f6;
-    cursor: pointer;
-    font-size: 13px;
-    transition: .15s;
-    color: var(--text-muted);
-}
+    .site-logo {
+        height: 40px;
+        width: 40px;
+        border-radius: 8px;
+        object-fit: contain;
+        background: #fff;
+        padding: 4px;
+    }
 
-.tab-button:hover {
-    background: #e5e7eb;
-}
+    .sidebar-title-group {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
 
-.tab-button.active {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-}
+    .sidebar-title {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
 
-/* ====== Tabellen volledig schermbreed ====== */
-.table-container {
-    width: 100%;
-    margin-top: 10px;
-    overflow-x: auto;
-}
+    .sidebar-subtitle {
+        font-size: 11px;
+        color: #9ca3af;
+    }
 
-/* Dit FORCEREN we nu naar volle breedte */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-}
+    .sidebar-section-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: #9ca3af;
+        margin: 4px 0 2px;
+    }
 
-/* Kolommen nu flexibel */
-th, td {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border-soft);
-    text-align: left;
-}
+    .sidebar-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+    }
 
-/* Tabelkop zichtbaarder */
-th {
-    background: var(--table-header);
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    position: sticky;
-    top: 0;
-    z-index: 2;
-}
+    /* We gebruiken hier de bestaande .tab-button, maar nu als verticale nav in sidebar */
+    .tab-button {
+        width: 100%;
+        text-align: left;
+        padding: 7px 10px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: transparent;
+        cursor: pointer;
+        font-size: 13px;
+        color: #e5e7eb;
+        transition: .15s;
+    }
 
-/* Hover */
-tbody tr:hover {
-    background: var(--hover-row);
-}
+    .tab-button:hover {
+        background: rgba(31,41,55,0.9);
+    }
 
-/* Detailblokken */
-.chauffeur-detail-row td,
-.voertuig-detail-row td,
-.locatie-detail-row td {
-    background: #fafafa;
-}
+    .tab-button.active {
+        background: var(--accent);
+        border-color: rgba(37,99,235,0.6);
+        color: #f9fafb;
+        font-weight: 600;
+        box-shadow: 0 0 0 1px rgba(37,99,235,0.5);
+    }
 
-/* Links (EAF) */
-a.table-link {
-    color: var(--accent);
-    text-decoration: none;
-    font-weight: 600;
-}
-a.table-link::after {
-    content: " ↗";
-    font-size: 11px;
-}
-a.table-link:hover {
-    text-decoration: underline;
-}
+    .main-area {
+        flex: 1;
+        padding: 20px 24px;
+    }
 
-/* Filters & inputvelden */
-#search-input,
-#dashboard-search-input {
-    padding: 8px 12px;
-    border-radius: 999px;
-    border: 1px solid var(--border-soft);
-    font-size: 14px;
-    background: #f9fafb;
-    margin-bottom: 10px;
-    width: 300px;
-    max-width: 100%;
-}
+    .box {
+        width: 100%;
+        margin: 0 auto 24px;
+        padding: 18px 20px 24px;
+        background: var(--bg-box);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-soft);
+    }
 
-select {
-    padding: 6px 12px;
-    border-radius: 999px;
-    border: 1px solid var(--border-soft);
-    background: #f9fafb;
-    font-size: 13px;
-}
+    h1 {
+        margin: 0 0 4px;
+        font-size: 20px;
+        letter-spacing: 0.03em;
+    }
 
-#dashboard-search-button {
-    padding: 8px 16px;
-    border-radius: 999px;
-    border: 1px solid var(--border-soft);
-    background: #f3f4f6;
-    cursor: pointer;
-    transition: .15s;
-}
-#dashboard-search-button:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-}
+    #status {
+        margin-top: 0;
+        margin-bottom: 12px;
+        color: var(--text-muted);
+        font-size: 13px;
+    }
 
-/* Charts */
-.chart-container {
-    height: 260px;
-    margin-top: 14px;
-}
+    /* ====== Bovenste filterbalk ====== */
+    #top-filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 6px;
+        font-size: 13px;
+        color: var(--text-muted);
+    }
 
-/* Responsive */
-@media (max-width: 900px) {
-    .box { padding: 16px; }
-    th, td { padding: 8px; }
-    .site-logo { height: 32px; }
-}
-</style>
+    #year-filter {
+        padding: 6px 10px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f9fafb;
+        outline: none;
+    }
 
+    #year-filter:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+    }
+
+    /* We gebruiken geen horizontale tabs meer bovenaan, dus .tabs niet nodig in main */
+
+    .tab-content {
+        display: none;
+        padding-top: 4px;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    /* ====== Tabellen: volle breedte van content ====== */
+    .table-container {
+        width: 100%;
+        margin-top: 10px;
+        overflow-x: auto;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    th,
+    td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border-soft);
+        text-align: left;
+    }
+
+    th {
+        background: var(--table-header);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    tbody tr:hover {
+        background: var(--hover-row);
+    }
+
+    .chauffeur-detail-row td,
+    .voertuig-detail-row td,
+    .locatie-detail-row td {
+        background: #f9fafb;
+    }
+
+    /* Links (EAF) */
+    a.table-link {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    a.table-link::after {
+        content: " ↗";
+        font-size: 11px;
+    }
+    a.table-link:hover {
+        text-decoration: underline;
+    }
+
+    /* Zoekvelden & selecties */
+    #search-input,
+    #dashboard-search-input {
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        font-size: 13px;
+        background: #f9fafb;
+        margin: 4px 0 10px;
+        width: 280px;
+        max-width: 100%;
+        outline: none;
+    }
+
+    #search-input:focus,
+    #dashboard-search-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+        background: #ffffff;
+    }
+
+    #chauffeur-limit,
+    #voertuig-limit,
+    #locatie-limit {
+        padding: 5px 10px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f9fafb;
+        outline: none;
+        margin-left: 4px;
+    }
+
+    #dashboard-search-button {
+        padding: 7px 14px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f3f4f6;
+        cursor: pointer;
+        margin-top: 4px;
+        transition: background 0.15s, border-color 0.15s;
+    }
+
+    #dashboard-search-button:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+    }
+
+    #dashboard-info {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+
+    .placeholder-text {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin-top: 10px;
+    }
+
+    .chart-container {
+        margin-top: 14px;
+        height: 260px;
+    }
+
+    /* rijen klikbaar in overzichten */
+    #chauffeur-table tbody tr,
+    #voertuig-table tbody tr,
+    #locatie-table tbody tr {
+        cursor: pointer;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+        .app-layout {
+            flex-direction: column;
+        }
+        .sidebar {
+            width: 100%;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .sidebar-nav {
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .tab-button {
+            flex: 0 1 auto;
+            font-size: 12px;
+            padding: 6px 10px;
+        }
+        .main-area {
+            padding: 12px;
+        }
+        .box {
+            padding: 14px 12px 18px;
+        }
+        th, td {
+            padding: 6px 6px;
+            font-size: 12px;
+        }
+        .site-logo {
+            height: 32px;
+            width: 32px;
+        }
+    }
+
+    @media (max-width: 600px) {
+        #search-input,
+        #dashboard-search-input {
+            width: 100%;
+        }
+    }
+    </style>
 </head>
 <body>
 
-<div class="box">
-    <div class="logo-title">
-        <img src="logo.png" alt="Logo" class="site-logo">
-        <h1>Schadeanalyse</h1>
-    </div>
-
-
-    <div id="top-filters">
-        <label for="year-filter">Jaar:
-            <select id="year-filter">
-                <option value="ALL">Alle jaren</option>
-                <!-- Jaren worden dynamisch ingevuld -->
-            </select>
-        </label>
-    </div>
-
-    <p id="status">Bezig met laden van het Excel-bestand...</p>
-
-    <!-- TAB KNOPPEN -->
-    <div class="tabs">
-        <button class="tab-button active" data-tab="tab-all">1. Alle data</button>
-        <button class="tab-button" data-tab="tab-chauffeur">2. Chauffeur</button>
-        <button class="tab-button" data-tab="tab-voertuig">3. Voertuig</button>
-        <button class="tab-button" data-tab="tab-locatie">4. Locatie</button>
-        <button class="tab-button" data-tab="tab-dashboard">5. Dashboard (opzoeken)</button>
-        <button class="tab-button" data-tab="tab-coaching">6. Coaching</button>
-        <button class="tab-button" data-tab="tab-analyse">7. Analyse</button>
-    </div>
-
-    <!-- TAB 1: ALLE DATA (BRON) -->
-    <div class="tab-content active" id="tab-all">
-        <h2>Alle data (tabblad BRON)</h2>
-        <p>Hier zie je alle ruwe gegevens uit het Excel-tabblad <strong>BRON</strong>. De jaarfilter bovenaan werkt op alle tabs.</p>
-
-        <input id="search-input" type="text" placeholder="Zoeken in alle kolommen..." />
-
-        <div class="table-container">
-            <table id="tabel">
-                <thead></thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- TAB 2: CHAUFFEUR -->
-    <div class="tab-content" id="tab-chauffeur">
-        <h2>Data rond chauffeur</h2>
-        <p>Overzicht van aantal schades per chauffeur (gefilterd op gekozen jaar). Klik op een chauffeur voor details direct onder de rij.</p>
-
-        <label for="chauffeur-limit">Toon:
-            <select id="chauffeur-limit">
-                <option value="10">Top 10</option>
-                <option value="20">Top 20</option>
-                <option value="0">Alle chauffeurs</option>
-            </select>
-        </label>
-
-        <div class="table-container">
-            <table id="chauffeur-table">
-                <thead>
-                    <tr>
-                        <th>Chauffeur</th>
-                        <th>Aantal</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- TAB 3: VOERTUIG -->
-    <div class="tab-content" id="tab-voertuig">
-        <h2>Data rond voertuig (Bus/Tram)</h2>
-        <p>Overzicht van aantal schades per type voertuig op basis van kolom <strong>Bus/Tram</strong>. Klik op een type voor details direct onder de rij.</p>
-
-        <label for="voertuig-limit">Toon:
-            <select id="voertuig-limit">
-                <option value="10">Top 10</option>
-                <option value="20">Top 20</option>
-                <option value="0">Alle types</option>
-            </select>
-        </label>
-
-        <div class="table-container">
-            <table id="voertuig-table">
-                <thead>
-                    <tr>
-                        <th>Type voertuig</th>
-                        <th>Aantal</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+<div class="app-layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div>
+            <div class="sidebar-header">
+                <img src="logo.png" alt="Logo" class="site-logo">
+                <div class="sidebar-title-group">
+                    <div class="sidebar-title">Schadeanalyse</div>
+                    <div class="sidebar-subtitle">Overzicht & rapportering</div>
+                </div>
+            </div>
+            <div class="sidebar-section-label">Navigatie</div>
         </div>
 
-        <h3>Schades per maand en voertuigtype</h3>
-        <p style="font-size:13px;color:#555;">
-            Deze grafiek respecteert de gekozen jaarfilter bovenaan. <br>
-            X-as = maanden, kleur = voertuigtype (Bus/Tram).
-        </p>
-        <div class="chart-container">
-            <canvas id="voertuig-month-chart"></canvas>
+        <nav class="sidebar-nav">
+            <button class="tab-button active" data-tab="tab-all">1. Alle data</button>
+            <button class="tab-button" data-tab="tab-chauffeur">2. Chauffeur</button>
+            <button class="tab-button" data-tab="tab-voertuig">3. Voertuig</button>
+            <button class="tab-button" data-tab="tab-locatie">4. Locatie</button>
+            <button class="tab-button" data-tab="tab-dashboard">5. Dashboard</button>
+            <button class="tab-button" data-tab="tab-coaching">6. Coaching</button>
+            <button class="tab-button" data-tab="tab-analyse">7. Analyse</button>
+        </nav>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-area">
+        <div class="box">
+            <div id="top-filters">
+                <label for="year-filter">Jaar:
+                    <select id="year-filter">
+                        <option value="ALL">Alle jaren</option>
+                    </select>
+                </label>
+            </div>
+
+            <p id="status">Bezig met laden van het Excel-bestand...</p>
+
+            <!-- TAB 1: ALLE DATA -->
+            <div class="tab-content active" id="tab-all">
+                <h2>Alle data (tabblad BRON)</h2>
+                <p>Hier zie je alle ruwe gegevens uit het Excel-tabblad <strong>BRON</strong>. De jaarfilter bovenaan werkt op alle tabs.</p>
+
+                <input id="search-input" type="text" placeholder="Zoeken in alle kolommen..." />
+
+                <div class="table-container">
+                    <table id="tabel">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 2: CHAUFFEUR -->
+            <div class="tab-content" id="tab-chauffeur">
+                <h2>Data rond chauffeur</h2>
+                <p>Overzicht van aantal schades per chauffeur (gefilterd op gekozen jaar). Klik op een chauffeur voor details direct onder de rij.</p>
+
+                <label for="chauffeur-limit">Toon:
+                    <select id="chauffeur-limit">
+                        <option value="10">Top 10</option>
+                        <option value="20">Top 20</option>
+                        <option value="0">Alle chauffeurs</option>
+                    </select>
+                </label>
+
+                <div class="table-container">
+                    <table id="chauffeur-table">
+                        <thead>
+                            <tr>
+                                <th>Chauffeur</th>
+                                <th>Aantal</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 3: VOERTUIG -->
+            <div class="tab-content" id="tab-voertuig">
+                <h2>Data rond voertuig (Bus/Tram)</h2>
+                <p>Overzicht van aantal schades per type voertuig op basis van kolom <strong>Bus/Tram</strong>. Klik op een type voor details direct onder de rij.</p>
+
+                <label for="voertuig-limit">Toon:
+                    <select id="voertuig-limit">
+                        <option value="10">Top 10</option>
+                        <option value="20">Top 20</option>
+                        <option value="0">Alle types</option>
+                    </select>
+                </label>
+
+                <div class="table-container">
+                    <table id="voertuig-table">
+                        <thead>
+                            <tr>
+                                <th>Type voertuig</th>
+                                <th>Aantal</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <h3>Schades per maand en voertuigtype</h3>
+                <p style="font-size:13px;color:#6b7280;">
+                    Deze grafiek respecteert de gekozen jaarfilter bovenaan.<br>
+                    X-as = maanden, kleur = voertuigtype (Bus/Tram).
+                </p>
+                <div class="chart-container">
+                    <canvas id="voertuig-month-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- TAB 4: LOCATIE -->
+            <div class="tab-content" id="tab-locatie">
+                <h2>Data rond locatie</h2>
+                <p>Overzicht van aantal schades per locatie (gefilterd op gekozen jaar). Klik op een locatie voor details direct onder de rij.</p>
+
+                <label for="locatie-limit">Toon:
+                    <select id="locatie-limit">
+                        <option value="10">Top 10</option>
+                        <option value="20">Top 20</option>
+                        <option value="0">Alle locaties</option>
+                    </select>
+                </label>
+
+                <div class="table-container">
+                    <table id="locatie-table">
+                        <thead>
+                            <tr>
+                                <th>Locatie</th>
+                                <th>Aantal</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 5: DASHBOARD / OPZOEKEN -->
+            <div class="tab-content" id="tab-dashboard">
+                <h2>Dashboard – Chauffeur opzoeken</h2>
+                <p>Zoek op <strong>personeelsnummer</strong> of <strong>naam</strong>. De resultaten worden gefilterd op het geselecteerde jaar bovenaan.</p>
+
+                <input id="dashboard-search-input" type="text" placeholder="Personeelsnr of naam..." />
+                <button id="dashboard-search-button">Zoeken</button>
+                <div id="dashboard-info">Tip: je kunt een deel van de naam of het nummer ingeven.</div>
+
+                <div class="table-container" style="margin-top:10px;">
+                    <table id="dashboard-table">
+                        <thead>
+                            <tr>
+                                <th>Datum</th>
+                                <th>Naam</th>
+                                <th>Personeelsnr</th>
+                                <th>Voertuigtype</th>
+                                <th>Locatie</th>
+                                <th>Actief</th>
+                                <th>Link</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 6: COACHING -->
+            <div class="tab-content" id="tab-coaching">
+                <h2>Coaching</h2>
+                <p class="placeholder-text">
+                    Wordt later uitgewerkt. Bijvoorbeeld overzicht van coaching-acties per chauffeur.
+                </p>
+            </div>
+
+            <!-- TAB 7: ANALYSE -->
+            <div class="tab-content" id="tab-analyse">
+                <h2>Analyse</h2>
+                <p class="placeholder-text">
+                    Wordt later uitgewerkt. Hier kun je diepere analyses doen op patronen in de data.
+                </p>
+            </div>
         </div>
-    </div>
-
-    <!-- TAB 4: LOCATIE -->
-    <div class="tab-content" id="tab-locatie">
-        <h2>Data rond locatie</h2>
-        <p>Overzicht van aantal schades per locatie (gefilterd op gekozen jaar). Klik op een locatie voor details direct onder de rij.</p>
-
-        <label for="locatie-limit">Toon:
-            <select id="locatie-limit">
-                <option value="10">Top 10</option>
-                <option value="20">Top 20</option>
-                <option value="0">Alle locaties</option>
-            </select>
-        </label>
-
-        <div class="table-container">
-            <table id="locatie-table">
-                <thead>
-                    <tr>
-                        <th>Locatie</th>
-                        <th>Aantal</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- TAB 5: DASHBOARD / OPZOEKEN -->
-    <div class="tab-content" id="tab-dashboard">
-        <h2>Dashboard – Chauffeur opzoeken</h2>
-        <p>Zoek op <strong>personeelsnummer</strong> of <strong>naam</strong>. De resultaten worden gefilterd op het geselecteerde jaar bovenaan.</p>
-
-        <input id="dashboard-search-input" type="text" placeholder="Personeelsnr of naam..." />
-        <button id="dashboard-search-button">Zoeken</button>
-        <div id="dashboard-info">Tip: je kunt een deel van de naam of het nummer ingeven.</div>
-
-        <div class="table-container" style="margin-top:10px;">
-            <table id="dashboard-table">
-                <thead>
-                    <tr>
-                        <th>Datum</th>
-                        <th>Naam</th>
-                        <th>Personeelsnr</th>
-                        <th>Voertuigtype</th>
-                        <th>Locatie</th>
-                        <th>Actief</th>
-                        <th>Link</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- TAB 6: COACHING -->
-    <div class="tab-content" id="tab-coaching">
-        <h2>Coaching</h2>
-        <p class="placeholder-text">
-            Wordt later uitgewerkt. Bijvoorbeeld overzicht van coaching-acties per chauffeur.
-        </p>
-    </div>
-
-    <!-- TAB 7: ANALYSE -->
-    <div class="tab-content" id="tab-analyse">
-        <h2>Analyse</h2>
-        <p class="placeholder-text">
-            Wordt later uitgewerkt. Hier kun je diepere analyses doen op patronen in de data.
-        </p>
-    </div>
-
+    </main>
 </div>
 
 <script>
@@ -387,8 +568,8 @@ select {
 
     // globale data
     let allHeaders = [];
-    let baseRows = [];        // alle rijen uit BRON (on-gefilterd)
-    let filteredRows = [];    // rijen na jaarfilter
+    let baseRows = [];
+    let filteredRows = [];
     let dateColIndex = -1;
     let chauffeurColIndex = -1;
     let voertuigColIndex = -1;
@@ -402,7 +583,7 @@ select {
     let locatieData = [];
     let voertuigMonthChart = null;
 
-    // ---- Tabs ----
+    // ---- Tabs (sidebar buttons) ----
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
 
@@ -446,7 +627,7 @@ select {
     // ---- Excel-seriedatum -> Date-object ----
     function excelSerialToDate(cell) {
         if (typeof cell === 'number') {
-            const excelEpoch = Date.UTC(1899, 11, 30); // 30 dec 1899
+            const excelEpoch = Date.UTC(1899, 11, 30);
             const millis = cell * 24 * 60 * 60 * 1000;
             return new Date(excelEpoch + millis);
         }
@@ -456,11 +637,11 @@ select {
                 let [a, b, c] = parts.map(p => p.trim());
                 let day, month, year;
 
-                if (a.length === 4) { // jjjj-mm-dd
+                if (a.length === 4) {
                     year = parseInt(a, 10);
                     month = parseInt(b, 10);
                     day = parseInt(c, 10);
-                } else { // dd/mm/jjjj
+                } else {
                     day = parseInt(a, 10);
                     month = parseInt(b, 10);
                     year = parseInt(c, 10);
@@ -475,18 +656,15 @@ select {
         return null;
     }
 
-    // ---- Date -> dd/mm/jjjj ----
     function excelSerialToDateString(cell) {
         const date = excelSerialToDate(cell);
         if (!date) return cell;
-
         const day = String(date.getUTCDate()).padStart(2, '0');
         const month = String(date.getUTCMonth() + 1).padStart(2, '0');
         const year = date.getUTCFullYear();
         return `${day}/${month}/${year}`;
     }
 
-    // ---- Helper: kolomindex zoeken op naam ----
     function findColumnIndexByNames(headers, possibleNames) {
         const lower = headers.map(h => String(h).toLowerCase().trim());
         for (const name of possibleNames) {
@@ -496,7 +674,6 @@ select {
         return -1;
     }
 
-    // ---- Jaren in dropdown stoppen ----
     function populateYearFilter() {
         yearFilterSelect.innerHTML = '';
         const optAll = document.createElement('option');
@@ -521,7 +698,6 @@ select {
         });
     }
 
-    // ---- Filter: welke rijen horen bij huidig jaar? ----
     function getFilteredRows() {
         if (dateColIndex === -1) return baseRows;
         const value = yearFilterSelect.value;
@@ -559,36 +735,25 @@ select {
         return td;
     }
 
-    // ---- Alle data body opnieuw opbouwen ----
     function rebuildAllDataTableBody(rows) {
         tbody.innerHTML = '';
-
         rows.forEach(r => {
             const tr = document.createElement('tr');
-
             r.forEach((cell, idx) => {
                 const td = createCell(idx, cell);
                 tr.appendChild(td);
             });
-
             tbody.appendChild(tr);
         });
     }
 
-    // ---- Chauffeur-aggregatie opbouwen ----
     function buildChauffeurData(rows) {
         chauffeurData = [];
-        if (chauffeurColIndex === -1) {
-            console.warn('Geen chauffeur-kolom gevonden.');
-            return;
-        }
-
-        const map = new Map(); // naam -> {name, count, rows:[]}
-
+        if (chauffeurColIndex === -1) return;
+        const map = new Map();
         rows.forEach(row => {
             let name = row[chauffeurColIndex];
             name = (name && String(name).trim() !== '') ? String(name).trim() : 'Onbekend';
-
             if (!map.has(name)) {
                 map.set(name, { name: name, count: 0, rows: [] });
             }
@@ -596,24 +761,16 @@ select {
             entry.count++;
             entry.rows.push(row);
         });
-
         chauffeurData = Array.from(map.values()).sort((a, b) => b.count - a.count);
     }
 
-    // ---- Voertuig-aggregatie opbouwen (Bus/Tram) ----
     function buildVoertuigData(rows) {
         voertuigData = [];
-        if (voertuigColIndex === -1) {
-            console.warn('Geen voertuig-kolom (Bus/Tram) gevonden.');
-            return;
-        }
-
-        const map = new Map(); // type -> {type, count, rows:[]}
-
+        if (voertuigColIndex === -1) return;
+        const map = new Map();
         rows.forEach(row => {
             let type = row[voertuigColIndex];
             type = (type && String(type).trim() !== '') ? String(type).trim() : 'Onbekend';
-
             if (!map.has(type)) {
                 map.set(type, { type: type, count: 0, rows: [] });
             }
@@ -621,24 +778,16 @@ select {
             entry.count++;
             entry.rows.push(row);
         });
-
         voertuigData = Array.from(map.values()).sort((a, b) => b.count - a.count);
     }
 
-    // ---- Locatie-aggregatie opbouwen ----
     function buildLocatieData(rows) {
         locatieData = [];
-        if (locatieColIndex === -1) {
-            console.warn('Geen locatie-kolom gevonden.');
-            return;
-        }
-
-        const map = new Map(); // locatie -> {locatie, count, rows:[]}
-
+        if (locatieColIndex === -1) return;
+        const map = new Map();
         rows.forEach(row => {
             let loc = row[locatieColIndex];
             loc = (loc && String(loc).trim() !== '') ? String(loc).trim() : 'Onbekend';
-
             if (!map.has(loc)) {
                 map.set(loc, { locatie: loc, count: 0, rows: [] });
             }
@@ -646,20 +795,16 @@ select {
             entry.count++;
             entry.rows.push(row);
         });
-
         locatieData = Array.from(map.values()).sort((a, b) => b.count - a.count);
     }
 
-    // ---- Chauffeur details inline (toggle) ----
     function showChauffeurDetailsInline(name, clickedRow) {
         const tbodyCh = document.querySelector('#chauffeur-table tbody');
-
         const nextRow = clickedRow.nextElementSibling;
         if (nextRow && nextRow.classList.contains('chauffeur-detail-row')) {
             nextRow.remove();
             return;
         }
-
         Array.from(tbodyCh.querySelectorAll('.chauffeur-detail-row')).forEach(r => r.remove());
 
         const entry = chauffeurData.find(c => c.name === name);
@@ -667,12 +812,10 @@ select {
 
         const headers = allHeaders;
         const cols = [];
-
         const addCol = (possibleNames) => {
             const idx = findColumnIndexByNames(headers, possibleNames);
             if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
         };
-
         if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
         addCol(['datum']);
         addCol(['locatie']);
@@ -709,23 +852,18 @@ select {
 
         innerTable.appendChild(theadInner);
         innerTable.appendChild(tbodyInner);
-
         detailTd.appendChild(innerTable);
         detailTr.appendChild(detailTd);
-
         clickedRow.insertAdjacentElement('afterend', detailTr);
     }
 
-    // ---- Voertuig details inline (toggle) ----
     function showVoertuigDetailsInline(type, clickedRow) {
         const tbodyV = document.querySelector('#voertuig-table tbody');
-
         const nextRow = clickedRow.nextElementSibling;
         if (nextRow && nextRow.classList.contains('voertuig-detail-row')) {
             nextRow.remove();
             return;
         }
-
         Array.from(tbodyV.querySelectorAll('.voertuig-detail-row')).forEach(r => r.remove());
 
         const entry = voertuigData.find(v => v.type === type);
@@ -733,12 +871,10 @@ select {
 
         const headers = allHeaders;
         const cols = [];
-
         const addCol = (possibleNames) => {
             const idx = findColumnIndexByNames(headers, possibleNames);
             if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
         };
-
         if (voertuigColIndex !== -1) cols.push(voertuigColIndex);
         addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
         addCol(['datum']);
@@ -775,23 +911,18 @@ select {
 
         innerTable.appendChild(theadInner);
         innerTable.appendChild(tbodyInner);
-
         detailTd.appendChild(innerTable);
         detailTr.appendChild(detailTd);
-
         clickedRow.insertAdjacentElement('afterend', detailTr);
     }
 
-    // ---- Locatie details inline (toggle) ----
     function showLocatieDetailsInline(loc, clickedRow) {
         const tbodyL = document.querySelector('#locatie-table tbody');
-
         const nextRow = clickedRow.nextElementSibling;
         if (nextRow && nextRow.classList.contains('locatie-detail-row')) {
             nextRow.remove();
             return;
         }
-
         Array.from(tbodyL.querySelectorAll('.locatie-detail-row')).forEach(r => r.remove());
 
         const entry = locatieData.find(l => l.locatie === loc);
@@ -799,12 +930,10 @@ select {
 
         const headers = allHeaders;
         const cols = [];
-
         const addCol = (possibleNames) => {
             const idx = findColumnIndexByNames(headers, possibleNames);
             if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
         };
-
         if (locatieColIndex !== -1) cols.push(locatieColIndex);
         addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
         addCol(['datum']);
@@ -841,101 +970,74 @@ select {
 
         innerTable.appendChild(theadInner);
         innerTable.appendChild(tbodyInner);
-
         detailTd.appendChild(innerTable);
         detailTr.appendChild(detailTd);
-
         clickedRow.insertAdjacentElement('afterend', detailTr);
     }
 
-    // ---- Chauffeur tabel updaten ----
     function updateChauffeurView() {
         const limitSelect = document.getElementById('chauffeur-limit');
         const tbodyCh = document.querySelector('#chauffeur-table tbody');
         tbodyCh.innerHTML = '';
-
         let limit = parseInt(limitSelect.value, 10);
         if (isNaN(limit) || limit < 0) limit = 10;
-
         const list = (limit === 0) ? chauffeurData : chauffeurData.slice(0, limit);
-
         list.forEach(ch => {
             const tr = document.createElement('tr');
             tr.dataset.chauffeur = ch.name;
-
             const tdName = document.createElement('td');
             tdName.textContent = ch.name;
             const tdCount = document.createElement('td');
             tdCount.textContent = ch.count;
-
             tr.appendChild(tdName);
             tr.appendChild(tdCount);
-
             tr.addEventListener('click', () => showChauffeurDetailsInline(ch.name, tr));
-
             tbodyCh.appendChild(tr);
         });
     }
 
-    // ---- Voertuig tabel updaten ----
     function updateVoertuigView() {
         const limitSelect = document.getElementById('voertuig-limit');
         const tbodyV = document.querySelector('#voertuig-table tbody');
         tbodyV.innerHTML = '';
-
         let limit = parseInt(limitSelect.value, 10);
         if (isNaN(limit) || limit < 0) limit = 10;
-
         const list = (limit === 0) ? voertuigData : voertuigData.slice(0, limit);
-
         list.forEach(v => {
             const tr = document.createElement('tr');
             tr.dataset.type = v.type;
-
             const tdType = document.createElement('td');
             tdType.textContent = v.type;
             const tdCount = document.createElement('td');
             tdCount.textContent = v.count;
-
             tr.appendChild(tdType);
             tr.appendChild(tdCount);
-
             tr.addEventListener('click', () => showVoertuigDetailsInline(v.type, tr));
-
             tbodyV.appendChild(tr);
         });
     }
 
-    // ---- Locatie tabel updaten ----
     function updateLocatieView() {
         const limitSelect = document.getElementById('locatie-limit');
         const tbodyL = document.querySelector('#locatie-table tbody');
         tbodyL.innerHTML = '';
-
         let limit = parseInt(limitSelect.value, 10);
         if (isNaN(limit) || limit < 0) limit = 10;
-
         const list = (limit === 0) ? locatieData : locatieData.slice(0, limit);
-
         list.forEach(l => {
             const tr = document.createElement('tr');
             tr.dataset.locatie = l.locatie;
-
             const tdLoc = document.createElement('td');
             tdLoc.textContent = l.locatie;
             const tdCount = document.createElement('td');
             tdCount.textContent = l.count;
-
             tr.appendChild(tdLoc);
             tr.appendChild(tdCount);
-
             tr.addEventListener('click', () => showLocatieDetailsInline(l.locatie, tr));
-
             tbodyL.appendChild(tr);
         });
     }
 
-    // ---- Grafiek Voertuig: schades per maand en type ----
     function buildVoertuigMonthChart(rows) {
         const canvas = document.getElementById('voertuig-month-chart');
         if (!canvas || voertuigColIndex === -1 || dateColIndex === -1) return;
@@ -1001,17 +1103,13 @@ select {
         });
     }
 
-    // ---- Dashboard zoeken op personeelsnr / naam ----
     function searchDashboard() {
         const input = document.getElementById('dashboard-search-input');
         const term = input.value.trim().toLowerCase();
         const tbodyDash = document.querySelector('#dashboard-table tbody');
         tbodyDash.innerHTML = '';
 
-        if (!term) {
-            // niets tonen als zoekveld leeg is
-            return;
-        }
+        if (!term) return;
 
         const rows = filteredRows;
         const results = [];
@@ -1021,7 +1119,6 @@ select {
                 String(row[chauffeurColIndex]).toLowerCase() : '';
             const persVal = (personnelColIndex !== -1 && row[personnelColIndex]) ?
                 String(row[personnelColIndex]).toLowerCase() : '';
-
             if (nameVal.includes(term) || persVal.includes(term)) {
                 results.push(row);
             }
@@ -1037,7 +1134,6 @@ select {
             return;
         }
 
-        // kolommen die we willen tonen
         const cols = [];
         if (dateColIndex !== -1) cols.push(dateColIndex);
         if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
@@ -1057,7 +1153,6 @@ select {
         });
     }
 
-    // ---- Alles heropbouwen wanneer filter verandert ----
     function updateFilterAndViews() {
         filteredRows = getFilteredRows();
         rebuildAllDataTableBody(filteredRows);
@@ -1068,7 +1163,6 @@ select {
         updateVoertuigView();
         updateLocatieView();
         buildVoertuigMonthChart(filteredRows);
-        // Dashboard opnieuw toepassen op basis van huidige zoekterm
         searchDashboard();
 
         const filterText = (yearFilterSelect.value === 'ALL'
@@ -1078,28 +1172,14 @@ select {
             ' rijen geladen (' + filterText + ').';
     }
 
-    // ---- Select-listeners ----
-    document.getElementById('chauffeur-limit').addEventListener('change', () => {
-        updateChauffeurView();
-    });
-    document.getElementById('voertuig-limit').addEventListener('change', () => {
-        updateVoertuigView();
-    });
-    document.getElementById('locatie-limit').addEventListener('change', () => {
-        updateLocatieView();
-    });
-    yearFilterSelect.addEventListener('change', () => {
-        updateFilterAndViews();
-    });
+    document.getElementById('chauffeur-limit').addEventListener('change', updateChauffeurView);
+    document.getElementById('voertuig-limit').addEventListener('change', updateVoertuigView);
+    document.getElementById('locatie-limit').addEventListener('change', updateLocatieView);
+    yearFilterSelect.addEventListener('change', updateFilterAndViews);
 
-    // Dashboard zoeklisteners
-    document.getElementById('dashboard-search-button').addEventListener('click', () => {
-        searchDashboard();
-    });
+    document.getElementById('dashboard-search-button').addEventListener('click', searchDashboard);
     document.getElementById('dashboard-search-input').addEventListener('keyup', (e) => {
-        if (e.key === 'Enter') {
-            searchDashboard();
-        }
+        if (e.key === 'Enter') searchDashboard();
     });
 
     // ---- Init data uit Excel ----
@@ -1130,11 +1210,9 @@ select {
                 return;
             }
 
-            // basisgegevens
             allHeaders = rows[0];
             baseRows = rows.slice(1);
 
-            // tabel header invullen (Alle data)
             thead.innerHTML = '';
             const headerRow = document.createElement('tr');
             allHeaders.forEach(h => {
@@ -1144,37 +1222,15 @@ select {
             });
             thead.appendChild(headerRow);
 
-            // kolommen zoeken
             dateColIndex = findColumnIndexByNames(allHeaders, ['datum']);
-            chauffeurColIndex = findColumnIndexByNames(
-                allHeaders,
-                ['volledige naam', 'chauffeur', 'naam', 'bestuurder']
-            );
-            voertuigColIndex = findColumnIndexByNames(
-                allHeaders,
-                ['bus/tram', 'bus/ tram']
-            );
-            locatieColIndex = findColumnIndexByNames(
-                allHeaders,
-                ['locatie']
-            );
-            linkColIndex = findColumnIndexByNames(
-                allHeaders,
-                ['link']
-            );
-            personnelColIndex = findColumnIndexByNames(
-                allHeaders,
-                ['personeelsnr', 'personeelsnummer', 'personeels nr']
-            );
-            activeColIndex = findColumnIndexByNames(
-                allHeaders,
-                ['actief', 'active']
-            );
+            chauffeurColIndex = findColumnIndexByNames(allHeaders, ['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
+            voertuigColIndex = findColumnIndexByNames(allHeaders, ['bus/tram', 'bus/ tram']);
+            locatieColIndex = findColumnIndexByNames(allHeaders, ['locatie']);
+            linkColIndex = findColumnIndexByNames(allHeaders, ['link']);
+            personnelColIndex = findColumnIndexByNames(allHeaders, ['personeelsnr', 'personeelsnummer', 'personeels nr']);
+            activeColIndex = findColumnIndexByNames(allHeaders, ['actief', 'active']);
 
-            // jaren in filter
             populateYearFilter();
-
-            // eerste keer views opbouwen
             updateFilterAndViews();
         })
         .catch(err => {
