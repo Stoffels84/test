@@ -496,34 +496,43 @@
     // ---- Chauffeur details inline onder de rij ----
     function showChauffeurDetailsInline(name, clickedRow) {
         const tbodyCh = document.querySelector('#chauffeur-table tbody');
+    
+        // CONTROLEREN OF DE DETAILRIJ AL ONDER DEZE RIJ STAAT
+        const nextRow = clickedRow.nextElementSibling;
+        if (nextRow && nextRow.classList.contains('chauffeur-detail-row')) {
+            nextRow.remove();   // detail sluiten
+            return;
+        }
+    
+        // Eerst ALLE andere details verwijderen
         Array.from(tbodyCh.querySelectorAll('.chauffeur-detail-row')).forEach(r => r.remove());
-
+    
         const entry = chauffeurData.find(c => c.name === name);
         if (!entry) return;
-
+    
         const headers = allHeaders;
         const cols = [];
-
+    
         const addCol = (possibleNames) => {
             const idx = findColumnIndexByNames(headers, possibleNames);
             if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
         };
-
+    
         if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
         addCol(['datum']);
         addCol(['locatie']);
         addCol(['bus/ tram', 'bus/tram']);
         addCol(['link']);
-
+    
         const detailTr = document.createElement('tr');
         detailTr.className = 'chauffeur-detail-row';
         const detailTd = document.createElement('td');
         detailTd.colSpan = 2;
-
+    
         const innerTable = document.createElement('table');
         innerTable.style.width = '100%';
         innerTable.style.fontSize = '12px';
-
+    
         const theadInner = document.createElement('thead');
         const hr = document.createElement('tr');
         cols.forEach(idx => {
@@ -532,7 +541,7 @@
             hr.appendChild(th);
         });
         theadInner.appendChild(hr);
-
+    
         const tbodyInner = document.createElement('tbody');
         entry.rows.forEach(row => {
             const tr = document.createElement('tr');
@@ -547,15 +556,16 @@
             });
             tbodyInner.appendChild(tr);
         });
-
+    
         innerTable.appendChild(theadInner);
         innerTable.appendChild(tbodyInner);
-
+    
         detailTd.appendChild(innerTable);
         detailTr.appendChild(detailTd);
-
+    
         clickedRow.insertAdjacentElement('afterend', detailTr);
     }
+
 
     // ---- Voertuig details inline onder de rij ----
     function showVoertuigDetailsInline(type, clickedRow) {
