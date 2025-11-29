@@ -389,50 +389,64 @@
     }
 
     // ---- Helper: cel maken (datum, link, én coaching-bolletje bij P-nr) ----
-    function createCell(idx, rawValue) {
-        let value = rawValue;
-        if (idx === dateColIndex) {
-            value = excelSerialToDateString(rawValue);
-        }
-        const td = document.createElement('td');
+// ---- Helper: cel maken (datum, link, én coaching-bolletje bij P-nr) ----
+function createCell(idx, rawValue) {
+    let value = rawValue;
+    if (idx === dateColIndex) {
+        value = excelSerialToDateString(rawValue);
+    }
+    const td = document.createElement('td');
 
-        // Link-kolom => aanklikbare link naar EAF
-        if (idx === linkColIndex && value) {
-            const href = String(value).trim();
-            const a = document.createElement('a');
-            a.href = href;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
-            a.className = 'table-link';
-            a.textContent = '=> naar EAF';
-            td.appendChild(a);
-            return td;
-        }
-
-        // Personeelsnummer-kolom => tekst + eventueel gekleurd bolletje
-        if (idx === personnelColIndex) {
-            if (value !== null && value !== undefined) {
-                const txt = document.createTextNode(String(value));
-                td.appendChild(txt);
-
-                const status = getCoachingStatusForPnr(value);
-                if (status) {
-                    const span = document.createElement('span');
-                    span.classList.add('coaching-dot');
-                    if (status === 'good') span.classList.add('coaching-good');
-                    if (status === 'medium') span.classList.add('coaching-medium');
-                    if (status === 'bad') span.classList.add('coaching-bad');
-                    span.title = 'Beoordeling coaching: ' + status;
-                    td.appendChild(span);
-                }
-            }
-            return td;
-        }
-
-        // standaard cel
-        td.textContent = (value === null || value === undefined) ? '' : value;
+    // Link-kolom => aanklikbare link naar EAF
+    if (idx === linkColIndex && value) {
+        const href = String(value).trim();
+        const a = document.createElement('a');
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.className = 'table-link';
+        a.textContent = '=> naar EAF';
+        td.appendChild(a);
         return td;
     }
+
+    // Personeelsnummer-kolom => tekst + coaching-indicator
+    if (idx === personnelColIndex) {
+        if (value !== null && value !== undefined) {
+            const nummerText = String(value);
+            td.appendChild(document.createTextNode(nummerText));
+
+            const status = getCoachingStatusForPnr(value);
+
+            // Extra: tekst tonen zodat je zeker bent dat het werkt
+            if (status) {
+                const label = document.createElement('span');
+                label.style.marginLeft = '4px';
+                label.style.fontSize = '11px';
+                label.style.color = '#6b7280';
+                if (status === 'good')   label.textContent = '(coaching: goed)';
+                if (status === 'medium') label.textContent = '(coaching: voldoende/onv.)';
+                if (status === 'bad')    label.textContent = '(coaching: slecht)';
+                td.appendChild(label);
+
+                // Gekleurde bol
+                const dot = document.createElement('span');
+                dot.classList.add('coaching-dot');
+                if (status === 'good')   dot.classList.add('coaching-good');
+                if (status === 'medium') dot.classList.add('coaching-medium');
+                if (status === 'bad')    dot.classList.add('coaching-bad');
+                dot.title = 'Beoordeling coaching';
+                td.appendChild(dot);
+            }
+        }
+        return td;
+    }
+
+    // standaard cel
+    td.textContent = (value === null || value === undefined) ? '' : value;
+    return td;
+}
+
 
     function rebuildAllDataTableBody(rows) {
         tbody.innerHTML = '';
