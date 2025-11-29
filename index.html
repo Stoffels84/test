@@ -481,7 +481,7 @@
             value = excelSerialToDateString(rawValue);
         }
         const td = document.createElement('td');
-
+    
         if (idx === linkColIndex && value) {
             const href = String(value).trim();
             const a = document.createElement('a');
@@ -489,13 +489,15 @@
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
             a.className = 'table-link';
-            a.textContent = href;
+            // Tekst die je wil zien bij elke link:
+            a.textContent = '=> naar EAF';
             td.appendChild(a);
         } else {
             td.textContent = (value === null || value === undefined) ? '' : value;
         }
         return td;
     }
+
 
     // ---- Alle data body opnieuw opbouwen ----
     function rebuildAllDataTableBody(rows) {
