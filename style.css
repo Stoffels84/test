@@ -1,131 +1,359 @@
+
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background: #f4f4f4;
+    /* ====== Thema & basis ====== */
+    :root {
+        --bg-page: #f3f4f6;
+        --bg-sidebar: #111827;
+        --bg-sidebar-soft: #1f2937;
+        --bg-box: #ffffff;
+        --border-soft: #d1d5db;
+        --accent: #2563eb;
+        --accent-soft: #dbeafe;
+        --text-main: #111827;
+        --text-muted: #6b7280;
+        --sidebar-text: #e5e7eb;
+        --table-header: #f9fafb;
+        --hover-row: #eef2ff;
+        --shadow-soft: 0 8px 22px rgba(0,0,0,0.06);
+        --radius: 12px;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: var(--bg-page);
+        color: var(--text-main);
+    }
+
+    /* ====== Layout met sidebar ====== */
+    .app-layout {
+        display: flex;
+        min-height: 100vh;
+    }
+
+    .sidebar {
+        width: 230px;
+        background: linear-gradient(to bottom, var(--bg-sidebar), var(--bg-sidebar-soft));
+        color: var(--sidebar-text);
+        padding: 18px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        box-shadow: 4px 0 12px rgba(0,0,0,0.15);
+    }
+
+    .sidebar-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+    }
+
+    .site-logo {
+        height: 40px;
+        width: 40px;
+        border-radius: 8px;
+        object-fit: contain;
+        background: #fff;
+        padding: 4px;
+    }
+
+    .sidebar-title-group {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .sidebar-title {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .sidebar-subtitle {
+        font-size: 11px;
+        color: #9ca3af;
+    }
+
+    .sidebar-section-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: #9ca3af;
+        margin: 4px 0 2px;
+    }
+
+    .sidebar-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+    }
+
+    /* We gebruiken hier de bestaande .tab-button, maar nu als verticale nav in sidebar */
+    .tab-button {
+        width: 100%;
+        text-align: left;
+        padding: 7px 10px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: transparent;
+        cursor: pointer;
+        font-size: 13px;
+        color: #e5e7eb;
+        transition: .15s;
+    }
+
+    .tab-button:hover {
+        background: rgba(31,41,55,0.9);
+    }
+
+    .tab-button.active {
+        background: var(--accent);
+        border-color: rgba(37,99,235,0.6);
+        color: #f9fafb;
+        font-weight: 600;
+        box-shadow: 0 0 0 1px rgba(37,99,235,0.5);
+    }
+
+    .main-area {
+        flex: 1;
+        padding: 20px 24px;
+    }
+
+    .box {
+        width: 100%;
+        margin: 0 auto 24px;
+        padding: 18px 20px 24px;
+        background: var(--bg-box);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-soft);
+    }
+
+    h1 {
+        margin: 0 0 4px;
+        font-size: 20px;
+        letter-spacing: 0.03em;
+    }
+
+    #status {
+        margin-top: 0;
+        margin-bottom: 12px;
+        color: var(--text-muted);
+        font-size: 13px;
+    }
+
+    /* ====== Bovenste filterbalk ====== */
+    #top-filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 6px;
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+
+    #year-filter {
+        padding: 6px 10px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f9fafb;
+        outline: none;
+    }
+
+    #year-filter:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+    }
+
+    /* We gebruiken geen horizontale tabs meer bovenaan, dus .tabs niet nodig in main */
+
+    .tab-content {
+        display: none;
+        padding-top: 4px;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    /* ====== Tabellen: volle breedte van content ====== */
+    .table-container {
+        width: 100%;
+        margin-top: 10px;
+        overflow-x: auto;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    th,
+    td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border-soft);
+        text-align: left;
+    }
+
+    th {
+        background: var(--table-header);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    tbody tr:hover {
+        background: var(--hover-row);
+    }
+
+    .chauffeur-detail-row td,
+    .voertuig-detail-row td,
+    .locatie-detail-row td {
+        background: #f9fafb;
+    }
+
+    /* Links (EAF) */
+    a.table-link {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    a.table-link::after {
+        content: " ↗";
+        font-size: 11px;
+    }
+    a.table-link:hover {
+        text-decoration: underline;
+    }
+
+    /* Zoekvelden & selecties */
+    #search-input,
+    #dashboard-search-input {
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        font-size: 13px;
+        background: #f9fafb;
+        margin: 4px 0 10px;
+        width: 280px;
+        max-width: 100%;
+        outline: none;
+    }
+
+    #search-input:focus,
+    #dashboard-search-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+        background: #ffffff;
+    }
+
+    #chauffeur-limit,
+    #voertuig-limit,
+    #locatie-limit {
+        padding: 5px 10px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f9fafb;
+        outline: none;
+        margin-left: 4px;
+    }
+
+    #dashboard-search-button {
+        padding: 7px 14px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f3f4f6;
+        cursor: pointer;
+        margin-top: 4px;
+        transition: background 0.15s, border-color 0.15s;
+    }
+
+    #dashboard-search-button:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+    }
+
+    #dashboard-info {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+
+    .placeholder-text {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin-top: 10px;
+    }
+
+    .chart-container {
+        margin-top: 14px;
+        height: 260px;
+    }
+
+    /* rijen klikbaar in overzichten */
+    #chauffeur-table tbody tr,
+    #voertuig-table tbody tr,
+    #locatie-table tbody tr {
+        cursor: pointer;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+        .app-layout {
+            flex-direction: column;
         }
-        .box {
-            padding: 30px 40px;
-            background: white;
-            border-radius: 0;
+        .sidebar {
             width: 100%;
-            max-width: 100%;
-            margin: 0;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
         }
-        h1 {
-            color: #333;
-            margin-top: 0;
-        }
-        #status {
-            margin-top: 5px;
-            margin-bottom: 15px;
-            color: #666;
-            font-size: 14px;
-        }
-
-        /* Jaar-filter bovenaan */
-        #top-filters {
-            margin: 8px 0 8px 0;
-            font-size: 14px;
-        }
-        #year-filter {
-            padding: 6px;
-            font-size: 13px;
-            margin-left: 5px;
-        }
-
-        /* Tabs */
-        .tabs {
-            display: flex;
-            gap: 8px;
-            border-bottom: 1px solid #ddd;
-            margin-bottom: 15px;
+        .sidebar-nav {
+            flex-direction: row;
             flex-wrap: wrap;
+            gap: 4px;
         }
         .tab-button {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-bottom: none;
-            background: #f7f7f7;
-            cursor: pointer;
-            border-radius: 6px 6px 0 0;
-            font-size: 14px;
+            flex: 0 1 auto;
+            font-size: 12px;
+            padding: 6px 10px;
         }
-        .tab-button.active {
-            background: white;
-            font-weight: bold;
-            border-bottom: 1px solid white;
+        .main-area {
+            padding: 12px;
         }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-
-        /* Tabel layout */
-        .table-container {
-            width: 100%;
-            overflow-x: auto;
-            margin-top: 10px;
-        }
-
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            font-size: 13px;
-            table-layout: auto;
+        .box {
+            padding: 14px 12px 18px;
         }
         th, td {
-            border: 1px solid #ddd;
-            padding: 6px 8px;
-            text-align: left;
-            max-width: 200px;
-            white-space: normal;
-            word-wrap: break-word;
+            padding: 6px 6px;
+            font-size: 12px;
         }
-        th {
-            background: #f0f0f0;
-            position: sticky;
-            top: 0;
-            z-index: 1;
+        .site-logo {
+            height: 32px;
+            width: 32px;
         }
+    }
 
-        /* Zoekveld alle data */
-        #search-input {
-            padding: 8px;
-            width: 300px;
-            max-width: 100%;
-            margin-bottom: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 14px;
+    @media (max-width: 600px) {
+        #search-input,
+        #dashboard-search-input {
+            width: 100%;
         }
-
-        .placeholder-text {
-            color: #777;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-
-        /* Chauffeur & Voertuig tabs */
-        #chauffeur-limit, #voertuig-limit {
-            padding: 6px;
-            font-size: 13px;
-            margin-left: 5px;
-        }
-        #chauffeur-table tbody tr,
-        #voertuig-table tbody tr {
-            cursor: pointer;
-        }
-        #chauffeur-table tbody tr:hover,
-        #voertuig-table tbody tr:hover {
-            background: #f5f5f5;
-        }
-        .chauffeur-detail-row td,
-        .voertuig-detail-row td {
-            background: #fafafa;
-        }
+    }
     </style>
