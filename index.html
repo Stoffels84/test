@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
     <meta charset="UTF-8" />
-    <title>Schadegegevens uit Excel (.xlsm)</title>
+    <title>Schadeanalyse</title>
 
     <!-- SheetJS (xlsx.js) zodat de browser Excel kan lezen -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -20,14 +20,52 @@
             padding: 20px;
             background: white;
             border-radius: 8px;
-            max-width: 1000px;
+            max-width: 1100px;
+            margin: 0 auto;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
+        #status {
+            margin-top: 5px;
+            margin-bottom: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .tab-button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            background: #f7f7f7;
+            cursor: pointer;
+            border-radius: 6px 6px 0 0;
+            font-size: 14px;
+        }
+        .tab-button.active {
+            background: white;
+            font-weight: bold;
+            border-bottom: 1px solid white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Tabel */
         table {
             border-collapse: collapse;
             width: 100%;
-            margin-top: 20px;
-            font-size: 14px;
+            margin-top: 10px;
+            font-size: 13px;
         }
         th, td {
             border: 1px solid #ddd;
@@ -38,26 +76,105 @@
             background: #f0f0f0;
             position: sticky;
             top: 0;
+            z-index: 1;
         }
-        #status {
-            margin-top: 15px;
-            color: #666;
+
+        /* Zoekveld */
+        #search-input {
+            padding: 8px;
+            width: 300px;
+            max-width: 100%;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
             font-size: 14px;
+        }
+
+        .placeholder-text {
+            color: #777;
+            font-size: 14px;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
 
 <div class="box">
-    <h1>Schadegegevens uit Excel-bestand</h1>
-    <p>Deze tabel komt rechtstreeks uit <code>schade met macro.xlsm</code> (tabblad <strong>BRON</strong>).</p>
+    <h1>Schadeanalyse</h1>
     <p id="status">Bezig met laden van het Excel-bestand...</p>
 
-    <!-- Zoekveld wordt hierboven ingevoegd door JavaScript -->
-    <table id="tabel">
-        <thead></thead>
-        <tbody></tbody>
-    </table>
+    <!-- TAB KNOPPEN -->
+    <div class="tabs">
+        <button class="tab-button active" data-tab="tab-all">1. Alle data</button>
+        <button class="tab-button" data-tab="tab-chauffeur">2. Chauffeur</button>
+        <button class="tab-button" data-tab="tab-voertuig">3. Voertuig</button>
+        <button class="tab-button" data-tab="tab-locatie">4. Locatie</button>
+        <button class="tab-button" data-tab="tab-dashboard">5. Dashboard</button>
+        <button class="tab-button" data-tab="tab-coaching">6. Coaching</button>
+        <button class="tab-button" data-tab="tab-analyse">7. Analyse</button>
+    </div>
+
+    <!-- TAB 1: ALLE DATA (BRON) -->
+    <div class="tab-content active" id="tab-all">
+        <h2>Alle data (tabblad BRON)</h2>
+        <p>Hier zie je alle ruwe gegevens uit het Excel-tabblad <strong>BRON</strong>.</p>
+
+        <input id="search-input" type="text" placeholder="Zoeken in alle kolommen..." />
+
+        <table id="tabel">
+            <thead></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- TAB 2: CHAUFFEUR -->
+    <div class="tab-content" id="tab-chauffeur">
+        <h2>Data rond chauffeur</h2>
+        <p class="placeholder-text">
+            Wordt later uitgewerkt. Hier kun je bv. per chauffeur het aantal schades tonen, filters, grafieken, ...
+        </p>
+    </div>
+
+    <!-- TAB 3: VOERTUIG -->
+    <div class="tab-content" id="tab-voertuig">
+        <h2>Data rond voertuig</h2>
+        <p class="placeholder-text">
+            Wordt later uitgewerkt. Hier kun je bv. per bus/tram het aantal schades, type schade, enz. tonen.
+        </p>
+    </div>
+
+    <!-- TAB 4: LOCATIE -->
+    <div class="tab-content" id="tab-locatie">
+        <h2>Data rond locatie</h2>
+        <p class="placeholder-text">
+            Wordt later uitgewerkt. Hier kun je bv. heatmaps of lijstjes per locatie tonen.
+        </p>
+    </div>
+
+    <!-- TAB 5: DASHBOARD -->
+    <div class="tab-content" id="tab-dashboard">
+        <h2>Dashboard</h2>
+        <p class="placeholder-text">
+            Wordt later uitgewerkt. Hier kunnen samenvattende grafieken en KPI's komen.
+        </p>
+    </div>
+
+    <!-- TAB 6: COACHING -->
+    <div class="tab-content" id="tab-coaching">
+        <h2>Coaching</h2>
+        <p class="placeholder-text">
+            Wordt later uitgewerkt. Bijvoorbeeld overzicht van coaching-acties per chauffeur.
+        </p>
+    </div>
+
+    <!-- TAB 7: ANALYSE -->
+    <div class="tab-content" id="tab-analyse">
+        <h2>Analyse</h2>
+        <p class="placeholder-text">
+            Wordt later uitgewerkt. Hier kun je diepere analyses doen op patronen in de data.
+        </p>
+    </div>
+
 </div>
 
 <script>
@@ -65,47 +182,55 @@
     const table = document.getElementById('tabel');
     const thead = table.querySelector('thead');
     const tbody = table.querySelector('tbody');
+    const searchInput = document.getElementById('search-input');
 
     // LET OP: spaties in de bestandsnaam moeten in de URL als %20
     const excelFileUrl = 'schade%20met%20macro.xlsm';
 
-    // Voeg een zoekveld toe zodra de pagina klaar is
-    document.addEventListener("DOMContentLoaded", () => {
-        const box = document.querySelector(".box");
+    // --- TABS WERKING ---
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
 
-        const searchInput = document.createElement("input");
-        searchInput.type = "text";
-        searchInput.placeholder = "Zoeken in alle kolommen...";
-        searchInput.style.padding = "8px";
-        searchInput.style.width = "300px";
-        searchInput.style.marginBottom = "15px";
-        searchInput.style.border = "1px solid #ccc";
-        searchInput.style.borderRadius = "5px";
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-tab');
 
-        searchInput.addEventListener("input", () => {
-            const filter = searchInput.value.toLowerCase();
-            const rows = tbody.getElementsByTagName("tr");
+            // active class op knoppen
+            tabButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
 
-            for (let i = 0; i < rows.length; i++) {
-                const cells = rows[i].getElementsByTagName("td");
-                let rowMatch = false;
-
-                for (let c = 0; c < cells.length; c++) {
-                    if (cells[c].textContent.toLowerCase().includes(filter)) {
-                        rowMatch = true;
-                        break;
-                    }
+            // active class op content
+            tabContents.forEach(tc => {
+                if (tc.id === targetId) {
+                    tc.classList.add('active');
+                } else {
+                    tc.classList.remove('active');
                 }
-
-                rows[i].style.display = rowMatch ? "" : "none";
-            }
+            });
         });
-
-        // zoekveld plaatsen vóór de tabel
-        box.insertBefore(searchInput, table);
     });
 
-    // Haal Excel-bestand op
+    // --- ZOEKFUNCTIE (ALLE DATA TAB) ---
+    searchInput.addEventListener('input', () => {
+        const filter = searchInput.value.toLowerCase();
+        const rows = tbody.getElementsByTagName('tr');
+
+        for (let i = 0; i < rows.length; i++) {
+            const cells = rows[i].getElementsByTagName('td');
+            let rowMatch = false;
+
+            for (let c = 0; c < cells.length; c++) {
+                if (cells[c].textContent.toLowerCase().includes(filter)) {
+                    rowMatch = true;
+                    break;
+                }
+            }
+
+            rows[i].style.display = rowMatch ? '' : 'none';
+        }
+    });
+
+    // --- EXCEL LADEN (TABBLAD BRON) ---
     fetch(excelFileUrl)
         .then(response => {
             if (!response.ok) {
@@ -119,8 +244,7 @@
             const uint8 = new Uint8Array(data);
             const workbook = XLSX.read(uint8, { type: 'array' });
 
-            // Specifiek tabblad "BRON"
-            const sheetName = "BRON";
+            const sheetName = 'BRON';
 
             if (!workbook.SheetNames.includes(sheetName)) {
                 statusEl.textContent = "Tabblad 'BRON' bestaat niet in het Excel-bestand!";
@@ -131,17 +255,17 @@
             const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
             if (!rows || rows.length === 0) {
-                statusEl.textContent = "Geen data gevonden in tabblad BRON.";
+                statusEl.textContent = 'Geen data gevonden in tabblad BRON.';
                 return;
             }
 
-            statusEl.textContent = "";
+            statusEl.textContent = '';
 
             // Kolomnamen
             const headers = rows[0];
-            const headerRow = document.createElement("tr");
+            const headerRow = document.createElement('tr');
             headers.forEach(h => {
-                const th = document.createElement("th");
+                const th = document.createElement('th');
                 th.textContent = h;
                 headerRow.appendChild(th);
             });
@@ -149,20 +273,20 @@
 
             // Data-rijen
             rows.slice(1).forEach(r => {
-                const tr = document.createElement("tr");
+                const tr = document.createElement('tr');
                 r.forEach(cell => {
-                    const td = document.createElement("td");
-                    td.textContent = (cell === null || cell === undefined) ? "" : cell;
+                    const td = document.createElement('td');
+                    td.textContent = (cell === null || cell === undefined) ? '' : cell;
                     tr.appendChild(td);
                 });
                 tbody.appendChild(tr);
             });
 
-            statusEl.textContent = "Klaar. " + (rows.length - 1) + " rijen geladen.";
+            statusEl.textContent = 'Klaar. ' + (rows.length - 1) + ' rijen geladen.';
         })
         .catch(err => {
             console.error(err);
-            statusEl.textContent = "Er ging iets mis bij het laden of verwerken van het Excel-bestand.";
+            statusEl.textContent = 'Er ging iets mis bij het laden of verwerken van het Excel-bestand.';
         });
 </script>
 
