@@ -339,7 +339,6 @@ function getCoachingStatusByText(text) {
     return null;
 }
 
-// alle coaching-entries voor een P-nr: [{status, date, dateString}, ...]
 function getCoachingEntriesForPnr(pnr) {
     if (pnr === null || pnr === undefined) return [];
     const key = String(pnr).trim();
@@ -347,12 +346,10 @@ function getCoachingEntriesForPnr(pnr) {
     return coachingMap[key] || [];
 }
 
-// alleen de statussen als array
 function getCoachingStatusesForPnr(pnr) {
     return getCoachingEntriesForPnr(pnr).map(e => e.status);
 }
 
-// één samenvattende status per P-nr (rood > oranje > groen)
 function getPrimaryCoachingStatusForPnr(pnr) {
     const list = getCoachingStatusesForPnr(pnr);
     if (!list.length) return null;
@@ -362,7 +359,6 @@ function getPrimaryCoachingStatusForPnr(pnr) {
     return null;
 }
 
-// de laatste coaching (op datum) voor een P-nr – eventueel bruikbaar later
 function getLatestCoachingForPnr(pnr) {
     const entries = getCoachingEntriesForPnr(pnr);
     if (!entries.length) return null;
@@ -379,7 +375,6 @@ function getLatestCoachingForPnr(pnr) {
     return latest;
 }
 
-// checken of P-nr in tabblad "Coaching" staat
 function isInCoachingList(pnr) {
     if (pnr === null || pnr === undefined) return false;
     const key = String(pnr).trim();
@@ -439,7 +434,6 @@ function createCell(idx, row) {
     const status = getPrimaryCoachingStatusForPnr(pnrVal);
     const inCoachingList = isInCoachingList(pnrVal);
 
-    // linkkolom
     if (idx === linkColIndex && value) {
         const href = String(value).trim();
         const a = document.createElement('a');
@@ -452,7 +446,6 @@ function createCell(idx, row) {
         return td;
     }
 
-    // chauffeur-kolom: zwarte bol (Coaching-tab) + gekleurde bol(len) VOOR de naam
     if (idx === chauffeurColIndex) {
         const wrapper = document.createElement('span');
         wrapper.style.display = 'inline-flex';
@@ -483,7 +476,6 @@ function createCell(idx, row) {
         return td;
     }
 
-    // personeelsnummerkolom: nummer + zwarte bol + gekleurde bol(len) erachter
     if (idx === personnelColIndex) {
         const wrapper = document.createElement('span');
         wrapper.style.display = 'inline-flex';
@@ -1286,20 +1278,22 @@ fetch('Coachingslijst.xlsx')
             console.warn("Tabblad 'Voltooide coachings' niet gevonden in Coachingslijst.xlsx");
         }
 
-        // --- Coaching-tab: P-nr staat in kolom D (index 3) ---
+        // --- Coaching-tab: P-nr staat in kolom D (via echte cellen) ---
         if (sheetPending) {
-            const pendingRows = XLSX.utils.sheet_to_json(sheetPending, { header: 1 });
             coachingPendingSet.clear();
 
-            // sla header over, ga door alle volgende rijen
-            pendingRows.slice(1).forEach(row => {
-                const p = row[3]; // kolom D
-                if (!p) return;
-                const key = String(p).trim();
+            const range = XLSX.utils.decode_range(sheetPending['!ref']);
+
+            for (let r = range.s.r + 1; r <= range.e.r; r++) { // vanaf tweede rij (na header)
+                const cellRef = XLSX.utils.encode_cell({ c: 3, r: r }); // c=3 => kolom D
+                const cell = sheetPending[cellRef];
+                if (!cell || cell.v == null || cell.v === '') continue;
+
+                const key = String(cell.v).trim();
                 if (key !== '') {
                     coachingPendingSet.add(key);
                 }
-            });
+            }
         } else {
             console.warn("Tabblad 'Coaching' niet gevonden in Coachingslijst.xlsx");
         }
