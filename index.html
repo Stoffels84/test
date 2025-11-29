@@ -60,18 +60,29 @@
             display: block;
         }
 
-        /* Tabel */
+        /* Tabel — verbeterde layout */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;         /* Horizontale scroll indien nodig */
+            margin-top: 10px;
+        }
+        
         table {
             border-collapse: collapse;
             width: 100%;
-            margin-top: 10px;
             font-size: 13px;
+            table-layout: auto;       /* normale automatische kolombreedte */
         }
+        
         th, td {
             border: 1px solid #ddd;
             padding: 6px 8px;
             text-align: left;
+            max-width: 200px;         /* kolommen worden beperkt */
+            white-space: normal;      /* breekt tekst automatisch */
+            word-wrap: break-word;    /* nog agressiever breken indien nodig */
         }
+        
         th {
             background: #f0f0f0;
             position: sticky;
