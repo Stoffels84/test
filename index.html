@@ -163,7 +163,9 @@
                 <div id="dashboard-info">Tip: je kunt een deel van de naam of het nummer ingeven.</div>
 
                 <div class="table-container" style="margin-top:10px;">
-                    <table id="dashboard-table">
+                    <div id="dashboard-coaching-summary" class="dashboard-coaching-summary"></div>
+
+<table id="dashboard-table">
     <thead>
         <tr>
             <th>Datum</th>
@@ -173,11 +175,11 @@
             <th>Locatie</th>
             <th>Actief</th>
             <th>Link</th>
-            <th>Laatste coaching</th> <!-- nieuw -->
         </tr>
     </thead>
     <tbody></tbody>
 </table>
+
 
                 </div>
             </div>
@@ -208,6 +210,7 @@ const thead = table.querySelector('thead');
 const tbody = table.querySelector('tbody');
 const searchInput = document.getElementById('search-input');
 const yearFilterSelect = document.getElementById('year-filter');
+const dashCoachSummary = document.getElementById('dashboard-coaching-summary');
 
 const excelFileUrl = 'schade%20met%20macro.xlsm';
 
@@ -357,7 +360,7 @@ function getPrimaryCoachingStatusForPnr(pnr) {
     return null;
 }
 
-// de laatste coaching (op datum) voor een P-nr
+// de laatste coaching (op datum) voor een P-nr – gebruiken we alleen nog eventueel
 function getLatestCoachingForPnr(pnr) {
     const entries = getCoachingEntriesForPnr(pnr);
     if (!entries.length) return null;
@@ -413,7 +416,6 @@ function getFilteredRows() {
 }
 
 // ---------- CEL MAKEN (link + coachingbol) ----------
-// We geven de hele rij door, zodat we overal aan P-nr kunnen.
 
 function createCell(idx, row) {
     const rawValue = row[idx];
@@ -423,7 +425,6 @@ function createCell(idx, row) {
     }
     const td = document.createElement('td');
 
-    // Coachingstatus op basis van personeelsnr in deze rij
     const pnrVal = (personnelColIndex !== -1) ? row[personnelColIndex] : null;
     const status = getPrimaryCoachingStatusForPnr(pnrVal);
 
@@ -489,7 +490,6 @@ function createCell(idx, row) {
         return td;
     }
 
-    // standaard cel
     td.textContent = (value === null || value === undefined) ? '' : value;
     return td;
 }
@@ -561,7 +561,8 @@ function buildLocatieData(rows) {
     locatieData = Array.from(map.values()).sort((a, b) => b.count - a.count);
 }
 
-// ---------- DETAILTABELLEN ----------
+// ---------- DETAILTABELLEN (chauffeur/voertuig/locatie) ----------
+// (ongewijzigd t.o.v. vorige versie, maar met createCell)
 
 function showChauffeurDetailsInline(name, clickedRow) {
     const tbodyCh = document.querySelector('#chauffeur-table tbody');
@@ -743,7 +744,7 @@ function showLocatieDetailsInline(loc, clickedRow) {
     clickedRow.insertAdjacentElement('afterend', detailTr);
 }
 
-// ---------- OVERZICHTSTABELLEN ----------
+// ---------- OVERZICHTSTABELLEN (chauffeur/voertuig/locatie) ----------
 
 function updateChauffeurView() {
     const limitSelect = document.getElementById('chauffeur-limit');
@@ -762,14 +763,12 @@ function updateChauffeurView() {
         wrapper.style.alignItems = 'center';
         wrapper.style.gap = '4px';
 
-        // statussen op basis van P-nr uit eerste rij van deze chauffeur
         let statuses = [];
         if (personnelColIndex !== -1 && ch.rows.length > 0) {
             const pnrVal = ch.rows[0][personnelColIndex];
             statuses = getCoachingStatusesForPnr(pnrVal);
         }
 
-        // Voor elke coaching één bolletje
         statuses.forEach(st => {
             const dot = document.createElement('span');
             dot.classList.add('coaching-dot');
@@ -894,6 +893,52 @@ function buildVoertuigMonthChart(rows) {
     });
 }
 
+// ---------- DASHBOARD: COACHINGS-BLOK BOVEN TABEL ----------
+
+function renderDashboardCoachingSummary(results) {
+    dashCoachSummary.innerHTML = '';
+
+    if (!results.length || personnelColIndex === -1) return;
+
+    const first = results[0];
+    const pnr = first[personnelColIndex];
+    const name = (chauffeurColIndex !== -1 && first[chauffeurColIndex]) ? String(first[chauffeurColIndex]) : '';
+    const entries = getCoachingEntriesForPnr(pnr);
+
+    if (!entries.length) {
+        dashCoachSummary.innerHTML = `<p>Geen coachings gevonden voor P-nr ${pnr || ''}.</p>`;
+        return;
+    }
+
+    // sorteer op datum oplopend (oud -> nieuw)
+    entries.sort((a, b) => {
+        if (!a.date || !b.date) return 0;
+        return a.date - b.date;
+    });
+
+    let html = `<div class="dashboard-coaching-box">
+        <div class="dashboard-coaching-title">
+            Coachings voor <strong>${pnr || ''}</strong>${name ? ' – ' + name : ''}
+        </div>
+        <div class="dashboard-coaching-list">`;
+
+    entries.forEach(e => {
+        let dotClass = '';
+        if (e.status === 'good') dotClass = 'coaching-good';
+        if (e.status === 'medium') dotClass = 'coaching-medium';
+        if (e.status === 'bad') dotClass = 'coaching-bad';
+
+        html += `
+            <div class="dashboard-coaching-item">
+                <span class="dashboard-coaching-date">${e.dateString || ''}</span>
+                <span class="coaching-dot ${dotClass}"></span>
+            </div>`;
+    });
+
+    html += `</div></div>`;
+    dashCoachSummary.innerHTML = html;
+}
+
 // ---------- DASHBOARD ZOEKEN ----------
 
 function searchDashboard() {
@@ -901,6 +946,7 @@ function searchDashboard() {
     const term = input.value.trim().toLowerCase();
     const tbodyDash = document.querySelector('#dashboard-table tbody');
     tbodyDash.innerHTML = '';
+    dashCoachSummary.innerHTML = '';
 
     if (!term) return;
 
@@ -920,13 +966,17 @@ function searchDashboard() {
     if (results.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 8; // 7 oude + 1 "Laatste coaching"
+        td.colSpan = 7;
         td.textContent = 'Geen resultaten gevonden voor deze zoekopdracht (binnen de gekozen jaarfilter).';
         tr.appendChild(td);
         tbodyDash.appendChild(tr);
         return;
     }
 
+    // boven de tabel: alle coachings
+    renderDashboardCoachingSummary(results);
+
+    // tabel zelf: schade-rijen
     const cols = [];
     if (dateColIndex !== -1) cols.push(dateColIndex);
     if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
@@ -942,36 +992,6 @@ function searchDashboard() {
             const td = createCell(idx, row);
             tr.appendChild(td);
         });
-
-        // extra kolom: Laatste coaching (datum + bol)
-        const coachingTd = document.createElement('td');
-        const pnrVal = (personnelColIndex !== -1) ? row[personnelColIndex] : null;
-        const latest = getLatestCoachingForPnr(pnrVal);
-
-        if (latest) {
-            const wrapper = document.createElement('span');
-            wrapper.style.display = 'inline-flex';
-            wrapper.style.alignItems = 'center';
-            wrapper.style.gap = '6px';
-
-            const dateSpan = document.createElement('span');
-            dateSpan.textContent = latest.dateString || '';
-            wrapper.appendChild(dateSpan);
-
-            const dot = document.createElement('span');
-            dot.classList.add('coaching-dot');
-            if (latest.status === 'good')   dot.classList.add('coaching-good');
-            if (latest.status === 'medium') dot.classList.add('coaching-medium');
-            if (latest.status === 'bad')    dot.classList.add('coaching-bad');
-            dot.title = 'Laatste coaching';
-            wrapper.appendChild(dot);
-
-            coachingTd.appendChild(wrapper);
-        } else {
-            coachingTd.textContent = '';
-        }
-
-        tr.appendChild(coachingTd);
         tbodyDash.appendChild(tr);
     });
 }
@@ -1132,16 +1152,12 @@ fetch('Coachingslijst.xlsx')
         });
 
         console.log('CoachingMap:', coachingMap);
-        updateFilterAndViews(); // opnieuw tekenen met bollen én coachingdatums
+        updateFilterAndViews();
     })
     .catch(err => {
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
-
-
-
-
 
 </body>
 </html>
