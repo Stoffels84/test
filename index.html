@@ -10,181 +10,320 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background: #f4f4f4;
-        }
+    /* ====== Basis layout & thema ====== */
+    :root {
+        --bg-page: #f3f4f6;
+        --bg-box: #ffffff;
+        --border-soft: #e5e7eb;
+        --accent: #2563eb;
+        --accent-soft: #dbeafe;
+        --text-main: #111827;
+        --text-muted: #6b7280;
+        --table-header: #f9fafb;
+        --hover-row: #f3f4ff;
+        --shadow-soft: 0 10px 25px rgba(15, 23, 42, 0.06);
+        --radius-lg: 14px;
+    }
+    
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 0;
+        background: radial-gradient(circle at top left, #e5e7eb, #f9fafb 40%, #e5e7eb);
+        color: var(--text-main);
+    }
+    
+    /* ====== Hoofdcontainer ====== */
+    .box {
+        max-width: 1200px;
+        margin: 24px auto 32px;
+        padding: 24px 28px 28px;
+        background: var(--bg-box);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-soft);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    
+    h1 {
+        margin-top: 0;
+        margin-bottom: 4px;
+        font-size: 24px;
+        letter-spacing: 0.02em;
+    }
+    
+    #status {
+        margin-top: 0;
+        margin-bottom: 16px;
+        color: var(--text-muted);
+        font-size: 13px;
+    }
+    
+    /* ====== Bovenste filterbalk ====== */
+    #top-filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0 10px;
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+    
+    #year-filter {
+        padding: 6px 10px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f9fafb;
+        outline: none;
+    }
+    
+    #year-filter:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+    }
+    
+    /* ====== Tabs ====== */
+    .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        border-bottom: 1px solid var(--border-soft);
+        margin-bottom: 10px;
+    }
+    
+    .tab-button {
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text-muted);
+        transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.05s;
+    }
+    
+    .tab-button:hover {
+        background: #f3f4f6;
+        transform: translateY(-1px);
+    }
+    
+    .tab-button.active {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-color: rgba(37, 99, 235, 0.3);
+        font-weight: 600;
+    }
+    
+    .tab-content {
+        display: none;
+        padding-top: 8px;
+    }
+    
+    .tab-content.active {
+        display: block;
+    }
+    
+    /* ====== Tabellen & wrappers ====== */
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        margin-top: 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border-soft);
+        background: #ffffff;
+    }
+    
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 13px;
+        table-layout: auto;
+    }
+    
+    th,
+    td {
+        border-bottom: 1px solid var(--border-soft);
+        padding: 6px 8px;
+        text-align: left;
+        max-width: 260px;
+        white-space: normal;
+        word-wrap: break-word;
+    }
+    
+    th {
+        background: var(--table-header);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #4b5563;
+    }
+    
+    tbody tr:nth-child(even) {
+        background: #fcfcff;
+    }
+    
+    tbody tr:hover {
+        background: var(--hover-row);
+    }
+    
+    /* Detailrijen */
+    .chauffeur-detail-row td,
+    .voertuig-detail-row td,
+    .locatie-detail-row td {
+        background: #f9fafb;
+    }
+    
+    /* ====== Links ====== */
+    a.table-link {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 12px;
+    }
+    
+    a.table-link::after {
+        content: " ↗";
+        font-size: 10px;
+    }
+    
+    a.table-link:hover {
+        text-decoration: underline;
+    }
+    
+    /* ====== Zoekvelden & selecties ====== */
+    #search-input,
+    #dashboard-search-input {
+        padding: 7px 10px;
+        width: 280px;
+        max-width: 100%;
+        margin: 4px 0 10px;
+        border: 1px solid var(--border-soft);
+        border-radius: 999px;
+        font-size: 13px;
+        background: #f9fafb;
+        outline: none;
+    }
+    
+    #search-input:focus,
+    #dashboard-search-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+        background: #ffffff;
+    }
+    
+    #chauffeur-limit,
+    #voertuig-limit,
+    #locatie-limit {
+        padding: 5px 10px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f9fafb;
+        outline: none;
+        margin-left: 4px;
+    }
+    
+    #chauffeur-limit:focus,
+    #voertuig-limit:focus,
+    #locatie-limit:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+    }
+    
+    /* ====== Knoppen ====== */
+    #dashboard-search-button {
+        padding: 7px 14px;
+        font-size: 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f3f4f6;
+        cursor: pointer;
+        margin-top: 4px;
+        transition: background 0.15s, border-color 0.15s, transform 0.05s;
+    }
+    
+    #dashboard-search-button:hover {
+        background: var(--accent-soft);
+        border-color: rgba(37, 99, 235, 0.35);
+        transform: translateY(-1px);
+    }
+    
+    /* Info-tekst dashboard */
+    #dashboard-info {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+    
+    /* ====== Tekst / placeholders ====== */
+    .placeholder-text {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin-top: 10px;
+    }
+    
+    /* ====== Charts ====== */
+    .chart-container {
+        margin-top: 16px;
+        height: 260px;
+    }
+    
+    /* ====== Hover gedrag rijen selectie (Chauffeur, Voertuig, Locatie) ====== */
+    #chauffeur-table tbody tr,
+    #voertuig-table tbody tr,
+    #locatie-table tbody tr {
+        cursor: pointer;
+    }
+    
+    /* ====== Responsive ====== */
+    @media (max-width: 900px) {
         .box {
-            padding: 30px 40px;
-            background: white;
-            border-radius: 0;
-            width: 100%;
-            max-width: 100%;
-            margin: 0;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            margin: 12px;
+            padding: 16px 14px 20px;
+            border-radius: 10px;
         }
+    
         h1 {
-            color: #333;
-            margin-top: 0;
+            font-size: 20px;
         }
-        #status {
-            margin-top: 5px;
-            margin-bottom: 15px;
-            color: #666;
-            font-size: 14px;
-        }
-
-        /* Jaar-filter bovenaan */
-        #top-filters {
-            margin: 8px 0 8px 0;
-            font-size: 14px;
-        }
-        #year-filter {
-            padding: 6px;
-            font-size: 13px;
-            margin-left: 5px;
-        }
-
-        /* Tabs */
+    
         .tabs {
-            display: flex;
-            gap: 8px;
-            border-bottom: 1px solid #ddd;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
+            gap: 6px;
         }
+    
         .tab-button {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-bottom: none;
-            background: #f7f7f7;
-            cursor: pointer;
-            border-radius: 6px 6px 0 0;
-            font-size: 14px;
+            font-size: 12px;
+            padding: 5px 10px;
         }
-        .tab-button.active {
-            background: white;
-            font-weight: bold;
-            border-bottom: 1px solid white;
+    
+        th,
+        td {
+            padding: 5px 6px;
+            font-size: 12px;
         }
-        .tab-content {
-            display: none;
+    
+        #top-filters {
+            flex-wrap: wrap;
+            align-items: flex-start;
         }
-        .tab-content.active {
-            display: block;
-        }
-
-        /* Tabel layout */
-        .table-container {
-            width: 100%;
-            overflow-x: auto;
-            margin-top: 10px;
-        }
-
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            font-size: 13px;
-            table-layout: auto;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 6px 8px;
-            text-align: left;
-            max-width: 260px;
-            white-space: normal;
-            word-wrap: break-word;
-        }
-        th {
-            background: #f0f0f0;
-            position: sticky;
-            top: 0;
-            z-index: 1;
-        }
-
-        /* Links in tabellen */
-        a.table-link {
-            color: #0066cc;
-            text-decoration: underline;
-        }
-
-        /* Zoekveld alle data */
-        #search-input {
-            padding: 8px;
-            width: 300px;
-            max-width: 100%;
-            margin-bottom: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 14px;
-        }
-
-        .placeholder-text {
-            color: #777;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-
-        /* Chauffeur, Voertuig, Locatie tabs */
-        #chauffeur-limit,
-        #voertuig-limit,
-        #locatie-limit {
-            padding: 6px;
-            font-size: 13px;
-            margin-left: 5px;
-        }
-
-        #chauffeur-table tbody tr,
-        #voertuig-table tbody tr,
-        #locatie-table tbody tr {
-            cursor: pointer;
-        }
-
-        #chauffeur-table tbody tr:hover,
-        #voertuig-table tbody tr:hover,
-        #locatie-table tbody tr:hover {
-            background: #f5f5f5;
-        }
-
-        .chauffeur-detail-row td,
-        .voertuig-detail-row td,
-        .locatie-detail-row td {
-            background: #fafafa;
-        }
-
-        .chart-container {
-            margin-top: 20px;
-            height: 280px;
-        }
-
-        /* Dashboard (opzoeken) */
+    }
+    
+    @media (max-width: 600px) {
+        #search-input,
         #dashboard-search-input {
-            padding: 8px;
-            width: 260px;
-            max-width: 100%;
-            margin-right: 8px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 14px;
+            width: 100%;
         }
-        #dashboard-search-button {
-            padding: 8px 14px;
-            font-size: 14px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-            background: #f7f7f7;
-            cursor: pointer;
-        }
-        #dashboard-search-button:hover {
-            background: #eaeaea;
-        }
-        #dashboard-info {
-            font-size: 13px;
-            color: #666;
-            margin-top: 5px;
-        }
+    }
     </style>
 </head>
 <body>
