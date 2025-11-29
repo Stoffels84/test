@@ -8,8 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- Grafieken voor Voertuig-tab -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link rel="stylesheet" href="style.css">
-
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -165,31 +164,28 @@
                 <div class="table-container" style="margin-top:10px;">
                     <div id="dashboard-coaching-summary" class="dashboard-coaching-summary"></div>
 
-<table id="dashboard-table">
-    <thead>
-        <tr>
-            <th>Datum</th>
-            <th>Chauffeur</th>
-            <th>Personeelsnr</th>
-            <th>Voertuigtype</th>
-            <th>Locatie</th>
-            <th>Actief</th>
-            <th>Link</th>
-        </tr>
-    </thead>
-    <tbody></tbody>
-</table>
-
-
+                    <table id="dashboard-table">
+                        <thead>
+                            <tr>
+                                <th>Datum</th>
+                                <th>Chauffeur</th>
+                                <th>Personeelsnr</th>
+                                <th>Voertuigtype</th>
+                                <th>Locatie</th>
+                                <th>Actief</th>
+                                <th>Link</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
                 </div>
             </div>
 
             <!-- TAB 6: COACHING -->
-<div class="tab-content" id="tab-coaching">
-    <h2>Coaching</h2>
-    <div id="coaching-stats"></div>
-</div>
-
+            <div class="tab-content" id="tab-coaching">
+                <h2>Coaching</h2>
+                <div id="coaching-stats"></div>
+            </div>
 
             <!-- TAB 7: ANALYSE -->
             <div class="tab-content" id="tab-analyse">
@@ -203,6 +199,8 @@
 </div>
 
 <script>
+// ---------- BASISVARIABELEN ----------
+
 const statusEl = document.getElementById('status');
 const table = document.getElementById('tabel');
 const thead = table.querySelector('thead');
@@ -1174,7 +1172,6 @@ function updateCoachingStats() {
         html += `</ul>`;
     }
 
-    // geen extra lijst met alle P-nrs meer
     div.innerHTML = html;
 }
 
@@ -1200,6 +1197,9 @@ function updateFilterAndViews() {
     statusEl.textContent = 'Klaar. ' + filteredRows.length +
         ' rijen geladen (' + filterText + '). Coachings voor ' +
         coachingCount + ' P-nrs geladen.';
+
+    // Belangrijk: coaching-overzicht ook updaten na elke herbouw
+    updateCoachingStats();
 }
 
 // ---------- EVENT LISTENERS ----------
@@ -1357,14 +1357,13 @@ fetch('Coachingslijst.xlsx')
         console.log('CoachingMap:', coachingMap);
         console.log('CoachingPendingSet:', coachingPendingSet);
 
+        // baseRows kan op dit moment al geladen zijn; dan herbouw + stats
         updateFilterAndViews();
-        updateCoachingStats();
     })
     .catch(err => {
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
-
 
 </body>
 </html>
