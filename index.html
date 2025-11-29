@@ -942,7 +942,7 @@ fetch(excelFileUrl)
 fetch('Coachingslijst.xlsx')
     .then(response => {
         if (!response.ok) {
-            throw new Error('Kon coachingslijst.xlsx niet laden (HTTP ' + response.status + ')');
+            throw new Error('Kon Coachingslijst.xlsx niet laden (HTTP ' + response.status + ')');
         }
         return response.arrayBuffer();
     })
@@ -958,7 +958,7 @@ fetch('Coachingslijst.xlsx')
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
         if (!rows.length) {
-            console.warn('coachingslijst.xlsx bevat geen data in tabblad', sheetName);
+            console.warn('Coachingslijst.xlsx bevat geen data in tabblad', sheetName);
             return;
         }
 
@@ -970,7 +970,7 @@ fetch('Coachingslijst.xlsx')
         const ratingIndex = coachingHeaders.indexOf('Beoordeling coaching');
 
         if (pIndex === -1 || ratingIndex === -1) {
-            console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in coachingslijst.xlsx');
+            console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in Coachingslijst.xlsx');
             return;
         }
 
@@ -986,7 +986,7 @@ fetch('Coachingslijst.xlsx')
         updateFilterAndViews(); // opnieuw tekenen met bollen
     })
     .catch(err => {
-        console.error('Fout bij coachingslijst:', err);
+        console.error('Fout bij Coachingslijst:', err);
     });
 </script>
 
