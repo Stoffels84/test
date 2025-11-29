@@ -236,6 +236,9 @@ let coachingHeaders = [];
 let coachingRows = [];
 const coachingMap = {};
 
+// NIEUW: P-nrs die in tabblad "Coaching" staan
+const coachingPendingSet = new Set();
+
 // tabs (sidebar)
 const tabButtons = document.querySelectorAll('.tab-button');
 const tabContents = document.querySelectorAll('.tab-content');
@@ -377,6 +380,14 @@ function getLatestCoachingForPnr(pnr) {
     return latest;
 }
 
+// NIEUW: checken of P-nr in tabblad "Coaching" staat
+function isInCoachingList(pnr) {
+    if (pnr === null || pnr === undefined) return false;
+    const key = String(pnr).trim();
+    if (!key) return false;
+    return coachingPendingSet.has(key);
+}
+
 // ---------- JAARFILTER ----------
 
 function populateYearFilter() {
@@ -415,7 +426,7 @@ function getFilteredRows() {
     });
 }
 
-// ---------- CEL MAKEN (link + coachingbol) ----------
+// ---------- CEL MAKEN (link + coachingbollen) ----------
 
 function createCell(idx, row) {
     const rawValue = row[idx];
@@ -427,6 +438,7 @@ function createCell(idx, row) {
 
     const pnrVal = (personnelColIndex !== -1) ? row[personnelColIndex] : null;
     const status = getPrimaryCoachingStatusForPnr(pnrVal);
+    const inCoachingList = isInCoachingList(pnrVal);
 
     // linkkolom
     if (idx === linkColIndex && value) {
@@ -441,13 +453,22 @@ function createCell(idx, row) {
         return td;
     }
 
-    // chauffeur-kolom: bol VOOR de naam
+    // chauffeur-kolom: zwarte bol (Coaching-tab) + gekleurde bol(len) VOOR de naam
     if (idx === chauffeurColIndex) {
         const wrapper = document.createElement('span');
         wrapper.style.display = 'inline-flex';
         wrapper.style.alignItems = 'center';
         wrapper.style.gap = '6px';
 
+        // zwarte bol als chauffeur in tabblad "Coaching" staat
+        if (inCoachingList) {
+            const blackDot = document.createElement('span');
+            blackDot.classList.add('coaching-dot', 'coaching-pending');
+            blackDot.title = 'In Coaching-lijst';
+            wrapper.appendChild(blackDot);
+        }
+
+        // gekleurde bol op basis van voltooide coachings
         if (status) {
             const dot = document.createElement('span');
             dot.classList.add('coaching-dot');
@@ -465,7 +486,7 @@ function createCell(idx, row) {
         return td;
     }
 
-    // personeelsnummerkolom: nummer + bol erachter
+    // personeelsnummerkolom: nummer + zwarte bol + gekleurde bol(len) erachter
     if (idx === personnelColIndex) {
         const wrapper = document.createElement('span');
         wrapper.style.display = 'inline-flex';
@@ -476,6 +497,15 @@ function createCell(idx, row) {
         numSpan.textContent = (value === null || value === undefined) ? '' : value;
         wrapper.appendChild(numSpan);
 
+        // zwarte bol als in tabblad "Coaching"
+        if (inCoachingList) {
+            const blackDot = document.createElement('span');
+            blackDot.classList.add('coaching-dot', 'coaching-pending');
+            blackDot.title = 'In Coaching-lijst';
+            wrapper.appendChild(blackDot);
+        }
+
+        // gekleurde bol op basis van voltooide coachings
         if (status) {
             const dot = document.createElement('span');
             dot.classList.add('coaching-dot');
@@ -562,7 +592,6 @@ function buildLocatieData(rows) {
 }
 
 // ---------- DETAILTABELLEN (chauffeur/voertuig/locatie) ----------
-// (ongewijzigd t.o.v. vorige versie, maar met createCell)
 
 function showChauffeurDetailsInline(name, clickedRow) {
     const tbodyCh = document.querySelector('#chauffeur-table tbody');
@@ -764,11 +793,23 @@ function updateChauffeurView() {
         wrapper.style.gap = '4px';
 
         let statuses = [];
+        let inCoachingList = false;
+
         if (personnelColIndex !== -1 && ch.rows.length > 0) {
             const pnrVal = ch.rows[0][personnelColIndex];
             statuses = getCoachingStatusesForPnr(pnrVal);
+            inCoachingList = isInCoachingList(pnrVal);
         }
 
+        // zwarte bol als in tabblad "Coaching"
+        if (inCoachingList) {
+            const blackDot = document.createElement('span');
+            blackDot.classList.add('coaching-dot', 'coaching-pending');
+            blackDot.title = 'In Coaching-lijst';
+            wrapper.appendChild(blackDot);
+        }
+
+        // gekleurde bollen op basis van voltooide coachings
         statuses.forEach(st => {
             const dot = document.createElement('span');
             dot.classList.add('coaching-dot');
@@ -1123,41 +1164,68 @@ fetch('Coachingslijst.xlsx')
 
         if (pIndex === -1 || ratingIndex === -1) {
             console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in Coachingslijst.xlsx');
-            return;
+            // we stoppen hier met voltooide coachings, maar proberen nog wel tabblad "Coaching"
+        } else {
+            coachingRows.forEach(row => {
+                const p = row[pIndex];
+                const rating = row[ratingIndex];
+                const status = getCoachingStatusByText(rating);
+                if (!p || !status) return;
+
+                let dateObj = null;
+                let dateString = '';
+                if (dateIndex !== -1) {
+                    const rawDate = row[dateIndex];
+                    dateObj = excelSerialToDate(rawDate);
+                    dateString = dateToDisplayString(dateObj);
+                }
+
+                const key = String(p).trim();
+                if (!coachingMap[key]) {
+                    coachingMap[key] = [];
+                }
+                coachingMap[key].push({
+                    status: status,
+                    date: dateObj,
+                    dateString: dateString
+                });
+            });
         }
 
-        coachingRows.forEach(row => {
-            const p = row[pIndex];
-            const rating = row[ratingIndex];
-            const status = getCoachingStatusByText(rating);
-            if (!p || !status) return;
+        // ---- NIEUW: tabblad "Coaching" (openstaande / ingeplande coachings) ----
+        if (workbook.SheetNames.includes('Coaching')) {
+            const sheet2 = workbook.Sheets['Coaching'];
+            const rows2 = XLSX.utils.sheet_to_json(sheet2, { header: 1 });
 
-            let dateObj = null;
-            let dateString = '';
-            if (dateIndex !== -1) {
-                const rawDate = row[dateIndex];
-                dateObj = excelSerialToDate(rawDate);
-                dateString = dateToDisplayString(dateObj);
-            }
+            if (rows2.length) {
+                const headers2 = rows2[0];
+                const data2 = rows2.slice(1);
+                const pIndex2 = headers2.indexOf('P-nr');
 
-            const key = String(p).trim();
-            if (!coachingMap[key]) {
-                coachingMap[key] = [];
+                if (pIndex2 === -1) {
+                    console.warn('Kolom P-nr niet gevonden in tabblad "Coaching".');
+                } else {
+                    data2.forEach(row => {
+                        const p = row[pIndex2];
+                        if (!p) return;
+                        const key = String(p).trim();
+                        if (key) {
+                            coachingPendingSet.add(key);
+                        }
+                    });
+                }
             }
-            coachingMap[key].push({
-                status: status,
-                date: dateObj,
-                dateString: dateString
-            });
-        });
+        }
 
         console.log('CoachingMap:', coachingMap);
+        console.log('CoachingPendingSet:', coachingPendingSet);
         updateFilterAndViews();
     })
     .catch(err => {
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
+
 
 </body>
 </html>
