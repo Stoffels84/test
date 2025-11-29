@@ -226,10 +226,10 @@ let voertuigData = [];
 let locatieData = [];
 let voertuigMonthChart = null;
 
-// coachingsdata
+// coachingsdata: P-nr -> array van statussen ['good','medium',...]
 let coachingHeaders = [];
 let coachingRows = [];
-const coachingMap = {}; // P-nr -> 'good' | 'medium' | 'bad'
+const coachingMap = {};
 
 // tabs (sidebar)
 const tabButtons = document.querySelectorAll('.tab-button');
@@ -323,11 +323,22 @@ function getCoachingStatusByText(text) {
     return null;
 }
 
-function getCoachingStatusForPnr(pnr) {
-    if (pnr === null || pnr === undefined) return null;
+// alle statussen voor een P-nr (array)
+function getCoachingStatusesForPnr(pnr) {
+    if (pnr === null || pnr === undefined) return [];
     const key = String(pnr).trim();
-    if (!key) return null;
-    return coachingMap[key] || null;
+    if (!key) return [];
+    return coachingMap[key] || [];
+}
+
+// één samenvattende status per P-nr (rood > oranje > groen)
+function getPrimaryCoachingStatusForPnr(pnr) {
+    const list = getCoachingStatusesForPnr(pnr);
+    if (!list.length) return null;
+    if (list.includes('bad')) return 'bad';
+    if (list.includes('medium')) return 'medium';
+    if (list.includes('good')) return 'good';
+    return null;
 }
 
 // jaarfilter opbouwen
@@ -380,7 +391,7 @@ function createCell(idx, row) {
 
     // Coachingstatus op basis van personeelsnr in deze rij
     const pnrVal = (personnelColIndex !== -1) ? row[personnelColIndex] : null;
-    const status = getCoachingStatusForPnr(pnrVal);
+    const status = getPrimaryCoachingStatusForPnr(pnrVal);
 
     // linkkolom
     if (idx === linkColIndex && value) {
@@ -419,7 +430,7 @@ function createCell(idx, row) {
         return td;
     }
 
-    // personeelsnummerkolom: nummer + (optioneel) bol erachter
+    // personeelsnummerkolom: nummer + bol erachter
     if (idx === personnelColIndex) {
         const wrapper = document.createElement('span');
         wrapper.style.display = 'inline-flex';
@@ -715,23 +726,26 @@ function updateChauffeurView() {
         const wrapper = document.createElement('span');
         wrapper.style.display = 'inline-flex';
         wrapper.style.alignItems = 'center';
-        wrapper.style.gap = '6px';
+        wrapper.style.gap = '4px';
 
-        // status op basis van P-nr uit eerste rij van deze chauffeur
-        let status = null;
+        // statussen op basis van P-nr uit eerste rij van deze chauffeur
+        let statuses = [];
         if (personnelColIndex !== -1 && ch.rows.length > 0) {
             const pnrVal = ch.rows[0][personnelColIndex];
-            status = getCoachingStatusForPnr(pnrVal);
+            statuses = getCoachingStatusesForPnr(pnrVal);
         }
-        if (status) {
+
+        // Voor elke coaching één bolletje
+        statuses.forEach(st => {
             const dot = document.createElement('span');
             dot.classList.add('coaching-dot');
-            if (status === 'good')   dot.classList.add('coaching-good');
-            if (status === 'medium') dot.classList.add('coaching-medium');
-            if (status === 'bad')    dot.classList.add('coaching-bad');
+            if (st === 'good')   dot.classList.add('coaching-good');
+            if (st === 'medium') dot.classList.add('coaching-medium');
+            if (st === 'bad')    dot.classList.add('coaching-bad');
             dot.title = 'Coachingstatus';
             wrapper.appendChild(dot);
-        }
+        });
+
         const nameSpan = document.createElement('span');
         nameSpan.textContent = ch.name;
         wrapper.appendChild(nameSpan);
@@ -1032,7 +1046,11 @@ fetch('Coachingslijst.xlsx')
             const rating = row[ratingIndex];
             const status = getCoachingStatusByText(rating);
             if (!p || !status) return;
-            coachingMap[String(p).trim()] = status;
+            const key = String(p).trim();
+            if (!coachingMap[key]) {
+                coachingMap[key] = [];
+            }
+            coachingMap[key].push(status);
         });
 
         console.log('CoachingMap:', coachingMap);
@@ -1042,6 +1060,7 @@ fetch('Coachingslijst.xlsx')
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
+
 
 
 
