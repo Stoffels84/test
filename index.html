@@ -1021,16 +1021,30 @@ function searchDashboard() {
 
 // ---------- ANALYSE FUNCTIES (voor tab Coaching) ----------
 
+function getPnrSetFromFilteredRows() {
+    const set = new Set();
+    if (personnelColIndex === -1) return set;
+    filteredRows.forEach(row => {
+        const p = row[personnelColIndex];
+        if (!p) return;
+        const key = String(p).trim();
+        if (key) set.add(key);
+    });
+    return set;
+}
+
 function countPnrInCoaching() {
-    return coachingPendingSet.size;
+    const pnrSetYear = getPnrSetFromFilteredRows();
+    return Array.from(coachingPendingSet).filter(p => pnrSetYear.has(p)).length;
 }
 
 function countPnrInVoltooide() {
-    return Object.keys(coachingMap).length;
+    const pnrSetYear = getPnrSetFromFilteredRows();
+    return Object.keys(coachingMap).filter(p => pnrSetYear.has(p)).length;
 }
 
 function countUniquePnrInVoltooide() {
-    return Object.keys(coachingMap).length;
+    return countPnrInVoltooide();
 }
 
 function findHighDamageWithoutCoaching() {
@@ -1038,7 +1052,8 @@ function findHighDamageWithoutCoaching() {
 
     const teller = new Map();
 
-    baseRows.forEach(row => {
+    // gebruik alleen gefilterde rijen (jaarfilter)
+    filteredRows.forEach(row => {
         const p = row[personnelColIndex];
         if (!p) return;
         const key = String(p).trim();
@@ -1086,24 +1101,33 @@ function updateCoachingStats() {
     const div = document.getElementById('coaching-stats');
     if (!div) return;
 
-    const pCoaching = countPnrInCoaching();
-    const pVoltooide = countPnrInVoltooide();
-    const pVoltooideUniek = countUniquePnrInVoltooide();
+    const pnrSetYear = getPnrSetFromFilteredRows();
+
+    const pCoaching = Array.from(coachingPendingSet)
+        .filter(p => pnrSetYear.has(p)).length;
+
+    const pVoltooide = Object.keys(coachingMap)
+        .filter(p => pnrSetYear.has(p)).length;
+
+    const pVoltooideUniek = pVoltooide;
+
     const highDamage = findHighDamageWithoutCoaching();
-    const coachingList = listPnrInCoaching();
+
+    const coachingListFiltered = listPnrInCoaching()
+        .filter(p => pnrSetYear.has(p));
 
     let html = `
         <h3>Coaching overzicht</h3>
         <ul>
-            <li><strong>Aantal P-nrs in tabblad "Coaching":</strong> ${pCoaching}</li>
-            <li><strong>Aantal P-nrs in "Voltooide coachings":</strong> ${pVoltooide}</li>
-            <li><strong>Unieke P-nrs in "Voltooide coachings":</strong> ${pVoltooideUniek}</li>
-            <li><strong>P-nrs &gt; 2 schades zonder coaching:</strong> ${highDamage.length}</li>
+            <li><strong>Aantal P-nrs in tabblad "Coaching" (jaarfilter):</strong> ${pCoaching}</li>
+            <li><strong>Aantal P-nrs in "Voltooide coachings" (jaarfilter):</strong> ${pVoltooide}</li>
+            <li><strong>Unieke P-nrs in "Voltooide coachings" (jaarfilter):</strong> ${pVoltooideUniek}</li>
+            <li><strong>P-nrs &gt; 2 schades zonder coaching (jaarfilter):</strong> ${highDamage.length}</li>
         </ul>
     `;
 
     if (highDamage.length > 0) {
-        html += `<h4>P-nrs met &gt; 2 schades en geen coaching:</h4>`;
+        html += `<h4>P-nrs met &gt; 2 schades en geen coaching (jaarfilter):</h4>`;
         html += `<ul>`;
         highDamage.forEach(e => {
             const naam = e.naam ? ` — ${e.naam}` : '';
@@ -1112,11 +1136,7 @@ function updateCoachingStats() {
         html += `</ul>`;
     }
 
-    if (coachingList.length > 0) {
-        html += `<h4>Alle P-nrs gevonden in tabblad "Coaching" (${coachingList.length}):</h4>`;
-        html += `<div style="font-size:13px;max-height:200px;overflow:auto;border:1px solid #e5e7eb;padding:8px;border-radius:6px;">`;
-        html += coachingList.join(', ');
-        html += `</div>`;
+    // lijst weglaten op verzoek
     }
 
     div.innerHTML = html;
@@ -1308,7 +1328,6 @@ fetch('Coachingslijst.xlsx')
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
-
 
 </body>
 </html>
