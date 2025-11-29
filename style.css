@@ -353,3 +353,25 @@ a.table-link:hover {
         width: 100%;
     }
 }
+/* Coaching-status bolletjes bij P-nr */
+.coaching-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.coaching-good {
+    background: #16a34a; /* groen */
+}
+
+.coaching-medium {
+    background: #f97316; /* oranje */
+}
+
+.coaching-bad {
+    background: #dc2626; /* rood */
+}
+
