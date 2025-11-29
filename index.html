@@ -420,7 +420,48 @@ function getFilteredRows() {
     });
 }
 
-// ---------- CEL MAKEN (link + coachingbollen) ----------
+// ---------- CEL MAKERS ----------
+//
+// createCellAllData: wordt gebruikt voor tab 'Alle data' – géén bollen.
+// createCell:        wordt gebruikt in detailtabellen en dashboard – met bollen.
+//
+
+function createCellAllData(idx, row) {
+    const rawValue = row[idx];
+    let value = rawValue;
+    if (idx === dateColIndex) {
+        value = excelSerialToDateString(rawValue);
+    }
+    const td = document.createElement('td');
+
+    // linkkolom blijft klikbaar
+    if (idx === linkColIndex && value) {
+        const href = String(value).trim();
+        const a = document.createElement('a');
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.className = 'table-link';
+        a.textContent = '=> naar EAF';
+        td.appendChild(a);
+        return td;
+    }
+
+    // chauffeur: enkel tekst
+    if (idx === chauffeurColIndex) {
+        td.textContent = (value === null || value === undefined) ? '' : value;
+        return td;
+    }
+
+    // personeelsnr: enkel tekst
+    if (idx === personnelColIndex) {
+        td.textContent = (value === null || value === undefined) ? '' : value;
+        return td;
+    }
+
+    td.textContent = (value === null || value === undefined) ? '' : value;
+    return td;
+}
 
 function createCell(idx, row) {
     const rawValue = row[idx];
@@ -518,7 +559,7 @@ function rebuildAllDataTableBody(rows) {
     rows.forEach(row => {
         const tr = document.createElement('tr');
         row.forEach((_, idx) => {
-            const td = createCell(idx, row);
+            const td = createCellAllData(idx, row); // géén bollen in tab 'Alle data'
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -627,7 +668,7 @@ function showChauffeurDetailsInline(name, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row);
+            const td = createCell(idx, row); // hier wél bollen
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -687,7 +728,7 @@ function showVoertuigDetailsInline(type, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row);
+            const td = createCell(idx, row); // bollen
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -747,7 +788,7 @@ function showLocatieDetailsInline(loc, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row);
+            const td = createCell(idx, row); // bollen
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -1113,9 +1154,6 @@ function updateCoachingStats() {
 
     const highDamage = findHighDamageWithoutCoaching();
 
-    const coachingListFiltered = listPnrInCoaching()
-        .filter(p => pnrSetYear.has(p));
-
     let html = `
         <h3>Coaching overzicht</h3>
         <ul>
@@ -1136,9 +1174,7 @@ function updateCoachingStats() {
         html += `</ul>`;
     }
 
-    // lijst weglaten op verzoek
-    }
-
+    // geen extra lijst met alle P-nrs meer
     div.innerHTML = html;
 }
 
@@ -1328,6 +1364,7 @@ fetch('Coachingslijst.xlsx')
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
+
 
 </body>
 </html>
