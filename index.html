@@ -9,327 +9,202 @@
     <!-- Grafieken voor Voertuig-tab -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <style>
-    /* ====== Basis layout & thema ====== */
-    :root {
-        --bg-page: #f3f4f6;
-        --bg-box: #ffffff;
-        --border-soft: #e5e7eb;
-        --accent: #2563eb;
-        --accent-soft: #dbeafe;
-        --text-main: #111827;
-        --text-muted: #6b7280;
-        --table-header: #f9fafb;
-        --hover-row: #f3f4ff;
-        --shadow-soft: 0 10px 25px rgba(15, 23, 42, 0.06);
-        --radius-lg: 14px;
-    }
-    
-    *,
-    *::before,
-    *::after {
-        box-sizing: border-box;
-    }
-    
-    body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        margin: 0;
-        padding: 0;
-        background: radial-gradient(circle at top left, #e5e7eb, #f9fafb 40%, #e5e7eb);
-        color: var(--text-main);
-    }
-    
-    /* ====== Hoofdcontainer ====== */
-    .box {
-        max-width: 1200px;
-        margin: 24px auto 32px;
-        padding: 24px 28px 28px;
-        background: var(--bg-box);
-        border-radius: var(--radius-lg);
-        box-shadow: var(--shadow-soft);
-        border: 1px solid rgba(148, 163, 184, 0.2);
-    }
-    
-    h1 {
-        margin-top: 0;
-        margin-bottom: 4px;
-        font-size: 24px;
-        letter-spacing: 0.02em;
-    }
-    
-    #status {
-        margin-top: 0;
-        margin-bottom: 16px;
-        color: var(--text-muted);
-        font-size: 13px;
-    }
-    
-    /* ====== Bovenste filterbalk ====== */
-    #top-filters {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin: 8px 0 10px;
-        font-size: 13px;
-        color: var(--text-muted);
-    }
-    
-    #year-filter {
-        padding: 6px 10px;
-        font-size: 13px;
-        border-radius: 999px;
-        border: 1px solid var(--border-soft);
-        background: #f9fafb;
-        outline: none;
-    }
-    
-    #year-filter:focus {
-        border-color: var(--accent);
-        box-shadow: 0 0 0 1px var(--accent-soft);
-    }
-    
-    /* ====== Tabs ====== */
-    .tabs {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        border-bottom: 1px solid var(--border-soft);
-        margin-bottom: 10px;
-    }
-    
-    .tab-button {
-        padding: 6px 12px;
-        border-radius: 999px;
-        border: 1px solid transparent;
-        background: transparent;
-        cursor: pointer;
-        font-size: 13px;
-        color: var(--text-muted);
-        transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.05s;
-    }
-    
-    .tab-button:hover {
-        background: #f3f4f6;
-        transform: translateY(-1px);
-    }
-    
-    .tab-button.active {
-        background: var(--accent-soft);
-        color: var(--accent);
-        border-color: rgba(37, 99, 235, 0.3);
-        font-weight: 600;
-    }
-    
-    .tab-content {
-        display: none;
-        padding-top: 8px;
-    }
-    
-    .tab-content.active {
-        display: block;
-    }
-    
-    /* ====== Tabellen & wrappers ====== */
-    .table-container {
-        width: 100%;
-        overflow-x: auto;
-        margin-top: 10px;
-        border-radius: 10px;
-        border: 1px solid var(--border-soft);
-        background: #ffffff;
-    }
-    
-    table {
-        border-collapse: collapse;
-        width: 100%;
-        font-size: 13px;
-        table-layout: auto;
-    }
-    
-    th,
-    td {
-        border-bottom: 1px solid var(--border-soft);
-        padding: 6px 8px;
-        text-align: left;
-        max-width: 260px;
-        white-space: normal;
-        word-wrap: break-word;
-    }
-    
-    th {
-        background: var(--table-header);
-        position: sticky;
-        top: 0;
-        z-index: 1;
-        font-weight: 600;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-        color: #4b5563;
-    }
-    
-    tbody tr:nth-child(even) {
-        background: #fcfcff;
-    }
-    
-    tbody tr:hover {
-        background: var(--hover-row);
-    }
-    
-    /* Detailrijen */
-    .chauffeur-detail-row td,
-    .voertuig-detail-row td,
-    .locatie-detail-row td {
-        background: #f9fafb;
-    }
-    
-    /* ====== Links ====== */
-    a.table-link {
-        color: var(--accent);
-        text-decoration: none;
-        font-weight: 500;
-        font-size: 12px;
-    }
-    
-    a.table-link::after {
-        content: " ↗";
-        font-size: 10px;
-    }
-    
-    a.table-link:hover {
-        text-decoration: underline;
-    }
-    
-    /* ====== Zoekvelden & selecties ====== */
-    #search-input,
-    #dashboard-search-input {
-        padding: 7px 10px;
-        width: 280px;
-        max-width: 100%;
-        margin: 4px 0 10px;
-        border: 1px solid var(--border-soft);
-        border-radius: 999px;
-        font-size: 13px;
-        background: #f9fafb;
-        outline: none;
-    }
-    
-    #search-input:focus,
-    #dashboard-search-input:focus {
-        border-color: var(--accent);
-        box-shadow: 0 0 0 1px var(--accent-soft);
-        background: #ffffff;
-    }
-    
-    #chauffeur-limit,
-    #voertuig-limit,
-    #locatie-limit {
-        padding: 5px 10px;
-        font-size: 13px;
-        border-radius: 999px;
-        border: 1px solid var(--border-soft);
-        background: #f9fafb;
-        outline: none;
-        margin-left: 4px;
-    }
-    
-    #chauffeur-limit:focus,
-    #voertuig-limit:focus,
-    #locatie-limit:focus {
-        border-color: var(--accent);
-        box-shadow: 0 0 0 1px var(--accent-soft);
-    }
-    
-    /* ====== Knoppen ====== */
-    #dashboard-search-button {
-        padding: 7px 14px;
-        font-size: 13px;
-        border-radius: 999px;
-        border: 1px solid var(--border-soft);
-        background: #f3f4f6;
-        cursor: pointer;
-        margin-top: 4px;
-        transition: background 0.15s, border-color 0.15s, transform 0.05s;
-    }
-    
-    #dashboard-search-button:hover {
-        background: var(--accent-soft);
-        border-color: rgba(37, 99, 235, 0.35);
-        transform: translateY(-1px);
-    }
-    
-    /* Info-tekst dashboard */
-    #dashboard-info {
-        font-size: 12px;
-        color: var(--text-muted);
-        margin-top: 4px;
-    }
-    
-    /* ====== Tekst / placeholders ====== */
-    .placeholder-text {
-        color: var(--text-muted);
-        font-size: 13px;
-        margin-top: 10px;
-    }
-    
-    /* ====== Charts ====== */
-    .chart-container {
-        margin-top: 16px;
-        height: 260px;
-    }
-    
-    /* ====== Hover gedrag rijen selectie (Chauffeur, Voertuig, Locatie) ====== */
-    #chauffeur-table tbody tr,
-    #voertuig-table tbody tr,
-    #locatie-table tbody tr {
-        cursor: pointer;
-    }
-    
-    /* ====== Responsive ====== */
-    @media (max-width: 900px) {
-        .box {
-            margin: 12px;
-            padding: 16px 14px 20px;
-            border-radius: 10px;
-        }
-    
-        h1 {
-            font-size: 20px;
-        }
-    
-        .tabs {
-            gap: 6px;
-        }
-    
-        .tab-button {
-            font-size: 12px;
-            padding: 5px 10px;
-        }
-    
-        th,
-        td {
-            padding: 5px 6px;
-            font-size: 12px;
-        }
-    
-        #top-filters {
-            flex-wrap: wrap;
-            align-items: flex-start;
-        }
-    }
-    
-    @media (max-width: 600px) {
-        #search-input,
-        #dashboard-search-input {
-            width: 100%;
-        }
-    }
-    </style>
+<style>
+/* ====== Thema & basis ====== */
+:root {
+    --bg-page: #f3f4f6;
+    --bg-box: #ffffff;
+    --border-soft: #d1d5db;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --text-main: #111827;
+    --text-muted: #6b7280;
+    --table-header: #f9fafb;
+    --hover-row: #eef2ff;
+    --shadow-soft: 0 8px 22px rgba(0,0,0,0.06);
+    --radius: 12px;
+}
+
+body {
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: var(--bg-page);
+    color: var(--text-main);
+}
+
+/* ====== Container ====== */
+.box {
+    max-width: 1300px;
+    margin: 20px auto;
+    padding: 22px 28px;
+    background: var(--bg-box);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-soft);
+}
+
+/* ====== Logo linksboven ====== */
+.logo-title {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 6px;
+}
+
+.site-logo {
+    height: 42px;
+    width: auto;
+    object-fit: contain;
+    display: block;
+}
+
+/* ====== Tabs ====== */
+.tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 12px;
+}
+
+.tab-button {
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: #f3f4f6;
+    cursor: pointer;
+    font-size: 13px;
+    transition: .15s;
+    color: var(--text-muted);
+}
+
+.tab-button:hover {
+    background: #e5e7eb;
+}
+
+.tab-button.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* ====== Tabellen volledig schermbreed ====== */
+.table-container {
+    width: 100%;
+    margin-top: 10px;
+    overflow-x: auto;
+}
+
+/* Dit FORCEREN we nu naar volle breedte */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+/* Kolommen nu flexibel */
+th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    text-align: left;
+}
+
+/* Tabelkop zichtbaarder */
+th {
+    background: var(--table-header);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* Hover */
+tbody tr:hover {
+    background: var(--hover-row);
+}
+
+/* Detailblokken */
+.chauffeur-detail-row td,
+.voertuig-detail-row td,
+.locatie-detail-row td {
+    background: #fafafa;
+}
+
+/* Links (EAF) */
+a.table-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+}
+a.table-link::after {
+    content: " ↗";
+    font-size: 11px;
+}
+a.table-link:hover {
+    text-decoration: underline;
+}
+
+/* Filters & inputvelden */
+#search-input,
+#dashboard-search-input {
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border-soft);
+    font-size: 14px;
+    background: #f9fafb;
+    margin-bottom: 10px;
+    width: 300px;
+    max-width: 100%;
+}
+
+select {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border-soft);
+    background: #f9fafb;
+    font-size: 13px;
+}
+
+#dashboard-search-button {
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border-soft);
+    background: #f3f4f6;
+    cursor: pointer;
+    transition: .15s;
+}
+#dashboard-search-button:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+}
+
+/* Charts */
+.chart-container {
+    height: 260px;
+    margin-top: 14px;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .box { padding: 16px; }
+    th, td { padding: 8px; }
+    .site-logo { height: 32px; }
+}
+</style>
+
 </head>
 <body>
 
 <div class="box">
-    <h1>Schadeanalyse</h1>
+    <div class="logo-title">
+        <img src="logo.png" alt="Logo" class="site-logo">
+        <h1>Schadeanalyse</h1>
+    </div>
+
 
     <div id="top-filters">
         <label for="year-filter">Jaar:
