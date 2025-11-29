@@ -121,22 +121,30 @@
             margin-top: 10px;
         }
 
-        /* Chauffeur & Voertuig tabs */
-        #chauffeur-limit, #voertuig-limit {
+        /* Chauffeur, Voertuig, Locatie tabs */
+        #chauffeur-limit,
+        #voertuig-limit,
+        #locatie-limit {
             padding: 6px;
             font-size: 13px;
             margin-left: 5px;
         }
+
         #chauffeur-table tbody tr,
-        #voertuig-table tbody tr {
+        #voertuig-table tbody tr,
+        #locatie-table tbody tr {
             cursor: pointer;
         }
+
         #chauffeur-table tbody tr:hover,
-        #voertuig-table tbody tr:hover {
+        #voertuig-table tbody tr:hover,
+        #locatie-table tbody tr:hover {
             background: #f5f5f5;
         }
+
         .chauffeur-detail-row td,
-        .voertuig-detail-row td {
+        .voertuig-detail-row td,
+        .locatie-detail-row td {
             background: #fafafa;
         }
 
@@ -252,9 +260,27 @@
     <!-- TAB 4: LOCATIE -->
     <div class="tab-content" id="tab-locatie">
         <h2>Data rond locatie</h2>
-        <p class="placeholder-text">
-            Wordt later uitgewerkt. Hier kun je bv. per locatie een overzicht maken.
-        </p>
+        <p>Overzicht van aantal schades per locatie (gefilterd op gekozen jaar). Klik op een locatie voor details direct onder de rij.</p>
+
+        <label for="locatie-limit">Toon:
+            <select id="locatie-limit">
+                <option value="10">Top 10</option>
+                <option value="20">Top 20</option>
+                <option value="0">Alle locaties</option>
+            </select>
+        </label>
+
+        <div class="table-container">
+            <table id="locatie-table">
+                <thead>
+                    <tr>
+                        <th>Locatie</th>
+                        <th>Aantal</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 
     <!-- TAB 5: DASHBOARD -->
@@ -300,9 +326,11 @@
     let dateColIndex = -1;
     let chauffeurColIndex = -1;
     let voertuigColIndex = -1;
+    let locatieColIndex = -1;
 
     let chauffeurData = [];
     let voertuigData = [];
+    let locatieData = [];
     let voertuigMonthChart = null;
 
     // ---- Tabs ----
@@ -510,6 +538,31 @@
         voertuigData = Array.from(map.values()).sort((a, b) => b.count - a.count);
     }
 
+    // ---- Locatie-aggregatie opbouwen ----
+    function buildLocatieData(rows) {
+        locatieData = [];
+        if (locatieColIndex === -1) {
+            console.warn('Geen locatie-kolom gevonden.');
+            return;
+        }
+
+        const map = new Map(); // locatie -> {locatie, count, rows:[]}
+
+        rows.forEach(row => {
+            let loc = row[locatieColIndex];
+            loc = (loc && String(loc).trim() !== '') ? String(loc).trim() : 'Onbekend';
+
+            if (!map.has(loc)) {
+                map.set(loc, { locatie: loc, count: 0, rows: [] });
+            }
+            const entry = map.get(loc);
+            entry.count++;
+            entry.rows.push(row);
+        });
+
+        locatieData = Array.from(map.values()).sort((a, b) => b.count - a.count);
+    }
+
     // ---- Chauffeur details inline (toggle) ----
     function showChauffeurDetailsInline(name, clickedRow) {
         const tbodyCh = document.querySelector('#chauffeur-table tbody');
@@ -652,6 +705,77 @@
         clickedRow.insertAdjacentElement('afterend', detailTr);
     }
 
+    // ---- Locatie details inline (toggle) ----
+    function showLocatieDetailsInline(loc, clickedRow) {
+        const tbodyL = document.querySelector('#locatie-table tbody');
+
+        const nextRow = clickedRow.nextElementSibling;
+        if (nextRow && nextRow.classList.contains('locatie-detail-row')) {
+            nextRow.remove();
+            return;
+        }
+
+        Array.from(tbodyL.querySelectorAll('.locatie-detail-row')).forEach(r => r.remove());
+
+        const entry = locatieData.find(l => l.locatie === loc);
+        if (!entry) return;
+
+        const headers = allHeaders;
+        const cols = [];
+
+        const addCol = (possibleNames) => {
+            const idx = findColumnIndexByNames(headers, possibleNames);
+            if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
+        };
+
+        if (locatieColIndex !== -1) cols.push(locatieColIndex);
+        addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
+        addCol(['datum']);
+        addCol(['bus/ tram', 'bus/tram']);
+        addCol(['link']);
+
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'locatie-detail-row';
+        const detailTd = document.createElement('td');
+        detailTd.colSpan = 2;
+
+        const innerTable = document.createElement('table');
+        innerTable.style.width = '100%';
+        innerTable.style.fontSize = '12px';
+
+        const theadInner = document.createElement('thead');
+        const hr = document.createElement('tr');
+        cols.forEach(idx => {
+            const th = document.createElement('th');
+            th.textContent = headers[idx];
+            hr.appendChild(th);
+        });
+        theadInner.appendChild(hr);
+
+        const tbodyInner = document.createElement('tbody');
+        entry.rows.forEach(row => {
+            const tr = document.createElement('tr');
+            cols.forEach(idx => {
+                let value = row[idx];
+                if (idx === dateColIndex) {
+                    value = excelSerialToDateString(value);
+                }
+                const td = document.createElement('td');
+                td.textContent = (value === null || value === undefined) ? '' : value;
+                tr.appendChild(td);
+            });
+            tbodyInner.appendChild(tr);
+        });
+
+        innerTable.appendChild(theadInner);
+        innerTable.appendChild(tbodyInner);
+
+        detailTd.appendChild(innerTable);
+        detailTr.appendChild(detailTd);
+
+        clickedRow.insertAdjacentElement('afterend', detailTr);
+    }
+
     // ---- Chauffeur tabel updaten ----
     function updateChauffeurView() {
         const limitSelect = document.getElementById('chauffeur-limit');
@@ -710,6 +834,35 @@
         });
     }
 
+    // ---- Locatie tabel updaten ----
+    function updateLocatieView() {
+        const limitSelect = document.getElementById('locatie-limit');
+        const tbodyL = document.querySelector('#locatie-table tbody');
+        tbodyL.innerHTML = '';
+
+        let limit = parseInt(limitSelect.value, 10);
+        if (isNaN(limit) || limit < 0) limit = 10;
+
+        const list = (limit === 0) ? locatieData : locatieData.slice(0, limit);
+
+        list.forEach(l => {
+            const tr = document.createElement('tr');
+            tr.dataset.locatie = l.locatie;
+
+            const tdLoc = document.createElement('td');
+            tdLoc.textContent = l.locatie;
+            const tdCount = document.createElement('td');
+            tdCount.textContent = l.count;
+
+            tr.appendChild(tdLoc);
+            tr.appendChild(tdCount);
+
+            tr.addEventListener('click', () => showLocatieDetailsInline(l.locatie, tr));
+
+            tbodyL.appendChild(tr);
+        });
+    }
+
     // ---- Grafiek Voertuig: schades per maand en type ----
     function buildVoertuigMonthChart(rows) {
         const canvas = document.getElementById('voertuig-month-chart');
@@ -722,7 +875,6 @@
 
         const monthLabels = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec'];
 
-        // types verzamelen
         const typeSet = new Set();
         rows.forEach(row => {
             let type = row[voertuigColIndex];
@@ -731,7 +883,6 @@
         });
         const types = Array.from(typeSet).sort();
 
-        // datastructuur: type -> [12 maanden]
         const dataByType = {};
         types.forEach(t => {
             dataByType[t] = new Array(12).fill(0);
@@ -745,14 +896,13 @@
             if (!dataByType[type]) {
                 dataByType[type] = new Array(12).fill(0);
             }
-            const m = d.getUTCMonth(); // 0–11
+            const m = d.getUTCMonth();
             dataByType[type][m] += 1;
         });
 
         const datasets = types.map(t => ({
             label: t,
             data: dataByType[t]
-            // Chart.js kiest zelf kleuren
         }));
 
         voertuigMonthChart = new Chart(ctx, {
@@ -768,15 +918,11 @@
                     legend: { position: 'top' }
                 },
                 scales: {
-                    x: {
-                        stacked: true
-                    },
+                    x: { stacked: true },
                     y: {
                         stacked: true,
                         beginAtZero: true,
-                        ticks: {
-                            precision: 0
-                        }
+                        ticks: { precision: 0 }
                     }
                 }
             }
@@ -789,8 +935,10 @@
         rebuildAllDataTableBody(filteredRows);
         buildChauffeurData(filteredRows);
         buildVoertuigData(filteredRows);
+        buildLocatieData(filteredRows);
         updateChauffeurView();
         updateVoertuigView();
+        updateLocatieView();
         buildVoertuigMonthChart(filteredRows);
 
         const filterText = (yearFilterSelect.value === 'ALL'
@@ -806,6 +954,9 @@
     });
     document.getElementById('voertuig-limit').addEventListener('change', () => {
         updateVoertuigView();
+    });
+    document.getElementById('locatie-limit').addEventListener('change', () => {
+        updateLocatieView();
     });
     yearFilterSelect.addEventListener('change', () => {
         updateFilterAndViews();
@@ -862,6 +1013,10 @@
             voertuigColIndex = findColumnIndexByNames(
                 allHeaders,
                 ['bus/tram', 'bus/ tram']
+            );
+            locatieColIndex = findColumnIndexByNames(
+                allHeaders,
+                ['locatie']
             );
 
             // jaren in filter
