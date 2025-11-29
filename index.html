@@ -209,10 +209,7 @@
             </table>
         </div>
 
-        <h3>Grafiek per chauffeur</h3>
-        <div class="chart-container">
-            <canvas id="chauffeur-chart"></canvas>
-        </div>
+
     </div>
 
     <!-- TAB 3: VOERTUIG -->
@@ -274,7 +271,6 @@
     let dateColIndex = -1;
     let chauffeurColIndex = -1;
     let chauffeurData = [];
-    let chauffeurChart = null;
 
     // ---- Tabs ----
     const tabButtons = document.querySelectorAll('.tab-button');
@@ -431,30 +427,7 @@
         });
     }
 
-    // ---- Chauffeur-aggregatie opbouwen op basis van rijen ----
-    function buildChauffeurData(rows) {
-        chauffeurData = [];
-        if (chauffeurColIndex === -1) {
-            console.warn('Geen chauffeur-kolom gevonden.');
-            return;
-        }
 
-        const map = new Map(); // naam -> {name, count, rows:[]}
-
-        rows.forEach(row => {
-            let name = row[chauffeurColIndex];
-            name = (name && String(name).trim() !== '') ? String(name).trim() : 'Onbekend';
-
-            if (!map.has(name)) {
-                map.set(name, { name: name, count: 0, rows: [] });
-            }
-            const entry = map.get(name);
-            entry.count++;
-            entry.rows.push(row);
-        });
-
-        chauffeurData = Array.from(map.values()).sort((a, b) => b.count - a.count);
-    }
 
     // ---- Chauffeur details inline onder de rij ----
     function showChauffeurDetailsInline(name, clickedRow) {
@@ -552,7 +525,7 @@
             tbodyCh.appendChild(tr);
         });
 
-        buildChauffeurChart(list);
+        
     }
 
     // ---- Chauffeur grafiek ----
