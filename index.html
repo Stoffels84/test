@@ -164,19 +164,21 @@
 
                 <div class="table-container" style="margin-top:10px;">
                     <table id="dashboard-table">
-                        <thead>
-                            <tr>
-                                <th>Datum</th>
-                                <th>Naam</th>
-                                <th>Personeelsnr</th>
-                                <th>Voertuigtype</th>
-                                <th>Locatie</th>
-                                <th>Actief</th>
-                                <th>Link</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
+    <thead>
+        <tr>
+            <th>Datum</th>
+            <th>Chauffeur</th>
+            <th>Personeelsnr</th>
+            <th>Voertuigtype</th>
+            <th>Locatie</th>
+            <th>Actief</th>
+            <th>Link</th>
+            <th>Laatste coaching</th> <!-- nieuw -->
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
                 </div>
             </div>
 
@@ -226,7 +228,7 @@ let voertuigData = [];
 let locatieData = [];
 let voertuigMonthChart = null;
 
-// coachingsdata: P-nr -> array van statussen ['good','medium',...]
+// coachingsdata: P-nr -> array van entries { status, date, dateString }
 let coachingHeaders = [];
 let coachingRows = [];
 const coachingMap = {};
@@ -263,7 +265,7 @@ searchInput.addEventListener('input', () => {
     }
 });
 
-// ---------- HULPFUNCTIES ----------
+// ---------- HULPFUNCTIES DATUM ----------
 
 function excelSerialToDate(cell) {
     if (typeof cell === 'number') {
@@ -304,6 +306,14 @@ function excelSerialToDateString(cell) {
     return `${day}/${month}/${year}`;
 }
 
+function dateToDisplayString(date) {
+    if (!date || isNaN(date)) return '';
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+}
+
 function findColumnIndexByNames(headers, possibleNames) {
     const lower = headers.map(h => String(h).toLowerCase().trim());
     for (const name of possibleNames) {
@@ -313,7 +323,8 @@ function findColumnIndexByNames(headers, possibleNames) {
     return -1;
 }
 
-// coachingstatus uit tekst
+// ---------- HULPFUNCTIES COACHING ----------
+
 function getCoachingStatusByText(text) {
     if (!text) return null;
     const t = String(text).toLowerCase();
@@ -323,12 +334,17 @@ function getCoachingStatusByText(text) {
     return null;
 }
 
-// alle statussen voor een P-nr (array)
-function getCoachingStatusesForPnr(pnr) {
+// alle coaching-entries voor een P-nr: [{status, date, dateString}, ...]
+function getCoachingEntriesForPnr(pnr) {
     if (pnr === null || pnr === undefined) return [];
     const key = String(pnr).trim();
     if (!key) return [];
     return coachingMap[key] || [];
+}
+
+// alleen de statussen als array
+function getCoachingStatusesForPnr(pnr) {
+    return getCoachingEntriesForPnr(pnr).map(e => e.status);
 }
 
 // één samenvattende status per P-nr (rood > oranje > groen)
@@ -341,7 +357,25 @@ function getPrimaryCoachingStatusForPnr(pnr) {
     return null;
 }
 
-// jaarfilter opbouwen
+// de laatste coaching (op datum) voor een P-nr
+function getLatestCoachingForPnr(pnr) {
+    const entries = getCoachingEntriesForPnr(pnr);
+    if (!entries.length) return null;
+    let latest = entries[0];
+    let latestTime = latest.date ? latest.date.getTime() : 0;
+    entries.forEach(e => {
+        if (!e.date) return;
+        const t = e.date.getTime();
+        if (t > latestTime) {
+            latestTime = t;
+            latest = e;
+        }
+    });
+    return latest;
+}
+
+// ---------- JAARFILTER ----------
+
 function populateYearFilter() {
     yearFilterSelect.innerHTML = '';
     const optAll = document.createElement('option');
@@ -886,7 +920,7 @@ function searchDashboard() {
     if (results.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 7;
+        td.colSpan = 8; // 7 oude + 1 "Laatste coaching"
         td.textContent = 'Geen resultaten gevonden voor deze zoekopdracht (binnen de gekozen jaarfilter).';
         tr.appendChild(td);
         tbodyDash.appendChild(tr);
@@ -908,6 +942,36 @@ function searchDashboard() {
             const td = createCell(idx, row);
             tr.appendChild(td);
         });
+
+        // extra kolom: Laatste coaching (datum + bol)
+        const coachingTd = document.createElement('td');
+        const pnrVal = (personnelColIndex !== -1) ? row[personnelColIndex] : null;
+        const latest = getLatestCoachingForPnr(pnrVal);
+
+        if (latest) {
+            const wrapper = document.createElement('span');
+            wrapper.style.display = 'inline-flex';
+            wrapper.style.alignItems = 'center';
+            wrapper.style.gap = '6px';
+
+            const dateSpan = document.createElement('span');
+            dateSpan.textContent = latest.dateString || '';
+            wrapper.appendChild(dateSpan);
+
+            const dot = document.createElement('span');
+            dot.classList.add('coaching-dot');
+            if (latest.status === 'good')   dot.classList.add('coaching-good');
+            if (latest.status === 'medium') dot.classList.add('coaching-medium');
+            if (latest.status === 'bad')    dot.classList.add('coaching-bad');
+            dot.title = 'Laatste coaching';
+            wrapper.appendChild(dot);
+
+            coachingTd.appendChild(wrapper);
+        } else {
+            coachingTd.textContent = '';
+        }
+
+        tr.appendChild(coachingTd);
         tbodyDash.appendChild(tr);
     });
 }
@@ -1035,6 +1099,7 @@ fetch('Coachingslijst.xlsx')
 
         const pIndex = coachingHeaders.indexOf('P-nr');
         const ratingIndex = coachingHeaders.indexOf('Beoordeling coaching');
+        const dateIndex = findColumnIndexByNames(coachingHeaders, ['datum', 'datum coaching']);
 
         if (pIndex === -1 || ratingIndex === -1) {
             console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in Coachingslijst.xlsx');
@@ -1046,20 +1111,34 @@ fetch('Coachingslijst.xlsx')
             const rating = row[ratingIndex];
             const status = getCoachingStatusByText(rating);
             if (!p || !status) return;
+
+            let dateObj = null;
+            let dateString = '';
+            if (dateIndex !== -1) {
+                const rawDate = row[dateIndex];
+                dateObj = excelSerialToDate(rawDate);
+                dateString = dateToDisplayString(dateObj);
+            }
+
             const key = String(p).trim();
             if (!coachingMap[key]) {
                 coachingMap[key] = [];
             }
-            coachingMap[key].push(status);
+            coachingMap[key].push({
+                status: status,
+                date: dateObj,
+                dateString: dateString
+            });
         });
 
         console.log('CoachingMap:', coachingMap);
-        updateFilterAndViews(); // opnieuw tekenen met bollen
+        updateFilterAndViews(); // opnieuw tekenen met bollen én coachingdatums
     })
     .catch(err => {
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
+
 
 
 
