@@ -4,28 +4,31 @@
     <meta charset="UTF-8" />
     <title>Schadeanalyse</title>
 
-    <!-- SheetJS (xlsx.js) zodat de browser Excel kan lezen -->
+    <!-- Excel inlezen -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Grafieken -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body {
             font-family: Arial, sans-serif;
-            padding: 40px;
+            margin: 0;
+            padding: 0;
             background: #f4f4f4;
-        }
-        h1 {
-            color: #333;
         }
         .box {
             padding: 30px 40px;
             background: white;
-            border-radius: 8px;
+            border-radius: 0;
             width: 100%;
             max-width: 100%;
             margin: 0;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }
-
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
         #status {
             margin-top: 5px;
             margin-bottom: 15px;
@@ -62,29 +65,27 @@
             display: block;
         }
 
-        /* Tabel — verbeterde layout */
+        /* Tabel layout */
         .table-container {
             width: 100%;
-            overflow-x: auto;         /* Horizontale scroll indien nodig */
+            overflow-x: auto;
             margin-top: 10px;
         }
-        
+
         table {
             border-collapse: collapse;
             width: 100%;
             font-size: 13px;
-            table-layout: auto;       /* normale automatische kolombreedte */
+            table-layout: auto;
         }
-        
         th, td {
             border: 1px solid #ddd;
             padding: 6px 8px;
             text-align: left;
-            max-width: 200px;         /* kolommen worden beperkt */
-            white-space: normal;      /* breekt tekst automatisch */
-            word-wrap: break-word;    /* nog agressiever breken indien nodig */
+            max-width: 200px;
+            white-space: normal;
+            word-wrap: break-word;
         }
-        
         th {
             background: #f0f0f0;
             position: sticky;
@@ -107,6 +108,29 @@
             color: #777;
             font-size: 14px;
             margin-top: 10px;
+        }
+
+        /* Chauffeur tab specifieke dingen */
+        #chauffeur-limit {
+            padding: 6px;
+            font-size: 13px;
+            margin-left: 5px;
+        }
+        #chauffeur-table tbody tr {
+            cursor: pointer;
+        }
+        #chauffeur-table tbody tr:hover {
+            background: #f5f5f5;
+        }
+        #chauffeur-selected {
+            font-size: 14px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .chart-container {
+            margin-top: 20px;
+            height: 260px;
         }
     </style>
 </head>
@@ -134,25 +158,60 @@
 
         <input id="search-input" type="text" placeholder="Zoeken in alle kolommen..." />
 
-        <table id="tabel">
-            <thead></thead>
-            <tbody></tbody>
-        </table>
+        <div class="table-container">
+            <table id="tabel">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 
     <!-- TAB 2: CHAUFFEUR -->
     <div class="tab-content" id="tab-chauffeur">
         <h2>Data rond chauffeur</h2>
-        <p class="placeholder-text">
-            Wordt later uitgewerkt. Hier kun je bv. per chauffeur het aantal schades tonen, filters, grafieken, ...
-        </p>
+        <p>Overzicht van aantal schades per chauffeur. Klik op een chauffeur voor details.</p>
+
+        <label for="chauffeur-limit">Toon:
+            <select id="chauffeur-limit">
+                <option value="10">Top 10</option>
+                <option value="20">Top 20</option>
+                <option value="0">Alle chauffeurs</option>
+            </select>
+        </label>
+
+        <div class="table-container">
+            <table id="chauffeur-table">
+                <thead>
+                    <tr>
+                        <th>Chauffeur</th>
+                        <th>Aantal schades</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <h3>Details gekozen chauffeur</h3>
+        <p id="chauffeur-selected">Klik op een chauffeur in de tabel hierboven.</p>
+
+        <div class="table-container">
+            <table id="chauffeur-detail-table">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <h3>Grafiek: schades per chauffeur</h3>
+        <div class="chart-container">
+            <canvas id="chauffeur-chart"></canvas>
+        </div>
     </div>
 
     <!-- TAB 3: VOERTUIG -->
     <div class="tab-content" id="tab-voertuig">
         <h2>Data rond voertuig</h2>
         <p class="placeholder-text">
-            Wordt later uitgewerkt. Hier kun je bv. per bus/tram het aantal schades, type schade, enz. tonen.
+            Wordt later uitgewerkt. Hier kun je bv. per bus/tram het aantal schades tonen.
         </p>
     </div>
 
@@ -160,7 +219,7 @@
     <div class="tab-content" id="tab-locatie">
         <h2>Data rond locatie</h2>
         <p class="placeholder-text">
-            Wordt later uitgewerkt. Hier kun je bv. heatmaps of lijstjes per locatie tonen.
+            Wordt later uitgewerkt. Hier kun je bv. per locatie een overzicht maken.
         </p>
     </div>
 
@@ -197,10 +256,17 @@
     const tbody = table.querySelector('tbody');
     const searchInput = document.getElementById('search-input');
 
-    // LET OP: spaties in de bestandsnaam moeten in de URL als %20
     const excelFileUrl = 'schade%20met%20macro.xlsm';
 
-    // --- TABS WERKING ---
+    // globale data
+    let allHeaders = [];
+    let allRows = [];
+    let dateColIndex = -1;
+    let chauffeurColIndex = -1;
+    let chauffeurData = [];
+    let chauffeurChart = null;
+
+    // ---- Tabs ----
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
 
@@ -221,7 +287,7 @@
         });
     });
 
-    // --- ZOEKFUNCTIE (ALLE DATA TAB) ---
+    // ---- Zoekfunctie Alle data ----
     searchInput.addEventListener('input', () => {
         const filter = searchInput.value.toLowerCase();
         const rows = tbody.getElementsByTagName('tr');
@@ -241,11 +307,9 @@
         }
     });
 
-    // --- HULPFUNCTIE: Excel-serie-datum -> dd/mm/jjjj ---
+    // ---- Excel-seriedatum -> dd/mm/jjjj ----
     function excelSerialToDateString(serial) {
         if (typeof serial !== 'number') return serial;
-
-        // Excel start op 1899-12-30 (1900-datumsysteem)
         const excelEpoch = Date.UTC(1899, 11, 30); // 30 dec 1899
         const millis = serial * 24 * 60 * 60 * 1000;
         const date = new Date(excelEpoch + millis);
@@ -257,7 +321,217 @@
         return `${day}/${month}/${year}`;
     }
 
-    // --- EXCEL LADEN (TABBLAD BRON) ---
+    // ---- Helper: kolomindex zoeken op naam ----
+    function findColumnIndexByNames(headers, possibleNames) {
+        const lower = headers.map(h => String(h).toLowerCase().trim());
+        for (const name of possibleNames) {
+            const idx = lower.indexOf(name.toLowerCase());
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    }
+
+    // ---- Alle data tabel vullen + globale data opslaan ----
+    function buildAllDataTable(rows) {
+        allHeaders = rows[0];
+        allRows = rows.slice(1);
+
+        // header
+        const headerRow = document.createElement('tr');
+        allHeaders.forEach(h => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+
+        // kolom-indexen zoeken
+        dateColIndex = findColumnIndexByNames(allHeaders, ['datum']);
+        chauffeurColIndex = findColumnIndexByNames(allHeaders, ['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
+
+        // body
+        allRows.forEach(r => {
+            const tr = document.createElement('tr');
+
+            r.forEach((cell, idx) => {
+                let value = cell;
+                if (idx === dateColIndex && typeof cell === 'number') {
+                    value = excelSerialToDateString(cell);
+                }
+                const td = document.createElement('td');
+                td.textContent = (value === null || value === undefined) ? '' : value;
+                tr.appendChild(td);
+            });
+
+            tbody.appendChild(tr);
+        });
+
+        statusEl.textContent = 'Klaar. ' + allRows.length + ' rijen geladen.';
+
+        // daarna chauffeur-tab voorbereiden
+        buildChauffeurData();
+        updateChauffeurView(); // initieel Top 10 + grafiek
+    }
+
+    // ---- Chauffeur aggregatie opbouwen ----
+    function buildChauffeurData() {
+        if (chauffeurColIndex === -1) {
+            console.warn('Geen chauffeur-kolom gevonden.');
+            return;
+        }
+
+        const map = new Map(); // naam -> {name, count, rows:[]}
+
+        allRows.forEach(row => {
+            let name = row[chauffeurColIndex];
+            name = (name && String(name).trim() !== '') ? String(name).trim() : 'Onbekend';
+
+            if (!map.has(name)) {
+                map.set(name, { name: name, count: 0, rows: [] });
+            }
+            const entry = map.get(name);
+            entry.count++;
+            entry.rows.push(row);
+        });
+
+        chauffeurData = Array.from(map.values()).sort((a, b) => b.count - a.count);
+    }
+
+    // ---- Chauffeur tabel + grafiek updaten ----
+    function updateChauffeurView() {
+        const limitSelect = document.getElementById('chauffeur-limit');
+        const tbodyCh = document.querySelector('#chauffeur-table tbody');
+        tbodyCh.innerHTML = '';
+
+        let limit = parseInt(limitSelect.value, 10);
+        if (isNaN(limit) || limit < 0) limit = 10;
+
+        const list = (limit === 0) ? chauffeurData : chauffeurData.slice(0, limit);
+
+        list.forEach(ch => {
+            const tr = document.createElement('tr');
+            tr.dataset.chauffeur = ch.name;
+
+            const tdName = document.createElement('td');
+            tdName.textContent = ch.name;
+            const tdCount = document.createElement('td');
+            tdCount.textContent = ch.count;
+
+            tr.appendChild(tdName);
+            tr.appendChild(tdCount);
+
+            tr.addEventListener('click', () => showChauffeurDetails(ch.name));
+
+            tbodyCh.appendChild(tr);
+        });
+
+        buildChauffeurChart(list);
+        document.getElementById('chauffeur-selected').textContent =
+            'Klik op een chauffeur in de tabel hierboven.';
+        document.querySelector('#chauffeur-detail-table thead').innerHTML = '';
+        document.querySelector('#chauffeur-detail-table tbody').innerHTML = '';
+    }
+
+    // ---- Chauffeur grafiek ----
+    function buildChauffeurChart(list) {
+        const ctx = document.getElementById('chauffeur-chart').getContext('2d');
+        if (chauffeurChart) {
+            chauffeurChart.destroy();
+        }
+
+        chauffeurChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: list.map(ch => ch.name),
+                datasets: [{
+                    label: 'Aantal schades',
+                    data: list.map(ch => ch.count)
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            autoSkip: false,
+                            maxRotation: 60,
+                            minRotation: 30
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        precision: 0
+                    }
+                }
+            }
+        });
+    }
+
+    // ---- Details gekozen chauffeur ----
+    function showChauffeurDetails(name) {
+        const infoEl = document.getElementById('chauffeur-selected');
+        const theadDetail = document.querySelector('#chauffeur-detail-table thead');
+        const tbodyDetail = document.querySelector('#chauffeur-detail-table tbody');
+
+        infoEl.textContent = 'Details voor chauffeur: ' + name;
+        theadDetail.innerHTML = '';
+        tbodyDetail.innerHTML = '';
+
+        const entry = chauffeurData.find(c => c.name === name);
+        if (!entry) return;
+
+        // interessante kolommen zoeken
+        const headers = allHeaders;
+        const cols = [];
+
+        const addCol = (possibleNames) => {
+            const idx = findColumnIndexByNames(headers, possibleNames);
+            if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
+        };
+
+        // chauffeur altijd eerst
+        if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
+
+        addCol(['datum']);
+        addCol(['locatie']);
+        addCol(['bus', 'bus/ tram', 'tram']);
+        addCol(['link']);
+
+        // header rij
+        const hr = document.createElement('tr');
+        cols.forEach(idx => {
+            const th = document.createElement('th');
+            th.textContent = headers[idx];
+            hr.appendChild(th);
+        });
+        theadDetail.appendChild(hr);
+
+        // data rijen
+        entry.rows.forEach(row => {
+            const tr = document.createElement('tr');
+            cols.forEach(idx => {
+                let value = row[idx];
+                if (idx === dateColIndex && typeof value === 'number') {
+                    value = excelSerialToDateString(value);
+                }
+                const td = document.createElement('td');
+                td.textContent = (value === null || value === undefined) ? '' : value;
+                tr.appendChild(td);
+            });
+            tbodyDetail.appendChild(tr);
+        });
+    }
+
+    // Select-wijziging Top10/Top20/Alle
+    document.getElementById('chauffeur-limit').addEventListener('change', () => {
+        updateChauffeurView();
+    });
+
+    // ---- Excel inladen ----
     fetch(excelFileUrl)
         .then(response => {
             if (!response.ok) {
@@ -272,7 +546,6 @@
             const workbook = XLSX.read(uint8, { type: 'array' });
 
             const sheetName = 'BRON';
-
             if (!workbook.SheetNames.includes(sheetName)) {
                 statusEl.textContent = "Tabblad 'BRON' bestaat niet in het Excel-bestand!";
                 return;
@@ -286,51 +559,13 @@
                 return;
             }
 
-            statusEl.textContent = '';
-
-            // Kolomnamen
-            const headers = rows[0];
-            const headerRow = document.createElement('tr');
-            headers.forEach(h => {
-                const th = document.createElement('th');
-                th.textContent = h;
-                headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
-
-            // Zoek de index van de kolom "Datum"
-            const dateColIndex = headers.findIndex(
-                h => String(h).toLowerCase().trim() === 'datum'
-            );
-
-            // Data-rijen
-            rows.slice(1).forEach(r => {
-                const tr = document.createElement('tr');
-
-                r.forEach((cell, idx) => {
-                    let value = cell;
-
-                    // Als dit de Datum-kolom is en de waarde is een getal -> omzetten naar datum
-                    if (idx === dateColIndex && typeof cell === 'number') {
-                        value = excelSerialToDateString(cell);
-                    }
-
-                    const td = document.createElement('td');
-                    td.textContent = (value === null || value === undefined) ? '' : value;
-                    tr.appendChild(td);
-                });
-
-                tbody.appendChild(tr);
-            });
-
-            statusEl.textContent = 'Klaar. ' + (rows.length - 1) + ' rijen geladen.';
+            buildAllDataTable(rows);
         })
         .catch(err => {
             console.error(err);
             statusEl.textContent = 'Er ging iets mis bij het laden of verwerken van het Excel-bestand.';
         });
 </script>
-
 
 </body>
 </html>
