@@ -1011,9 +1011,12 @@ function createCell(idx, rawValue) {
             });
 
             console.log('CoachingMap opgebouwd:', coachingMap);
+            console.log('Aantal P-nrs met coaching:', Object.keys(coachingMap).length);
+
 
             // nu we coachingMap hebben, alles opnieuw tekenen zodat bolletjes verschijnen
             updateFilterAndViews();
+            
         })
         .catch(err => {
             console.error('Fout bij coachingslijst:', err);
