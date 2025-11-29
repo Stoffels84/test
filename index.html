@@ -36,6 +36,17 @@
             font-size: 14px;
         }
 
+        /* Jaar-filter bovenaan */
+        #top-filters {
+            margin: 8px 0 8px 0;
+            font-size: 14px;
+        }
+        #year-filter {
+            padding: 6px;
+            font-size: 13px;
+            margin-left: 5px;
+        }
+
         /* Tabs */
         .tabs {
             display: flex;
@@ -93,7 +104,7 @@
             z-index: 1;
         }
 
-        /* Zoekveld */
+        /* Zoekveld alle data */
         #search-input {
             padding: 8px;
             width: 300px;
@@ -138,6 +149,16 @@
 
 <div class="box">
     <h1>Schadeanalyse</h1>
+
+    <div id="top-filters">
+        <label for="year-filter">Jaar:
+            <select id="year-filter">
+                <option value="ALL">Alle jaren</option>
+                <!-- Jaren worden dynamisch ingevuld -->
+            </select>
+        </label>
+    </div>
+
     <p id="status">Bezig met laden van het Excel-bestand...</p>
 
     <!-- TAB KNOPPEN -->
@@ -154,7 +175,7 @@
     <!-- TAB 1: ALLE DATA (BRON) -->
     <div class="tab-content active" id="tab-all">
         <h2>Alle data (tabblad BRON)</h2>
-        <p>Hier zie je alle ruwe gegevens uit het Excel-tabblad <strong>BRON</strong>.</p>
+        <p>Hier zie je alle ruwe gegevens uit het Excel-tabblad <strong>BRON</strong>. De jaarfilter bovenaan werkt op alle tabs.</p>
 
         <input id="search-input" type="text" placeholder="Zoeken in alle kolommen..." />
 
@@ -169,7 +190,7 @@
     <!-- TAB 2: CHAUFFEUR -->
     <div class="tab-content" id="tab-chauffeur">
         <h2>Data rond chauffeur</h2>
-        <p>Overzicht van aantal schades per chauffeur. Klik op een chauffeur voor details.</p>
+        <p>Overzicht van aantal schades per chauffeur (gefilterd op gekozen jaar). Klik op een chauffeur voor details.</p>
 
         <label for="chauffeur-limit">Toon:
             <select id="chauffeur-limit">
@@ -255,12 +276,14 @@
     const thead = table.querySelector('thead');
     const tbody = table.querySelector('tbody');
     const searchInput = document.getElementById('search-input');
+    const yearFilterSelect = document.getElementById('year-filter');
 
     const excelFileUrl = 'schade%20met%20macro.xlsm';
 
     // globale data
     let allHeaders = [];
-    let allRows = [];
+    let baseRows = [];        // alle rijen uit BRON (on-gefilterd)
+    let filteredRows = [];    // rijen na jaarfilter
     let dateColIndex = -1;
     let chauffeurColIndex = -1;
     let chauffeurData = [];
@@ -307,17 +330,47 @@
         }
     });
 
-    // ---- Excel-seriedatum -> dd/mm/jjjj ----
-    function excelSerialToDateString(serial) {
-        if (typeof serial !== 'number') return serial;
-        const excelEpoch = Date.UTC(1899, 11, 30); // 30 dec 1899
-        const millis = serial * 24 * 60 * 60 * 1000;
-        const date = new Date(excelEpoch + millis);
+    // ---- Excel-seriedatum -> Date-object ----
+    function excelSerialToDate(cell) {
+        if (typeof cell === 'number') {
+            const excelEpoch = Date.UTC(1899, 11, 30); // 30 dec 1899
+            const millis = cell * 24 * 60 * 60 * 1000;
+            return new Date(excelEpoch + millis);
+        }
+        if (typeof cell === 'string') {
+            // probeer dd/mm/jjjj of jjjj-mm-dd etc.
+            const parts = cell.split(/[\/\-]/);
+            if (parts.length === 3) {
+                let [a, b, c] = parts.map(p => p.trim());
+                let day, month, year;
+
+                if (a.length === 4) { // jjjj-mm-dd
+                    year = parseInt(a, 10);
+                    month = parseInt(b, 10);
+                    day = parseInt(c, 10);
+                } else { // dd/mm/jjjj
+                    day = parseInt(a, 10);
+                    month = parseInt(b, 10);
+                    year = parseInt(c, 10);
+                }
+                if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+                    return new Date(Date.UTC(year, month - 1, day));
+                }
+            }
+            const d = new Date(cell);
+            if (!isNaN(d)) return d;
+        }
+        return null;
+    }
+
+    // ---- Date -> dd/mm/jjjj ----
+    function excelSerialToDateString(cell) {
+        const date = excelSerialToDate(cell);
+        if (!date) return cell;
 
         const day = String(date.getUTCDate()).padStart(2, '0');
         const month = String(date.getUTCMonth() + 1).padStart(2, '0');
         const year = date.getUTCFullYear();
-
         return `${day}/${month}/${year}`;
     }
 
@@ -331,31 +384,56 @@
         return -1;
     }
 
-    // ---- Alle data tabel vullen + globale data opslaan ----
-    function buildAllDataTable(rows) {
-        allHeaders = rows[0];
-        allRows = rows.slice(1);
+    // ---- Jaren in dropdown stoppen ----
+    function populateYearFilter() {
+        yearFilterSelect.innerHTML = '';
+        const optAll = document.createElement('option');
+        optAll.value = 'ALL';
+        optAll.textContent = 'Alle jaren';
+        yearFilterSelect.appendChild(optAll);
 
-        // header
-        const headerRow = document.createElement('tr');
-        allHeaders.forEach(h => {
-            const th = document.createElement('th');
-            th.textContent = h;
-            headerRow.appendChild(th);
+        if (dateColIndex === -1) return;
+
+        const yearSet = new Set();
+        baseRows.forEach(row => {
+            const d = excelSerialToDate(row[dateColIndex]);
+            if (d) yearSet.add(d.getUTCFullYear());
         });
-        thead.appendChild(headerRow);
 
-        // kolom-indexen zoeken
-        dateColIndex = findColumnIndexByNames(allHeaders, ['datum']);
-        chauffeurColIndex = findColumnIndexByNames(allHeaders, ['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
+        const years = Array.from(yearSet).sort((a, b) => a - b);
+        years.forEach(y => {
+            const opt = document.createElement('option');
+            opt.value = String(y);
+            opt.textContent = y;
+            yearFilterSelect.appendChild(opt);
+        });
+    }
 
-        // body
-        allRows.forEach(r => {
+    // ---- Filter: welke rijen horen bij huidig jaar? ----
+    function getFilteredRows() {
+        if (dateColIndex === -1) return baseRows;
+        const value = yearFilterSelect.value;
+        if (!value || value === 'ALL') return baseRows;
+
+        const yearInt = parseInt(value, 10);
+        if (isNaN(yearInt)) return baseRows;
+
+        return baseRows.filter(row => {
+            const d = excelSerialToDate(row[dateColIndex]);
+            return d && d.getUTCFullYear() === yearInt;
+        });
+    }
+
+    // ---- Alle data body opnieuw opbouwen ----
+    function rebuildAllDataTableBody(rows) {
+        tbody.innerHTML = '';
+
+        rows.forEach(r => {
             const tr = document.createElement('tr');
 
             r.forEach((cell, idx) => {
                 let value = cell;
-                if (idx === dateColIndex && typeof cell === 'number') {
+                if (idx === dateColIndex) {
                     value = excelSerialToDateString(cell);
                 }
                 const td = document.createElement('td');
@@ -365,16 +443,11 @@
 
             tbody.appendChild(tr);
         });
-
-        statusEl.textContent = 'Klaar. ' + allRows.length + ' rijen geladen.';
-
-        // daarna chauffeur-tab voorbereiden
-        buildChauffeurData();
-        updateChauffeurView(); // initieel Top 10 + grafiek
     }
 
-    // ---- Chauffeur aggregatie opbouwen ----
-    function buildChauffeurData() {
+    // ---- Chauffeur-aggregatie opbouwen op basis van rijen ----
+    function buildChauffeurData(rows) {
+        chauffeurData = [];
         if (chauffeurColIndex === -1) {
             console.warn('Geen chauffeur-kolom gevonden.');
             return;
@@ -382,7 +455,7 @@
 
         const map = new Map(); // naam -> {name, count, rows:[]}
 
-        allRows.forEach(row => {
+        rows.forEach(row => {
             let name = row[chauffeurColIndex];
             name = (name && String(name).trim() !== '') ? String(name).trim() : 'Onbekend';
 
@@ -484,7 +557,6 @@
         const entry = chauffeurData.find(c => c.name === name);
         if (!entry) return;
 
-        // interessante kolommen zoeken
         const headers = allHeaders;
         const cols = [];
 
@@ -515,7 +587,7 @@
             const tr = document.createElement('tr');
             cols.forEach(idx => {
                 let value = row[idx];
-                if (idx === dateColIndex && typeof value === 'number') {
+                if (idx === dateColIndex) {
                     value = excelSerialToDateString(value);
                 }
                 const td = document.createElement('td');
@@ -526,12 +598,29 @@
         });
     }
 
-    // Select-wijziging Top10/Top20/Alle
+    // ---- Alles heropbouwen wanneer filter verandert ----
+    function updateFilterAndViews() {
+        filteredRows = getFilteredRows();
+        rebuildAllDataTableBody(filteredRows);
+        buildChauffeurData(filteredRows);
+        updateChauffeurView();
+
+        const filterText = (yearFilterSelect.value === 'ALL'
+            ? 'alle jaren'
+            : 'jaar ' + yearFilterSelect.value);
+        statusEl.textContent = 'Klaar. ' + filteredRows.length +
+            ' rijen geladen (' + filterText + ').';
+    }
+
+    // Select-wijzigingen
     document.getElementById('chauffeur-limit').addEventListener('change', () => {
         updateChauffeurView();
     });
+    yearFilterSelect.addEventListener('change', () => {
+        updateFilterAndViews();
+    });
 
-    // ---- Excel inladen ----
+    // ---- Init data uit Excel ----
     fetch(excelFileUrl)
         .then(response => {
             if (!response.ok) {
@@ -559,7 +648,32 @@
                 return;
             }
 
-            buildAllDataTable(rows);
+            // basisgegevens
+            allHeaders = rows[0];
+            baseRows = rows.slice(1);
+
+            // tabel header invullen
+            thead.innerHTML = '';
+            const headerRow = document.createElement('tr');
+            allHeaders.forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            // kolommen zoeken
+            dateColIndex = findColumnIndexByNames(allHeaders, ['datum']);
+            chauffeurColIndex = findColumnIndexByNames(
+                allHeaders,
+                ['volledige naam', 'chauffeur', 'naam', 'bestuurder']
+            );
+
+            // jaren in filter
+            populateYearFilter();
+
+            // eerste keer views opbouwen (zonder jaarfilter of met standaard jaar)
+            updateFilterAndViews();
         })
         .catch(err => {
             console.error(err);
