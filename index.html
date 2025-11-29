@@ -494,20 +494,20 @@
     }
 
     // ---- Chauffeur details inline onder de rij ----
-    function showChauffeurDetailsInline(name, clickedRow) {
-        const tbodyCh = document.querySelector('#chauffeur-table tbody');
+    function showVoertuigDetailsInline(type, clickedRow) {
+        const tbodyV = document.querySelector('#voertuig-table tbody');
     
-        // CONTROLEREN OF DE DETAILRIJ AL ONDER DEZE RIJ STAAT
+        // CONTROLEREN OF DE DETAILRIJ AL BESTAAT
         const nextRow = clickedRow.nextElementSibling;
-        if (nextRow && nextRow.classList.contains('chauffeur-detail-row')) {
+        if (nextRow && nextRow.classList.contains('voertuig-detail-row')) {
             nextRow.remove();   // detail sluiten
             return;
         }
     
-        // Eerst ALLE andere details verwijderen
-        Array.from(tbodyCh.querySelectorAll('.chauffeur-detail-row')).forEach(r => r.remove());
+        // Eerst ALLE andere detailrijen verwijderen
+        Array.from(tbodyV.querySelectorAll('.voertuig-detail-row')).forEach(r => r.remove());
     
-        const entry = chauffeurData.find(c => c.name === name);
+        const entry = voertuigData.find(v => v.type === type);
         if (!entry) return;
     
         const headers = allHeaders;
@@ -518,14 +518,14 @@
             if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
         };
     
-        if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
+        if (voertuigColIndex !== -1) cols.push(voertuigColIndex);
+        addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
         addCol(['datum']);
         addCol(['locatie']);
-        addCol(['bus/ tram', 'bus/tram']);
         addCol(['link']);
     
         const detailTr = document.createElement('tr');
-        detailTr.className = 'chauffeur-detail-row';
+        detailTr.className = 'voertuig-detail-row';
         const detailTd = document.createElement('td');
         detailTd.colSpan = 2;
     
@@ -565,6 +565,7 @@
     
         clickedRow.insertAdjacentElement('afterend', detailTr);
     }
+
 
 
     // ---- Voertuig details inline onder de rij ----
