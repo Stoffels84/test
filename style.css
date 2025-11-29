@@ -306,25 +306,21 @@ a.table-link:hover {
 
 /* Coaching-status bolletjes bij P-nr */
 .coaching-dot {
-    display: inline-block;
     width: 10px;
     height: 10px;
-    border-radius: 50%;
-    margin-left: 6px;
-    vertical-align: middle;
+    border-radius: 999px;
+    display: inline-block;
 }
 
-.coaching-good {
-    background: #16a34a; /* groen */
+.coaching-good { background-color: #16a34a; }
+.coaching-medium { background-color: #facc15; }
+.coaching-bad { background-color: #dc2626; }
+
+/* zwarte bol voor wie in tabblad "Coaching" staat */
+.coaching-pending { 
+    background-color: #111111;
 }
 
-.coaching-medium {
-    background: #f97316; /* oranje */
-}
-
-.coaching-bad {
-    background: #dc2626; /* rood */
-}
 
 /* Responsive */
 @media (max-width: 900px) {
