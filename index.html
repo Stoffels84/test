@@ -2,7 +2,10 @@
 <html lang="nl">
 <head>
     <meta charset="UTF-8" />
-    <title>Mijn eerste GitHub website</title>
+    <title>Schadegegevens uit Excel (.xlsm)</title>
+
+    <!-- SheetJS (xlsx.js) van een CDN, zodat de browser Excel kan lezen -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
         body {
@@ -17,19 +20,111 @@
             padding: 20px;
             background: white;
             border-radius: 8px;
-            max-width: 600px;
+            max-width: 1000px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 6px 8px;
+            text-align: left;
+        }
+        th {
+            background: #f0f0f0;
+            position: sticky;
+            top: 0;
+        }
+        #status {
+            margin-top: 15px;
+            color: #666;
+            font-size: 14px;
+        }
     </style>
-
 </head>
 <body>
 
-    <div class="box">
-        <h1>Welkom op mijn GitHub Website!</h1>
-        <p>Deze pagina draait volledig via GitHub Pages.</p>
-        <p>Als je dit ziet, werkt alles!</p>
-    </div>
+<div class="box">
+    <h1>Schadegegevens uit Excel-bestand</h1>
+    <p>Deze tabel komt rechtstreeks uit <code>schade met macro.xlsm</code> in deze GitHub-repository.</p>
+    <p id="status">Bezig met laden van het Excel-bestand...</p>
+
+    <table id="tabel">
+        <thead></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+    const statusEl = document.getElementById('status');
+    const table = document.getElementById('tabel');
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+
+    // LET OP: spaties in de bestandsnaam moeten in de URL als %20
+    const excelFileUrl = 'schade%20met%20macro.xlsm';
+
+    // Haal het Excel-bestand als binary op
+    fetch(excelFileUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Kon het Excel-bestand niet laden (HTTP ' + response.status + ')');
+            }
+            return response.arrayBuffer();
+        })
+        .then(data => {
+            statusEl.textContent = 'Excel-bestand geladen, bezig met verwerken...';
+
+            // Lees het workbook met SheetJS
+            const uint8 = new Uint8Array(data);
+            const workbook = XLSX.read(uint8, { type: 'array' });
+
+            // Neem het eerste werkblad
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+
+            // Zet het werkblad om naar een array van rijen (header:1 = alles als ruwe rijen)
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            if (!rows || rows.length === 0) {
+                statusEl.textContent = 'Geen data gevonden in het werkblad.';
+                return;
+            }
+
+            statusEl.textContent = '';
+
+            // Eerste rij = kolomnamen
+            const headers = rows[0];
+            const headerRow = document.createElement('tr');
+            headers.forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            // Rest = data-rijen
+            rows.slice(1).forEach(r => {
+                const tr = document.createElement('tr');
+                r.forEach(cell => {
+                    const td = document.createElement('td');
+                    td.textContent = (cell === null || cell === undefined) ? '' : cell;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            statusEl.textContent = 'Klaar. ' + (rows.length - 1) + ' rijen geladen.';
+        })
+        .catch(err => {
+            console.error(err);
+            statusEl.textContent = 'Er ging iets mis bij het laden of verwerken van het Excel-bestand.';
+        });
+</script>
 
 </body>
 </html>
