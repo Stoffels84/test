@@ -368,13 +368,19 @@ function getFilteredRows() {
 }
 
 // ---------- CEL MAKEN (link + coachingbol) ----------
+// We geven de hele rij door, zodat we overal aan P-nr kunnen.
 
-function createCell(idx, rawValue) {
+function createCell(idx, row) {
+    const rawValue = row[idx];
     let value = rawValue;
     if (idx === dateColIndex) {
         value = excelSerialToDateString(rawValue);
     }
     const td = document.createElement('td');
+
+    // Coachingstatus op basis van personeelsnr in deze rij
+    const pnrVal = (personnelColIndex !== -1) ? row[personnelColIndex] : null;
+    const status = getCoachingStatusForPnr(pnrVal);
 
     // linkkolom
     if (idx === linkColIndex && value) {
@@ -389,34 +395,56 @@ function createCell(idx, rawValue) {
         return td;
     }
 
-    // personeelsnummerkolom
-    if (idx === personnelColIndex) {
-        if (value !== null && value !== undefined) {
-            const nummerText = String(value);
-            td.appendChild(document.createTextNode(nummerText));
+    // chauffeur-kolom: bol VOOR de naam
+    if (idx === chauffeurColIndex) {
+        const wrapper = document.createElement('span');
+        wrapper.style.display = 'inline-flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.gap = '6px';
 
-            const status = getCoachingStatusForPnr(value);
-            if (status) {
-                const label = document.createElement('span');
-                label.style.marginLeft = '4px';
-                label.style.fontSize = '11px';
-                label.style.color = '#6b7280';
-                if (status === 'good')   label.textContent = '(coaching goed)';
-                if (status === 'medium') label.textContent = '(coaching vold./onv.)';
-                if (status === 'bad')    label.textContent = '(coaching slecht)';
-                td.appendChild(label);
-
-                const dot = document.createElement('span');
-                dot.classList.add('coaching-dot');
-                if (status === 'good')   dot.classList.add('coaching-good');
-                if (status === 'medium') dot.classList.add('coaching-medium');
-                if (status === 'bad')    dot.classList.add('coaching-bad');
-                td.appendChild(dot);
-            }
+        if (status) {
+            const dot = document.createElement('span');
+            dot.classList.add('coaching-dot');
+            if (status === 'good')   dot.classList.add('coaching-good');
+            if (status === 'medium') dot.classList.add('coaching-medium');
+            if (status === 'bad')    dot.classList.add('coaching-bad');
+            dot.title = 'Coachingstatus';
+            wrapper.appendChild(dot);
         }
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = (value === null || value === undefined) ? '' : value;
+        wrapper.appendChild(nameSpan);
+        td.appendChild(wrapper);
         return td;
     }
 
+    // personeelsnummerkolom: nummer + (optioneel) bol erachter
+    if (idx === personnelColIndex) {
+        const wrapper = document.createElement('span');
+        wrapper.style.display = 'inline-flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.gap = '6px';
+
+        const numSpan = document.createElement('span');
+        numSpan.textContent = (value === null || value === undefined) ? '' : value;
+        wrapper.appendChild(numSpan);
+
+        if (status) {
+            const dot = document.createElement('span');
+            dot.classList.add('coaching-dot');
+            if (status === 'good')   dot.classList.add('coaching-good');
+            if (status === 'medium') dot.classList.add('coaching-medium');
+            if (status === 'bad')    dot.classList.add('coaching-bad');
+            dot.title = 'Coachingstatus';
+            wrapper.appendChild(dot);
+        }
+
+        td.appendChild(wrapper);
+        return td;
+    }
+
+    // standaard cel
     td.textContent = (value === null || value === undefined) ? '' : value;
     return td;
 }
@@ -425,10 +453,10 @@ function createCell(idx, rawValue) {
 
 function rebuildAllDataTableBody(rows) {
     tbody.innerHTML = '';
-    rows.forEach(r => {
+    rows.forEach(row => {
         const tr = document.createElement('tr');
-        r.forEach((cell, idx) => {
-            const td = createCell(idx, cell);
+        row.forEach((_, idx) => {
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -537,7 +565,7 @@ function showChauffeurDetailsInline(name, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row[idx]);
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -597,7 +625,7 @@ function showVoertuigDetailsInline(type, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row[idx]);
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -657,7 +685,7 @@ function showLocatieDetailsInline(loc, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row[idx]);
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -682,10 +710,36 @@ function updateChauffeurView() {
     list.forEach(ch => {
         const tr = document.createElement('tr');
         tr.dataset.chauffeur = ch.name;
+
         const tdName = document.createElement('td');
-        tdName.textContent = ch.name;
+        const wrapper = document.createElement('span');
+        wrapper.style.display = 'inline-flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.gap = '6px';
+
+        // status op basis van P-nr uit eerste rij van deze chauffeur
+        let status = null;
+        if (personnelColIndex !== -1 && ch.rows.length > 0) {
+            const pnrVal = ch.rows[0][personnelColIndex];
+            status = getCoachingStatusForPnr(pnrVal);
+        }
+        if (status) {
+            const dot = document.createElement('span');
+            dot.classList.add('coaching-dot');
+            if (status === 'good')   dot.classList.add('coaching-good');
+            if (status === 'medium') dot.classList.add('coaching-medium');
+            if (status === 'bad')    dot.classList.add('coaching-bad');
+            dot.title = 'Coachingstatus';
+            wrapper.appendChild(dot);
+        }
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = ch.name;
+        wrapper.appendChild(nameSpan);
+        tdName.appendChild(wrapper);
+
         const tdCount = document.createElement('td');
         tdCount.textContent = ch.count;
+
         tr.appendChild(tdName);
         tr.appendChild(tdCount);
         tr.addEventListener('click', () => showChauffeurDetailsInline(ch.name, tr));
@@ -837,14 +891,14 @@ function searchDashboard() {
     results.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row[idx]);
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbodyDash.appendChild(tr);
     });
 }
 
-// ---------- ALLES HERAUFBOUWEN BIJ FILTER / COACHING ----------
+// ---------- ALLES HERAUFBOUWEN ----------
 
 function updateFilterAndViews() {
     if (!baseRows.length) return;
@@ -880,7 +934,7 @@ document.getElementById('dashboard-search-input').addEventListener('keyup', (e) 
     if (e.key === 'Enter') searchDashboard();
 });
 
-// ---------- 1) HOOFDEXCEL LADEN ----------
+// ---------- 1) HOOFD-EXCEL LADEN ----------
 
 fetch(excelFileUrl)
     .then(response => {
@@ -965,7 +1019,6 @@ fetch('Coachingslijst.xlsx')
         coachingHeaders = rows[0];
         coachingRows = rows.slice(1);
 
-        // strikt zoeken naar exacte headers
         const pIndex = coachingHeaders.indexOf('P-nr');
         const ratingIndex = coachingHeaders.indexOf('Beoordeling coaching');
 
@@ -989,6 +1042,7 @@ fetch('Coachingslijst.xlsx')
         console.error('Fout bij Coachingslijst:', err);
     });
 </script>
+
 
 
 </body>
