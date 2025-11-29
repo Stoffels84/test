@@ -133,11 +133,8 @@
         #chauffeur-table tbody tr:hover {
             background: #f5f5f5;
         }
-        #chauffeur-selected {
-            font-size: 14px;
-            margin-top: 10px;
-            margin-bottom: 5px;
-            color: #333;
+        .chauffeur-detail-row td {
+            background: #fafafa;
         }
         .chart-container {
             margin-top: 20px;
@@ -190,7 +187,7 @@
     <!-- TAB 2: CHAUFFEUR -->
     <div class="tab-content" id="tab-chauffeur">
         <h2>Data rond chauffeur</h2>
-        <p>Overzicht van aantal schades per chauffeur (gefilterd op gekozen jaar). Klik op een chauffeur voor details.</p>
+        <p>Overzicht van aantal schades per chauffeur (gefilterd op gekozen jaar). Klik op een chauffeur voor details direct onder de rij.</p>
 
         <label for="chauffeur-limit">Toon:
             <select id="chauffeur-limit">
@@ -205,24 +202,14 @@
                 <thead>
                     <tr>
                         <th>Chauffeur</th>
-                        <th>Aantal schades</th>
+                        <th>Aantal</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
             </table>
         </div>
 
-        <h3>Details gekozen chauffeur</h3>
-        <p id="chauffeur-selected">Klik op een chauffeur in de tabel hierboven.</p>
-
-        <div class="table-container">
-            <table id="chauffeur-detail-table">
-                <thead></thead>
-                <tbody></tbody>
-            </table>
-        </div>
-
-        <h3>Grafiek: schades per chauffeur</h3>
+        <h3>Grafiek per chauffeur</h3>
         <div class="chart-container">
             <canvas id="chauffeur-chart"></canvas>
         </div>
@@ -338,7 +325,6 @@
             return new Date(excelEpoch + millis);
         }
         if (typeof cell === 'string') {
-            // probeer dd/mm/jjjj of jjjj-mm-dd etc.
             const parts = cell.split(/[\/\-]/);
             if (parts.length === 3) {
                 let [a, b, c] = parts.map(p => p.trim());
@@ -470,6 +456,74 @@
         chauffeurData = Array.from(map.values()).sort((a, b) => b.count - a.count);
     }
 
+    // ---- Chauffeur details inline onder de rij ----
+    function showChauffeurDetailsInline(name, clickedRow) {
+        const tbodyCh = document.querySelector('#chauffeur-table tbody');
+        // bestaande detail-rijen verwijderen
+        Array.from(tbodyCh.querySelectorAll('.chauffeur-detail-row')).forEach(r => r.remove());
+
+        const entry = chauffeurData.find(c => c.name === name);
+        if (!entry) return;
+
+        const headers = allHeaders;
+        const cols = [];
+
+        const addCol = (possibleNames) => {
+            const idx = findColumnIndexByNames(headers, possibleNames);
+            if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
+        };
+
+        // chauffeur altijd eerst
+        if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
+        addCol(['datum']);
+        addCol(['locatie']);
+        addCol(['bus', 'bus/ tram', 'tram']);
+        addCol(['link']);
+
+        // detail-rij maken
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'chauffeur-detail-row';
+        const detailTd = document.createElement('td');
+        detailTd.colSpan = 2;
+
+        const innerTable = document.createElement('table');
+        innerTable.style.width = '100%';
+        innerTable.style.fontSize = '12px';
+
+        const theadInner = document.createElement('thead');
+        const hr = document.createElement('tr');
+        cols.forEach(idx => {
+            const th = document.createElement('th');
+            th.textContent = headers[idx];
+            hr.appendChild(th);
+        });
+        theadInner.appendChild(hr);
+
+        const tbodyInner = document.createElement('tbody');
+        entry.rows.forEach(row => {
+            const tr = document.createElement('tr');
+            cols.forEach(idx => {
+                let value = row[idx];
+                if (idx === dateColIndex) {
+                    value = excelSerialToDateString(value);
+                }
+                const td = document.createElement('td');
+                td.textContent = (value === null || value === undefined) ? '' : value;
+                tr.appendChild(td);
+            });
+            tbodyInner.appendChild(tr);
+        });
+
+        innerTable.appendChild(theadInner);
+        innerTable.appendChild(tbodyInner);
+
+        detailTd.appendChild(innerTable);
+        detailTr.appendChild(detailTd);
+
+        // detail-rij direct na de aangeklikte chauffeur invoegen
+        clickedRow.insertAdjacentElement('afterend', detailTr);
+    }
+
     // ---- Chauffeur tabel + grafiek updaten ----
     function updateChauffeurView() {
         const limitSelect = document.getElementById('chauffeur-limit');
@@ -493,16 +547,12 @@
             tr.appendChild(tdName);
             tr.appendChild(tdCount);
 
-            tr.addEventListener('click', () => showChauffeurDetails(ch.name));
+            tr.addEventListener('click', () => showChauffeurDetailsInline(ch.name, tr));
 
             tbodyCh.appendChild(tr);
         });
 
         buildChauffeurChart(list);
-        document.getElementById('chauffeur-selected').textContent =
-            'Klik op een chauffeur in de tabel hierboven.';
-        document.querySelector('#chauffeur-detail-table thead').innerHTML = '';
-        document.querySelector('#chauffeur-detail-table tbody').innerHTML = '';
     }
 
     // ---- Chauffeur grafiek ----
@@ -517,7 +567,7 @@
             data: {
                 labels: list.map(ch => ch.name),
                 datasets: [{
-                    label: 'Aantal schades',
+                    label: '',           // geen tekst "schades" meer
                     data: list.map(ch => ch.count)
                 }]
             },
@@ -525,7 +575,12 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: false }
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => ctx.parsed.y // enkel waarde tonen
+                        }
+                    }
                 },
                 scales: {
                     x: {
@@ -544,60 +599,6 @@
         });
     }
 
-    // ---- Details gekozen chauffeur ----
-    function showChauffeurDetails(name) {
-        const infoEl = document.getElementById('chauffeur-selected');
-        const theadDetail = document.querySelector('#chauffeur-detail-table thead');
-        const tbodyDetail = document.querySelector('#chauffeur-detail-table tbody');
-
-        infoEl.textContent = 'Details voor chauffeur: ' + name;
-        theadDetail.innerHTML = '';
-        tbodyDetail.innerHTML = '';
-
-        const entry = chauffeurData.find(c => c.name === name);
-        if (!entry) return;
-
-        const headers = allHeaders;
-        const cols = [];
-
-        const addCol = (possibleNames) => {
-            const idx = findColumnIndexByNames(headers, possibleNames);
-            if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
-        };
-
-        // chauffeur altijd eerst
-        if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
-
-        addCol(['datum']);
-        addCol(['locatie']);
-        addCol(['bus', 'bus/ tram', 'tram']);
-        addCol(['link']);
-
-        // header rij
-        const hr = document.createElement('tr');
-        cols.forEach(idx => {
-            const th = document.createElement('th');
-            th.textContent = headers[idx];
-            hr.appendChild(th);
-        });
-        theadDetail.appendChild(hr);
-
-        // data rijen
-        entry.rows.forEach(row => {
-            const tr = document.createElement('tr');
-            cols.forEach(idx => {
-                let value = row[idx];
-                if (idx === dateColIndex) {
-                    value = excelSerialToDateString(value);
-                }
-                const td = document.createElement('td');
-                td.textContent = (value === null || value === undefined) ? '' : value;
-                tr.appendChild(td);
-            });
-            tbodyDetail.appendChild(tr);
-        });
-    }
-
     // ---- Alles heropbouwen wanneer filter verandert ----
     function updateFilterAndViews() {
         filteredRows = getFilteredRows();
@@ -612,7 +613,7 @@
             ' rijen geladen (' + filterText + ').';
     }
 
-    // Select-wijzigingen
+    // ---- Select-listeners ----
     document.getElementById('chauffeur-limit').addEventListener('change', () => {
         updateChauffeurView();
     });
@@ -652,7 +653,7 @@
             allHeaders = rows[0];
             baseRows = rows.slice(1);
 
-            // tabel header invullen
+            // tabel header invullen (alle data)
             thead.innerHTML = '';
             const headerRow = document.createElement('tr');
             allHeaders.forEach(h => {
@@ -672,7 +673,7 @@
             // jaren in filter
             populateYearFilter();
 
-            // eerste keer views opbouwen (zonder jaarfilter of met standaard jaar)
+            // eerste keer views opbouwen
             updateFilterAndViews();
         })
         .catch(err => {
