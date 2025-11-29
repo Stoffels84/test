@@ -93,7 +93,7 @@
             border: 1px solid #ddd;
             padding: 6px 8px;
             text-align: left;
-            max-width: 200px;
+            max-width: 260px;
             white-space: normal;
             word-wrap: break-word;
         }
@@ -102,6 +102,12 @@
             position: sticky;
             top: 0;
             z-index: 1;
+        }
+
+        /* Links in tabellen */
+        a.table-link {
+            color: #0066cc;
+            text-decoration: underline;
         }
 
         /* Zoekveld alle data */
@@ -327,6 +333,7 @@
     let chauffeurColIndex = -1;
     let voertuigColIndex = -1;
     let locatieColIndex = -1;
+    let linkColIndex = -1;
 
     let chauffeurData = [];
     let voertuigData = [];
@@ -467,6 +474,29 @@
         });
     }
 
+    // ---- Helper: maak cel (met klikbare link indien kolom Link) ----
+    function createCell(idx, rawValue) {
+        let value = rawValue;
+        if (idx === dateColIndex) {
+            value = excelSerialToDateString(rawValue);
+        }
+        const td = document.createElement('td');
+
+        if (idx === linkColIndex && value) {
+            const href = String(value).trim();
+            const a = document.createElement('a');
+            a.href = href;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.className = 'table-link';
+            a.textContent = href;
+            td.appendChild(a);
+        } else {
+            td.textContent = (value === null || value === undefined) ? '' : value;
+        }
+        return td;
+    }
+
     // ---- Alle data body opnieuw opbouwen ----
     function rebuildAllDataTableBody(rows) {
         tbody.innerHTML = '';
@@ -475,12 +505,7 @@
             const tr = document.createElement('tr');
 
             r.forEach((cell, idx) => {
-                let value = cell;
-                if (idx === dateColIndex) {
-                    value = excelSerialToDateString(cell);
-                }
-                const td = document.createElement('td');
-                td.textContent = (value === null || value === undefined) ? '' : value;
+                const td = createCell(idx, cell);
                 tr.appendChild(td);
             });
 
@@ -614,12 +639,7 @@
         entry.rows.forEach(row => {
             const tr = document.createElement('tr');
             cols.forEach(idx => {
-                let value = row[idx];
-                if (idx === dateColIndex) {
-                    value = excelSerialToDateString(value);
-                }
-                const td = document.createElement('td');
-                td.textContent = (value === null || value === undefined) ? '' : value;
+                const td = createCell(idx, row[idx]);
                 tr.appendChild(td);
             });
             tbodyInner.appendChild(tr);
@@ -685,12 +705,7 @@
         entry.rows.forEach(row => {
             const tr = document.createElement('tr');
             cols.forEach(idx => {
-                let value = row[idx];
-                if (idx === dateColIndex) {
-                    value = excelSerialToDateString(value);
-                }
-                const td = document.createElement('td');
-                td.textContent = (value === null || value === undefined) ? '' : value;
+                const td = createCell(idx, row[idx]);
                 tr.appendChild(td);
             });
             tbodyInner.appendChild(tr);
@@ -756,12 +771,7 @@
         entry.rows.forEach(row => {
             const tr = document.createElement('tr');
             cols.forEach(idx => {
-                let value = row[idx];
-                if (idx === dateColIndex) {
-                    value = excelSerialToDateString(value);
-                }
-                const td = document.createElement('td');
-                td.textContent = (value === null || value === undefined) ? '' : value;
+                const td = createCell(idx, row[idx]);
                 tr.appendChild(td);
             });
             tbodyInner.appendChild(tr);
@@ -1017,6 +1027,10 @@
             locatieColIndex = findColumnIndexByNames(
                 allHeaders,
                 ['locatie']
+            );
+            linkColIndex = findColumnIndexByNames(
+                allHeaders,
+                ['link']
             );
 
             // jaren in filter
