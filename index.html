@@ -200,196 +200,175 @@
 </div>
 
 <script>
-    const statusEl = document.getElementById('status');
-    const table = document.getElementById('tabel');
-    const thead = table.querySelector('thead');
-    const tbody = table.querySelector('tbody');
-    const searchInput = document.getElementById('search-input');
-    const yearFilterSelect = document.getElementById('year-filter');
+const statusEl = document.getElementById('status');
+const table = document.getElementById('tabel');
+const thead = table.querySelector('thead');
+const tbody = table.querySelector('tbody');
+const searchInput = document.getElementById('search-input');
+const yearFilterSelect = document.getElementById('year-filter');
 
-    const excelFileUrl = 'schade%20met%20macro.xlsm';
+const excelFileUrl = 'schade%20met%20macro.xlsm';
 
-    // --- hoofddata (schades) ---
-    let allHeaders = [];
-    let baseRows = [];
-    let filteredRows = [];
-    let dateColIndex = -1;
-    let chauffeurColIndex = -1;
-    let voertuigColIndex = -1;
-    let locatieColIndex = -1;
-    let linkColIndex = -1;
-    let personnelColIndex = -1;
-    let activeColIndex = -1;
+// hoofddata uit schadebestand
+let allHeaders = [];
+let baseRows = [];
+let filteredRows = [];
+let dateColIndex = -1;
+let chauffeurColIndex = -1;
+let voertuigColIndex = -1;
+let locatieColIndex = -1;
+let linkColIndex = -1;
+let personnelColIndex = -1;
+let activeColIndex = -1;
 
-    let chauffeurData = [];
-    let voertuigData = [];
-    let locatieData = [];
-    let voertuigMonthChart = null;
+let chauffeurData = [];
+let voertuigData = [];
+let locatieData = [];
+let voertuigMonthChart = null;
 
-    // --- coachingslijst data ---
-    let coachingHeaders = [];
-    let coachingRows = [];
-    // map: P-nr (string) -> 'good' | 'medium' | 'bad'
-    const coachingMap = {};
+// coachingsdata
+let coachingHeaders = [];
+let coachingRows = [];
+const coachingMap = {}; // P-nr -> 'good' | 'medium' | 'bad'
 
-    // ---- Tabs (sidebar buttons) ----
-    const tabButtons = document.querySelectorAll('.tab-button');
-    const tabContents = document.querySelectorAll('.tab-content');
+// tabs (sidebar)
+const tabButtons = document.querySelectorAll('.tab-button');
+const tabContents = document.querySelectorAll('.tab-content');
 
-    tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const targetId = btn.getAttribute('data-tab');
-
-            tabButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-
-            tabContents.forEach(tc => {
-                if (tc.id === targetId) {
-                    tc.classList.add('active');
-                } else {
-                    tc.classList.remove('active');
-                }
-            });
+tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-tab');
+        tabButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        tabContents.forEach(tc => {
+            tc.classList.toggle('active', tc.id === targetId);
         });
     });
+});
 
-    // ---- Zoekfunctie Alle data ----
-    searchInput.addEventListener('input', () => {
-        const filter = searchInput.value.toLowerCase();
-        const rows = tbody.getElementsByTagName('tr');
-
-        for (let i = 0; i < rows.length; i++) {
-            const cells = rows[i].getElementsByTagName('td');
-            let rowMatch = false;
-
-            for (let c = 0; c < cells.length; c++) {
-                if (cells[c].textContent.toLowerCase().includes(filter)) {
-                    rowMatch = true;
-                    break;
-                }
+// zoeken in tab Alle data
+searchInput.addEventListener('input', () => {
+    const filter = searchInput.value.toLowerCase();
+    const rows = tbody.getElementsByTagName('tr');
+    for (let i = 0; i < rows.length; i++) {
+        const cells = rows[i].getElementsByTagName('td');
+        let rowMatch = false;
+        for (let c = 0; c < cells.length; c++) {
+            if (cells[c].textContent.toLowerCase().includes(filter)) {
+                rowMatch = true;
+                break;
             }
-
-            rows[i].style.display = rowMatch ? '' : 'none';
         }
+        rows[i].style.display = rowMatch ? '' : 'none';
+    }
+});
+
+// ---------- HULPFUNCTIES ----------
+
+function excelSerialToDate(cell) {
+    if (typeof cell === 'number') {
+        const excelEpoch = Date.UTC(1899, 11, 30);
+        const millis = cell * 24 * 60 * 60 * 1000;
+        return new Date(excelEpoch + millis);
+    }
+    if (typeof cell === 'string') {
+        const parts = cell.split(/[\/\-]/);
+        if (parts.length === 3) {
+            let [a, b, c] = parts.map(p => p.trim());
+            let day, month, year;
+            if (a.length === 4) {
+                year = parseInt(a, 10);
+                month = parseInt(b, 10);
+                day = parseInt(c, 10);
+            } else {
+                day = parseInt(a, 10);
+                month = parseInt(b, 10);
+                year = parseInt(c, 10);
+            }
+            if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+                return new Date(Date.UTC(year, month - 1, day));
+            }
+        }
+        const d = new Date(cell);
+        if (!isNaN(d)) return d;
+    }
+    return null;
+}
+
+function excelSerialToDateString(cell) {
+    const date = excelSerialToDate(cell);
+    if (!date) return cell;
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+}
+
+function findColumnIndexByNames(headers, possibleNames) {
+    const lower = headers.map(h => String(h).toLowerCase().trim());
+    for (const name of possibleNames) {
+        const idx = lower.indexOf(name.toLowerCase());
+        if (idx !== -1) return idx;
+    }
+    return -1;
+}
+
+// coachingstatus uit tekst
+function getCoachingStatusByText(text) {
+    if (!text) return null;
+    const t = String(text).toLowerCase();
+    if (t.includes('zeer goed') || t.trim() === 'goed' || t.includes(' goed')) return 'good';
+    if (t.includes('voldoende') || t.includes('onvoldoende')) return 'medium';
+    if (t.includes('slecht')) return 'bad';
+    return null;
+}
+
+function getCoachingStatusForPnr(pnr) {
+    if (pnr === null || pnr === undefined) return null;
+    const key = String(pnr).trim();
+    if (!key) return null;
+    return coachingMap[key] || null;
+}
+
+// jaarfilter opbouwen
+function populateYearFilter() {
+    yearFilterSelect.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = 'ALL';
+    optAll.textContent = 'Alle jaren';
+    yearFilterSelect.appendChild(optAll);
+
+    if (dateColIndex === -1) return;
+
+    const yearSet = new Set();
+    baseRows.forEach(row => {
+        const d = excelSerialToDate(row[dateColIndex]);
+        if (d) yearSet.add(d.getUTCFullYear());
     });
 
-    // ---- Excel-seriedatum -> Date-object ----
-    function excelSerialToDate(cell) {
-        if (typeof cell === 'number') {
-            const excelEpoch = Date.UTC(1899, 11, 30);
-            const millis = cell * 24 * 60 * 60 * 1000;
-            return new Date(excelEpoch + millis);
-        }
-        if (typeof cell === 'string') {
-            const parts = cell.split(/[\/\-]/);
-            if (parts.length === 3) {
-                let [a, b, c] = parts.map(p => p.trim());
-                let day, month, year;
+    const years = Array.from(yearSet).sort((a, b) => a - b);
+    years.forEach(y => {
+        const opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = y;
+        yearFilterSelect.appendChild(opt);
+    });
+}
 
-                if (a.length === 4) {
-                    year = parseInt(a, 10);
-                    month = parseInt(b, 10);
-                    day = parseInt(c, 10);
-                } else {
-                    day = parseInt(a, 10);
-                    month = parseInt(b, 10);
-                    year = parseInt(c, 10);
-                }
-                if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-                    return new Date(Date.UTC(year, month - 1, day));
-                }
-            }
-            const d = new Date(cell);
-            if (!isNaN(d)) return d;
-        }
-        return null;
-    }
+function getFilteredRows() {
+    if (dateColIndex === -1) return baseRows;
+    const value = yearFilterSelect.value;
+    if (!value || value === 'ALL') return baseRows;
+    const yearInt = parseInt(value, 10);
+    if (isNaN(yearInt)) return baseRows;
+    return baseRows.filter(row => {
+        const d = excelSerialToDate(row[dateColIndex]);
+        return d && d.getUTCFullYear() === yearInt;
+    });
+}
 
-    function excelSerialToDateString(cell) {
-        const date = excelSerialToDate(cell);
-        if (!date) return cell;
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const year = date.getUTCFullYear();
-        return `${day}/${month}/${year}`;
-    }
+// ---------- CEL MAKEN (link + coachingbol) ----------
 
-    function findColumnIndexByNames(headers, possibleNames) {
-        const lower = headers.map(h => String(h).toLowerCase().trim());
-        for (const name of possibleNames) {
-            const idx = lower.indexOf(name.toLowerCase());
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    }
-
-    // ---- Coaching helpers ----
-
-    // vertaalt tekst naar status 'good' | 'medium' | 'bad' | null
-    function getCoachingStatusByText(text) {
-        if (!text) return null;
-        const t = String(text).toLowerCase();
-        if (t.includes('zeer goed') || t.trim() === 'goed' || t.includes(' goed')) {
-            return 'good';
-        }
-        if (t.includes('voldoende') || t.includes('onvoldoende')) {
-            return 'medium';
-        }
-        if (t.includes('slecht')) {
-            return 'bad';
-        }
-        return null;
-    }
-
-    // haalt status op voor P-nr (string/nummer)
-    function getCoachingStatusForPnr(pnr) {
-        if (pnr === null || pnr === undefined) return null;
-        const key = String(pnr).trim();
-        if (!key) return null;
-        return coachingMap[key] || null;
-    }
-
-    // ---- Jaren in dropdown stoppen ----
-    function populateYearFilter() {
-        yearFilterSelect.innerHTML = '';
-        const optAll = document.createElement('option');
-        optAll.value = 'ALL';
-        optAll.textContent = 'Alle jaren';
-        yearFilterSelect.appendChild(optAll);
-
-        if (dateColIndex === -1) return;
-
-        const yearSet = new Set();
-        baseRows.forEach(row => {
-            const d = excelSerialToDate(row[dateColIndex]);
-            if (d) yearSet.add(d.getUTCFullYear());
-        });
-
-        const years = Array.from(yearSet).sort((a, b) => a - b);
-        years.forEach(y => {
-            const opt = document.createElement('option');
-            opt.value = String(y);
-            opt.textContent = y;
-            yearFilterSelect.appendChild(opt);
-        });
-    }
-
-    function getFilteredRows() {
-        if (dateColIndex === -1) return baseRows;
-        const value = yearFilterSelect.value;
-        if (!value || value === 'ALL') return baseRows;
-
-        const yearInt = parseInt(value, 10);
-        if (isNaN(yearInt)) return baseRows;
-
-        return baseRows.filter(row => {
-            const d = excelSerialToDate(row[dateColIndex]);
-            return d && d.getUTCFullYear() === yearInt;
-        });
-    }
-
-    // ---- Helper: cel maken (datum, link, én coaching-bolletje bij P-nr) ----
-// ---- Helper: cel maken (datum, link, én coaching-bolletje bij P-nr) ----
 function createCell(idx, rawValue) {
     let value = rawValue;
     if (idx === dateColIndex) {
@@ -397,7 +376,7 @@ function createCell(idx, rawValue) {
     }
     const td = document.createElement('td');
 
-    // Link-kolom => aanklikbare link naar EAF
+    // linkkolom
     if (idx === linkColIndex && value) {
         const href = String(value).trim();
         const a = document.createElement('a');
@@ -410,617 +389,605 @@ function createCell(idx, rawValue) {
         return td;
     }
 
-    // Personeelsnummer-kolom => tekst + coaching-indicator
+    // personeelsnummerkolom
     if (idx === personnelColIndex) {
         if (value !== null && value !== undefined) {
             const nummerText = String(value);
             td.appendChild(document.createTextNode(nummerText));
 
             const status = getCoachingStatusForPnr(value);
-
-            // Extra: tekst tonen zodat je zeker bent dat het werkt
             if (status) {
                 const label = document.createElement('span');
                 label.style.marginLeft = '4px';
                 label.style.fontSize = '11px';
                 label.style.color = '#6b7280';
-                if (status === 'good')   label.textContent = '(coaching: goed)';
-                if (status === 'medium') label.textContent = '(coaching: voldoende/onv.)';
-                if (status === 'bad')    label.textContent = '(coaching: slecht)';
+                if (status === 'good')   label.textContent = '(coaching goed)';
+                if (status === 'medium') label.textContent = '(coaching vold./onv.)';
+                if (status === 'bad')    label.textContent = '(coaching slecht)';
                 td.appendChild(label);
 
-                // Gekleurde bol
                 const dot = document.createElement('span');
                 dot.classList.add('coaching-dot');
                 if (status === 'good')   dot.classList.add('coaching-good');
                 if (status === 'medium') dot.classList.add('coaching-medium');
                 if (status === 'bad')    dot.classList.add('coaching-bad');
-                dot.title = 'Beoordeling coaching';
                 td.appendChild(dot);
             }
         }
         return td;
     }
 
-    // standaard cel
     td.textContent = (value === null || value === undefined) ? '' : value;
     return td;
 }
 
+// ---------- TABEL ALLE DATA ----------
 
-    function rebuildAllDataTableBody(rows) {
-        tbody.innerHTML = '';
-        rows.forEach(r => {
-            const tr = document.createElement('tr');
-            r.forEach((cell, idx) => {
-                const td = createCell(idx, cell);
-                tr.appendChild(td);
-            });
-            tbody.appendChild(tr);
-        });
-    }
-
-    // ---- Aggregaties ----
-    function buildChauffeurData(rows) {
-        chauffeurData = [];
-        if (chauffeurColIndex === -1) return;
-        const map = new Map();
-        rows.forEach(row => {
-            let name = row[chauffeurColIndex];
-            name = (name && String(name).trim() !== '') ? String(name).trim() : 'Onbekend';
-            if (!map.has(name)) {
-                map.set(name, { name: name, count: 0, rows: [] });
-            }
-            const entry = map.get(name);
-            entry.count++;
-            entry.rows.push(row);
-        });
-        chauffeurData = Array.from(map.values()).sort((a, b) => b.count - a.count);
-    }
-
-    function buildVoertuigData(rows) {
-        voertuigData = [];
-        if (voertuigColIndex === -1) return;
-        const map = new Map();
-        rows.forEach(row => {
-            let type = row[voertuigColIndex];
-            type = (type && String(type).trim() !== '') ? String(type).trim() : 'Onbekend';
-            if (!map.has(type)) {
-                map.set(type, { type: type, count: 0, rows: [] });
-            }
-            const entry = map.get(type);
-            entry.count++;
-            entry.rows.push(row);
-        });
-        voertuigData = Array.from(map.values()).sort((a, b) => b.count - a.count);
-    }
-
-    function buildLocatieData(rows) {
-        locatieData = [];
-        if (locatieColIndex === -1) return;
-        const map = new Map();
-        rows.forEach(row => {
-            let loc = row[locatieColIndex];
-            loc = (loc && String(loc).trim() !== '') ? String(loc).trim() : 'Onbekend';
-            if (!map.has(loc)) {
-                map.set(loc, { locatie: loc, count: 0, rows: [] });
-            }
-            const entry = map.get(loc);
-            entry.count++;
-            entry.rows.push(row);
-        });
-        locatieData = Array.from(map.values()).sort((a, b) => b.count - a.count);
-    }
-
-    // ---- Detailtabellen (chauffeur, voertuig, locatie) ----
-    function showChauffeurDetailsInline(name, clickedRow) {
-        const tbodyCh = document.querySelector('#chauffeur-table tbody');
-        const nextRow = clickedRow.nextElementSibling;
-        if (nextRow && nextRow.classList.contains('chauffeur-detail-row')) {
-            nextRow.remove();
-            return;
-        }
-        Array.from(tbodyCh.querySelectorAll('.chauffeur-detail-row')).forEach(r => r.remove());
-
-        const entry = chauffeurData.find(c => c.name === name);
-        if (!entry) return;
-
-        const headers = allHeaders;
-        const cols = [];
-        const addCol = (possibleNames) => {
-            const idx = findColumnIndexByNames(headers, possibleNames);
-            if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
-        };
-        if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
-        addCol(['datum']);
-        addCol(['locatie']);
-        addCol(['bus/ tram', 'bus/tram']);
-        addCol(['link']);
-        addCol(['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
-
-        const detailTr = document.createElement('tr');
-        detailTr.className = 'chauffeur-detail-row';
-        const detailTd = document.createElement('td');
-        detailTd.colSpan = 2;
-
-        const innerTable = document.createElement('table');
-        innerTable.style.width = '100%';
-        innerTable.style.fontSize = '12px';
-
-        const theadInner = document.createElement('thead');
-        const hr = document.createElement('tr');
-        cols.forEach(idx => {
-            const th = document.createElement('th');
-            th.textContent = headers[idx];
-            hr.appendChild(th);
-        });
-        theadInner.appendChild(hr);
-
-        const tbodyInner = document.createElement('tbody');
-        entry.rows.forEach(row => {
-            const tr = document.createElement('tr');
-            cols.forEach(idx => {
-                const td = createCell(idx, row[idx]);
-                tr.appendChild(td);
-            });
-            tbodyInner.appendChild(tr);
-        });
-
-        innerTable.appendChild(theadInner);
-        innerTable.appendChild(tbodyInner);
-        detailTd.appendChild(innerTable);
-        detailTr.appendChild(detailTd);
-        clickedRow.insertAdjacentElement('afterend', detailTr);
-    }
-
-    function showVoertuigDetailsInline(type, clickedRow) {
-        const tbodyV = document.querySelector('#voertuig-table tbody');
-        const nextRow = clickedRow.nextElementSibling;
-        if (nextRow && nextRow.classList.contains('voertuig-detail-row')) {
-            nextRow.remove();
-            return;
-        }
-        Array.from(tbodyV.querySelectorAll('.voertuig-detail-row')).forEach(r => r.remove());
-
-        const entry = voertuigData.find(v => v.type === type);
-        if (!entry) return;
-
-        const headers = allHeaders;
-        const cols = [];
-        const addCol = (possibleNames) => {
-            const idx = findColumnIndexByNames(headers, possibleNames);
-            if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
-        };
-        if (voertuigColIndex !== -1) cols.push(voertuigColIndex);
-        addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
-        addCol(['datum']);
-        addCol(['locatie']);
-        addCol(['link']);
-        addCol(['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
-
-        const detailTr = document.createElement('tr');
-        detailTr.className = 'voertuig-detail-row';
-        const detailTd = document.createElement('td');
-        detailTd.colSpan = 2;
-
-        const innerTable = document.createElement('table');
-        innerTable.style.width = '100%';
-        innerTable.style.fontSize = '12px';
-
-        const theadInner = document.createElement('thead');
-        const hr = document.createElement('tr');
-        cols.forEach(idx => {
-            const th = document.createElement('th');
-            th.textContent = headers[idx];
-            hr.appendChild(th);
-        });
-        theadInner.appendChild(hr);
-
-        const tbodyInner = document.createElement('tbody');
-        entry.rows.forEach(row => {
-            const tr = document.createElement('tr');
-            cols.forEach(idx => {
-                const td = createCell(idx, row[idx]);
-                tr.appendChild(td);
-            });
-            tbodyInner.appendChild(tr);
-        });
-
-        innerTable.appendChild(theadInner);
-        innerTable.appendChild(tbodyInner);
-        detailTd.appendChild(innerTable);
-        detailTr.appendChild(detailTd);
-        clickedRow.insertAdjacentElement('afterend', detailTr);
-    }
-
-    function showLocatieDetailsInline(loc, clickedRow) {
-        const tbodyL = document.querySelector('#locatie-table tbody');
-        const nextRow = clickedRow.nextElementSibling;
-        if (nextRow && nextRow.classList.contains('locatie-detail-row')) {
-            nextRow.remove();
-            return;
-        }
-        Array.from(tbodyL.querySelectorAll('.locatie-detail-row')).forEach(r => r.remove());
-
-        const entry = locatieData.find(l => l.locatie === loc);
-        if (!entry) return;
-
-        const headers = allHeaders;
-        const cols = [];
-        const addCol = (possibleNames) => {
-            const idx = findColumnIndexByNames(headers, possibleNames);
-            if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
-        };
-        if (locatieColIndex !== -1) cols.push(locatieColIndex);
-        addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
-        addCol(['datum']);
-        addCol(['bus/ tram', 'bus/tram']);
-        addCol(['link']);
-        addCol(['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
-
-        const detailTr = document.createElement('tr');
-        detailTr.className = 'locatie-detail-row';
-        const detailTd = document.createElement('td');
-        detailTd.colSpan = 2;
-
-        const innerTable = document.createElement('table');
-        innerTable.style.width = '100%';
-        innerTable.style.fontSize = '12px';
-
-        const theadInner = document.createElement('thead');
-        const hr = document.createElement('tr');
-        cols.forEach(idx => {
-            const th = document.createElement('th');
-            th.textContent = headers[idx];
-            hr.appendChild(th);
-        });
-        theadInner.appendChild(hr);
-
-        const tbodyInner = document.createElement('tbody');
-        entry.rows.forEach(row => {
-            const tr = document.createElement('tr');
-            cols.forEach(idx => {
-                const td = createCell(idx, row[idx]);
-                tr.appendChild(td);
-            });
-            tbodyInner.appendChild(tr);
-        });
-
-        innerTable.appendChild(theadInner);
-        innerTable.appendChild(tbodyInner);
-        detailTd.appendChild(innerTable);
-        detailTr.appendChild(detailTd);
-        clickedRow.insertAdjacentElement('afterend', detailTr);
-    }
-
-    // ---- Overzicht-tabellen updaten ----
-    function updateChauffeurView() {
-        const limitSelect = document.getElementById('chauffeur-limit');
-        const tbodyCh = document.querySelector('#chauffeur-table tbody');
-        tbodyCh.innerHTML = '';
-        let limit = parseInt(limitSelect.value, 10);
-        if (isNaN(limit) || limit < 0) limit = 10;
-        const list = (limit === 0) ? chauffeurData : chauffeurData.slice(0, limit);
-        list.forEach(ch => {
-            const tr = document.createElement('tr');
-            tr.dataset.chauffeur = ch.name;
-            const tdName = document.createElement('td');
-            tdName.textContent = ch.name;
-            const tdCount = document.createElement('td');
-            tdCount.textContent = ch.count;
-            tr.appendChild(tdName);
-            tr.appendChild(tdCount);
-            tr.addEventListener('click', () => showChauffeurDetailsInline(ch.name, tr));
-            tbodyCh.appendChild(tr);
-        });
-    }
-
-    function updateVoertuigView() {
-        const limitSelect = document.getElementById('voertuig-limit');
-        const tbodyV = document.querySelector('#voertuig-table tbody');
-        tbodyV.innerHTML = '';
-        let limit = parseInt(limitSelect.value, 10);
-        if (isNaN(limit) || limit < 0) limit = 10;
-        const list = (limit === 0) ? voertuigData : voertuigData.slice(0, limit);
-        list.forEach(v => {
-            const tr = document.createElement('tr');
-            tr.dataset.type = v.type;
-            const tdType = document.createElement('td');
-            tdType.textContent = v.type;
-            const tdCount = document.createElement('td');
-            tdCount.textContent = v.count;
-            tr.appendChild(tdType);
-            tr.appendChild(tdCount);
-            tr.addEventListener('click', () => showVoertuigDetailsInline(v.type, tr));
-            tbodyV.appendChild(tr);
-        });
-    }
-
-    function updateLocatieView() {
-        const limitSelect = document.getElementById('locatie-limit');
-        const tbodyL = document.querySelector('#locatie-table tbody');
-        tbodyL.innerHTML = '';
-        let limit = parseInt(limitSelect.value, 10);
-        if (isNaN(limit) || limit < 0) limit = 10;
-        const list = (limit === 0) ? locatieData : locatieData.slice(0, limit);
-        list.forEach(l => {
-            const tr = document.createElement('tr');
-            tr.dataset.locatie = l.locatie;
-            const tdLoc = document.createElement('td');
-            tdLoc.textContent = l.locatie;
-            const tdCount = document.createElement('td');
-            tdCount.textContent = l.count;
-            tr.appendChild(tdLoc);
-            tr.appendChild(tdCount);
-            tr.addEventListener('click', () => showLocatieDetailsInline(l.locatie, tr));
-            tbodyL.appendChild(tr);
-        });
-    }
-
-    // ---- Grafiek Voertuig: schades per maand en type ----
-    function buildVoertuigMonthChart(rows) {
-        const canvas = document.getElementById('voertuig-month-chart');
-        if (!canvas || voertuigColIndex === -1 || dateColIndex === -1) return;
-        const ctx = canvas.getContext('2d');
-
-        if (voertuigMonthChart) {
-            voertuigMonthChart.destroy();
-        }
-
-        const monthLabels = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec'];
-
-        const typeSet = new Set();
-        rows.forEach(row => {
-            let type = row[voertuigColIndex];
-            type = (type && String(type).trim() !== '') ? String(type).trim() : 'Onbekend';
-            typeSet.add(type);
-        });
-        const types = Array.from(typeSet).sort();
-
-        const dataByType = {};
-        types.forEach(t => {
-            dataByType[t] = new Array(12).fill(0);
-        });
-
-        rows.forEach(row => {
-            const d = excelSerialToDate(row[dateColIndex]);
-            if (!d) return;
-            let type = row[voertuigColIndex];
-            type = (type && String(type).trim() !== '') ? String(type).trim() : 'Onbekend';
-            if (!dataByType[type]) {
-                dataByType[type] = new Array(12).fill(0);
-            }
-            const m = d.getUTCMonth();
-            dataByType[type][m] += 1;
-        });
-
-        const datasets = types.map(t => ({
-            label: t,
-            data: dataByType[t]
-        }));
-
-        voertuigMonthChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: monthLabels,
-                datasets: datasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'top' }
-                },
-                scales: {
-                    x: { stacked: true },
-                    y: {
-                        stacked: true,
-                        beginAtZero: true,
-                        ticks: { precision: 0 }
-                    }
-                }
-            }
-        });
-    }
-
-    // ---- Dashboard zoeken ----
-    function searchDashboard() {
-        const input = document.getElementById('dashboard-search-input');
-        const term = input.value.trim().toLowerCase();
-        const tbodyDash = document.querySelector('#dashboard-table tbody');
-        tbodyDash.innerHTML = '';
-
-        if (!term) return;
-
-        const rows = filteredRows;
-        const results = [];
-
-        rows.forEach(row => {
-            const nameVal = (chauffeurColIndex !== -1 && row[chauffeurColIndex]) ?
-                String(row[chauffeurColIndex]).toLowerCase() : '';
-            const persVal = (personnelColIndex !== -1 && row[personnelColIndex]) ?
-                String(row[personnelColIndex]).toLowerCase() : '';
-            if (nameVal.includes(term) || persVal.includes(term)) {
-                results.push(row);
-            }
-        });
-
-        if (results.length === 0) {
-            const tr = document.createElement('tr');
-            const td = document.createElement('td');
-            td.colSpan = 7;
-            td.textContent = 'Geen resultaten gevonden voor deze zoekopdracht (binnen de gekozen jaarfilter).';
+function rebuildAllDataTableBody(rows) {
+    tbody.innerHTML = '';
+    rows.forEach(r => {
+        const tr = document.createElement('tr');
+        r.forEach((cell, idx) => {
+            const td = createCell(idx, cell);
             tr.appendChild(td);
-            tbodyDash.appendChild(tr);
-            return;
-        }
-
-        const cols = [];
-        if (dateColIndex !== -1) cols.push(dateColIndex);
-        if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
-        if (personnelColIndex !== -1) cols.push(personnelColIndex);
-        if (voertuigColIndex !== -1) cols.push(voertuigColIndex);
-        if (locatieColIndex !== -1) cols.push(locatieColIndex);
-        if (activeColIndex !== -1) cols.push(activeColIndex);
-        if (linkColIndex !== -1) cols.push(linkColIndex);
-
-        results.forEach(row => {
-            const tr = document.createElement('tr');
-            cols.forEach(idx => {
-                const td = createCell(idx, row[idx]);
-                tr.appendChild(td);
-            });
-            tbodyDash.appendChild(tr);
         });
+        tbody.appendChild(tr);
+    });
+}
+
+// ---------- AGGREGATIES ----------
+
+function buildChauffeurData(rows) {
+    chauffeurData = [];
+    if (chauffeurColIndex === -1) return;
+    const map = new Map();
+    rows.forEach(row => {
+        let name = row[chauffeurColIndex];
+        name = (name && String(name).trim() !== '') ? String(name).trim() : 'Onbekend';
+        if (!map.has(name)) {
+            map.set(name, { name: name, count: 0, rows: [] });
+        }
+        const entry = map.get(name);
+        entry.count++;
+        entry.rows.push(row);
+    });
+    chauffeurData = Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
+
+function buildVoertuigData(rows) {
+    voertuigData = [];
+    if (voertuigColIndex === -1) return;
+    const map = new Map();
+    rows.forEach(row => {
+        let type = row[voertuigColIndex];
+        type = (type && String(type).trim() !== '') ? String(type).trim() : 'Onbekend';
+        if (!map.has(type)) {
+            map.set(type, { type: type, count: 0, rows: [] });
+        }
+        const entry = map.get(type);
+        entry.count++;
+        entry.rows.push(row);
+    });
+    voertuigData = Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
+
+function buildLocatieData(rows) {
+    locatieData = [];
+    if (locatieColIndex === -1) return;
+    const map = new Map();
+    rows.forEach(row => {
+        let loc = row[locatieColIndex];
+        loc = (loc && String(loc).trim() !== '') ? String(loc).trim() : 'Onbekend';
+        if (!map.has(loc)) {
+            map.set(loc, { locatie: loc, count: 0, rows: [] });
+        }
+        const entry = map.get(loc);
+        entry.count++;
+        entry.rows.push(row);
+    });
+    locatieData = Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
+
+// ---------- DETAILTABELLEN ----------
+
+function showChauffeurDetailsInline(name, clickedRow) {
+    const tbodyCh = document.querySelector('#chauffeur-table tbody');
+    const nextRow = clickedRow.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('chauffeur-detail-row')) {
+        nextRow.remove();
+        return;
     }
+    Array.from(tbodyCh.querySelectorAll('.chauffeur-detail-row')).forEach(r => r.remove());
 
-    // ---- Alles heropbouwen bij filter / coaching-update ----
-    function updateFilterAndViews() {
-        if (!baseRows.length) return;
-        filteredRows = getFilteredRows();
-        rebuildAllDataTableBody(filteredRows);
-        buildChauffeurData(filteredRows);
-        buildVoertuigData(filteredRows);
-        buildLocatieData(filteredRows);
-        updateChauffeurView();
-        updateVoertuigView();
-        updateLocatieView();
-        buildVoertuigMonthChart(filteredRows);
-        searchDashboard();
+    const entry = chauffeurData.find(c => c.name === name);
+    if (!entry) return;
 
-        const filterText = (yearFilterSelect.value === 'ALL'
-            ? 'alle jaren'
-            : 'jaar ' + yearFilterSelect.value);
-        statusEl.textContent = 'Klaar. ' + filteredRows.length +
-            ' rijen geladen (' + filterText + ').';
-    }
+    const headers = allHeaders;
+    const cols = [];
+    const addCol = (possibleNames) => {
+        const idx = findColumnIndexByNames(headers, possibleNames);
+        if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
+    };
+    if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
+    addCol(['datum']);
+    addCol(['locatie']);
+    addCol(['bus/ tram', 'bus/tram']);
+    addCol(['link']);
+    addCol(['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
 
-    // ---- Listeners ----
-    document.getElementById('chauffeur-limit').addEventListener('change', updateChauffeurView);
-    document.getElementById('voertuig-limit').addEventListener('change', updateVoertuigView);
-    document.getElementById('locatie-limit').addEventListener('change', updateLocatieView);
-    yearFilterSelect.addEventListener('change', updateFilterAndViews);
+    const detailTr = document.createElement('tr');
+    detailTr.className = 'chauffeur-detail-row';
+    const detailTd = document.createElement('td');
+    detailTd.colSpan = 2;
 
-    document.getElementById('dashboard-search-button').addEventListener('click', searchDashboard);
-    document.getElementById('dashboard-search-input').addEventListener('keyup', (e) => {
-        if (e.key === 'Enter') searchDashboard();
+    const innerTable = document.createElement('table');
+    innerTable.style.width = '100%';
+    innerTable.style.fontSize = '12px';
+
+    const theadInner = document.createElement('thead');
+    const hr = document.createElement('tr');
+    cols.forEach(idx => {
+        const th = document.createElement('th');
+        th.textContent = headers[idx];
+        hr.appendChild(th);
+    });
+    theadInner.appendChild(hr);
+
+    const tbodyInner = document.createElement('tbody');
+    entry.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        cols.forEach(idx => {
+            const td = createCell(idx, row[idx]);
+            tr.appendChild(td);
+        });
+        tbodyInner.appendChild(tr);
     });
 
-    // ---- 1) Hoofd Excel: schade met macro.xlsm ----
-    fetch(excelFileUrl)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Kon het Excel-bestand niet laden (HTTP ' + response.status + ')');
+    innerTable.appendChild(theadInner);
+    innerTable.appendChild(tbodyInner);
+    detailTd.appendChild(innerTable);
+    detailTr.appendChild(detailTd);
+    clickedRow.insertAdjacentElement('afterend', detailTr);
+}
+
+function showVoertuigDetailsInline(type, clickedRow) {
+    const tbodyV = document.querySelector('#voertuig-table tbody');
+    const nextRow = clickedRow.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('voertuig-detail-row')) {
+        nextRow.remove();
+        return;
+    }
+    Array.from(tbodyV.querySelectorAll('.voertuig-detail-row')).forEach(r => r.remove());
+
+    const entry = voertuigData.find(v => v.type === type);
+    if (!entry) return;
+
+    const headers = allHeaders;
+    const cols = [];
+    const addCol = (possibleNames) => {
+        const idx = findColumnIndexByNames(headers, possibleNames);
+        if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
+    };
+    if (voertuigColIndex !== -1) cols.push(voertuigColIndex);
+    addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
+    addCol(['datum']);
+    addCol(['locatie']);
+    addCol(['link']);
+    addCol(['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
+
+    const detailTr = document.createElement('tr');
+    detailTr.className = 'voertuig-detail-row';
+    const detailTd = document.createElement('td');
+    detailTd.colSpan = 2;
+
+    const innerTable = document.createElement('table');
+    innerTable.style.width = '100%';
+    innerTable.style.fontSize = '12px';
+
+    const theadInner = document.createElement('thead');
+    const hr = document.createElement('tr');
+    cols.forEach(idx => {
+        const th = document.createElement('th');
+        th.textContent = headers[idx];
+        hr.appendChild(th);
+    });
+    theadInner.appendChild(hr);
+
+    const tbodyInner = document.createElement('tbody');
+    entry.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        cols.forEach(idx => {
+            const td = createCell(idx, row[idx]);
+            tr.appendChild(td);
+        });
+        tbodyInner.appendChild(tr);
+    });
+
+    innerTable.appendChild(theadInner);
+    innerTable.appendChild(tbodyInner);
+    detailTd.appendChild(innerTable);
+    detailTr.appendChild(detailTd);
+    clickedRow.insertAdjacentElement('afterend', detailTr);
+}
+
+function showLocatieDetailsInline(loc, clickedRow) {
+    const tbodyL = document.querySelector('#locatie-table tbody');
+    const nextRow = clickedRow.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('locatie-detail-row')) {
+        nextRow.remove();
+        return;
+    }
+    Array.from(tbodyL.querySelectorAll('.locatie-detail-row')).forEach(r => r.remove());
+
+    const entry = locatieData.find(l => l.locatie === loc);
+    if (!entry) return;
+
+    const headers = allHeaders;
+    const cols = [];
+    const addCol = (possibleNames) => {
+        const idx = findColumnIndexByNames(headers, possibleNames);
+        if (idx !== -1 && !cols.includes(idx)) cols.push(idx);
+    };
+    if (locatieColIndex !== -1) cols.push(locatieColIndex);
+    addCol(['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
+    addCol(['datum']);
+    addCol(['bus/ tram', 'bus/tram']);
+    addCol(['link']);
+    addCol(['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
+
+    const detailTr = document.createElement('tr');
+    detailTr.className = 'locatie-detail-row';
+    const detailTd = document.createElement('td');
+    detailTd.colSpan = 2;
+
+    const innerTable = document.createElement('table');
+    innerTable.style.width = '100%';
+    innerTable.style.fontSize = '12px';
+
+    const theadInner = document.createElement('thead');
+    const hr = document.createElement('tr');
+    cols.forEach(idx => {
+        const th = document.createElement('th');
+        th.textContent = headers[idx];
+        hr.appendChild(th);
+    });
+    theadInner.appendChild(hr);
+
+    const tbodyInner = document.createElement('tbody');
+    entry.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        cols.forEach(idx => {
+            const td = createCell(idx, row[idx]);
+            tr.appendChild(td);
+        });
+        tbodyInner.appendChild(tr);
+    });
+
+    innerTable.appendChild(theadInner);
+    innerTable.appendChild(tbodyInner);
+    detailTd.appendChild(innerTable);
+    detailTr.appendChild(detailTd);
+    clickedRow.insertAdjacentElement('afterend', detailTr);
+}
+
+// ---------- OVERZICHTSTABELLEN ----------
+
+function updateChauffeurView() {
+    const limitSelect = document.getElementById('chauffeur-limit');
+    const tbodyCh = document.querySelector('#chauffeur-table tbody');
+    tbodyCh.innerHTML = '';
+    let limit = parseInt(limitSelect.value, 10);
+    if (isNaN(limit) || limit < 0) limit = 10;
+    const list = (limit === 0) ? chauffeurData : chauffeurData.slice(0, limit);
+    list.forEach(ch => {
+        const tr = document.createElement('tr');
+        tr.dataset.chauffeur = ch.name;
+        const tdName = document.createElement('td');
+        tdName.textContent = ch.name;
+        const tdCount = document.createElement('td');
+        tdCount.textContent = ch.count;
+        tr.appendChild(tdName);
+        tr.appendChild(tdCount);
+        tr.addEventListener('click', () => showChauffeurDetailsInline(ch.name, tr));
+        tbodyCh.appendChild(tr);
+    });
+}
+
+function updateVoertuigView() {
+    const limitSelect = document.getElementById('voertuig-limit');
+    const tbodyV = document.querySelector('#voertuig-table tbody');
+    tbodyV.innerHTML = '';
+    let limit = parseInt(limitSelect.value, 10);
+    if (isNaN(limit) || limit < 0) limit = 10;
+    const list = (limit === 0) ? voertuigData : voertuigData.slice(0, limit);
+    list.forEach(v => {
+        const tr = document.createElement('tr');
+        tr.dataset.type = v.type;
+        const tdType = document.createElement('td');
+        tdType.textContent = v.type;
+        const tdCount = document.createElement('td');
+        tdCount.textContent = v.count;
+        tr.appendChild(tdType);
+        tr.appendChild(tdCount);
+        tr.addEventListener('click', () => showVoertuigDetailsInline(v.type, tr));
+        tbodyV.appendChild(tr);
+    });
+}
+
+function updateLocatieView() {
+    const limitSelect = document.getElementById('locatie-limit');
+    const tbodyL = document.querySelector('#locatie-table tbody');
+    tbodyL.innerHTML = '';
+    let limit = parseInt(limitSelect.value, 10);
+    if (isNaN(limit) || limit < 0) limit = 10;
+    const list = (limit === 0) ? locatieData : locatieData.slice(0, limit);
+    list.forEach(l => {
+        const tr = document.createElement('tr');
+        tr.dataset.locatie = l.locatie;
+        const tdLoc = document.createElement('td');
+        tdLoc.textContent = l.locatie;
+        const tdCount = document.createElement('td');
+        tdCount.textContent = l.count;
+        tr.appendChild(tdLoc);
+        tr.appendChild(tdCount);
+        tr.addEventListener('click', () => showLocatieDetailsInline(l.locatie, tr));
+        tbodyL.appendChild(tr);
+    });
+}
+
+// ---------- GRAFIEK VOERTUIG ----------
+
+function buildVoertuigMonthChart(rows) {
+    const canvas = document.getElementById('voertuig-month-chart');
+    if (!canvas || voertuigColIndex === -1 || dateColIndex === -1) return;
+    const ctx = canvas.getContext('2d');
+
+    if (voertuigMonthChart) {
+        voertuigMonthChart.destroy();
+    }
+
+    const monthLabels = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec'];
+
+    const typeSet = new Set();
+    rows.forEach(row => {
+        let type = row[voertuigColIndex];
+        type = (type && String(type).trim() !== '') ? String(type).trim() : 'Onbekend';
+        typeSet.add(type);
+    });
+    const types = Array.from(typeSet).sort();
+
+    const dataByType = {};
+    types.forEach(t => { dataByType[t] = new Array(12).fill(0); });
+
+    rows.forEach(row => {
+        const d = excelSerialToDate(row[dateColIndex]);
+        if (!d) return;
+        let type = row[voertuigColIndex];
+        type = (type && String(type).trim() !== '') ? String(type).trim() : 'Onbekend';
+        if (!dataByType[type]) dataByType[type] = new Array(12).fill(0);
+        const m = d.getUTCMonth();
+        dataByType[type][m] += 1;
+    });
+
+    const datasets = types.map(t => ({
+        label: t,
+        data: dataByType[t]
+    }));
+
+    voertuigMonthChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: monthLabels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' } },
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
             }
-            return response.arrayBuffer();
-        })
-        .then(data => {
-            statusEl.textContent = 'Excel-bestand geladen, bezig met verwerken...';
+        }
+    });
+}
 
-            const uint8 = new Uint8Array(data);
-            const workbook = XLSX.read(uint8, { type: 'array' });
+// ---------- DASHBOARD ZOEKEN ----------
 
-            const sheetName = 'BRON';
-            if (!workbook.SheetNames.includes(sheetName)) {
-                statusEl.textContent = "Tabblad 'BRON' bestaat niet in het Excel-bestand!";
-                return;
-            }
+function searchDashboard() {
+    const input = document.getElementById('dashboard-search-input');
+    const term = input.value.trim().toLowerCase();
+    const tbodyDash = document.querySelector('#dashboard-table tbody');
+    tbodyDash.innerHTML = '';
 
-            const worksheet = workbook.Sheets[sheetName];
-            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    if (!term) return;
 
-            if (!rows || rows.length === 0) {
-                statusEl.textContent = 'Geen data gevonden in tabblad BRON.';
-                return;
-            }
+    const rows = filteredRows;
+    const results = [];
 
-            allHeaders = rows[0];
-            baseRows = rows.slice(1);
+    rows.forEach(row => {
+        const nameVal = (chauffeurColIndex !== -1 && row[chauffeurColIndex]) ?
+            String(row[chauffeurColIndex]).toLowerCase() : '';
+        const persVal = (personnelColIndex !== -1 && row[personnelColIndex]) ?
+            String(row[personnelColIndex]).toLowerCase() : '';
+        if (nameVal.includes(term) || persVal.includes(term)) {
+            results.push(row);
+        }
+    });
 
-            thead.innerHTML = '';
-            const headerRow = document.createElement('tr');
-            allHeaders.forEach(h => {
-                const th = document.createElement('th');
-                th.textContent = h;
-                headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
+    if (results.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 7;
+        td.textContent = 'Geen resultaten gevonden voor deze zoekopdracht (binnen de gekozen jaarfilter).';
+        tr.appendChild(td);
+        tbodyDash.appendChild(tr);
+        return;
+    }
 
-            dateColIndex = findColumnIndexByNames(allHeaders, ['datum']);
-            chauffeurColIndex = findColumnIndexByNames(allHeaders, ['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
-            voertuigColIndex = findColumnIndexByNames(allHeaders, ['bus/tram', 'bus/ tram']);
-            locatieColIndex = findColumnIndexByNames(allHeaders, ['locatie']);
-            linkColIndex = findColumnIndexByNames(allHeaders, ['link']);
-            personnelColIndex = findColumnIndexByNames(allHeaders, ['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
-            activeColIndex = findColumnIndexByNames(allHeaders, ['actief', 'active']);
+    const cols = [];
+    if (dateColIndex !== -1) cols.push(dateColIndex);
+    if (chauffeurColIndex !== -1) cols.push(chauffeurColIndex);
+    if (personnelColIndex !== -1) cols.push(personnelColIndex);
+    if (voertuigColIndex !== -1) cols.push(voertuigColIndex);
+    if (locatieColIndex !== -1) cols.push(locatieColIndex);
+    if (activeColIndex !== -1) cols.push(activeColIndex);
+    if (linkColIndex !== -1) cols.push(linkColIndex);
 
-            populateYearFilter();
-            updateFilterAndViews();
-        })
-        .catch(err => {
-            console.error(err);
-            statusEl.textContent = 'Er ging iets mis bij het laden of verwerken van het Excel-bestand.';
+    results.forEach(row => {
+        const tr = document.createElement('tr');
+        cols.forEach(idx => {
+            const td = createCell(idx, row[idx]);
+            tr.appendChild(td);
+        });
+        tbodyDash.appendChild(tr);
+    });
+}
+
+// ---------- ALLES HERAUFBOUWEN BIJ FILTER / COACHING ----------
+
+function updateFilterAndViews() {
+    if (!baseRows.length) return;
+    filteredRows = getFilteredRows();
+    rebuildAllDataTableBody(filteredRows);
+    buildChauffeurData(filteredRows);
+    buildVoertuigData(filteredRows);
+    buildLocatieData(filteredRows);
+    updateChauffeurView();
+    updateVoertuigView();
+    updateLocatieView();
+    buildVoertuigMonthChart(filteredRows);
+    searchDashboard();
+
+    const filterText = (yearFilterSelect.value === 'ALL'
+        ? 'alle jaren'
+        : 'jaar ' + yearFilterSelect.value);
+    const coachingCount = Object.keys(coachingMap).length;
+    statusEl.textContent = 'Klaar. ' + filteredRows.length +
+        ' rijen geladen (' + filterText + '). Coachings voor ' +
+        coachingCount + ' P-nrs geladen.';
+}
+
+// ---------- EVENT LISTENERS ----------
+
+document.getElementById('chauffeur-limit').addEventListener('change', updateChauffeurView);
+document.getElementById('voertuig-limit').addEventListener('change', updateVoertuigView);
+document.getElementById('locatie-limit').addEventListener('change', updateLocatieView);
+yearFilterSelect.addEventListener('change', updateFilterAndViews);
+
+document.getElementById('dashboard-search-button').addEventListener('click', searchDashboard);
+document.getElementById('dashboard-search-input').addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') searchDashboard();
+});
+
+// ---------- 1) HOOFDEXCEL LADEN ----------
+
+fetch(excelFileUrl)
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Kon het Excel-bestand niet laden (HTTP ' + response.status + ')');
+        }
+        return response.arrayBuffer();
+    })
+    .then(data => {
+        statusEl.textContent = 'Excel-bestand geladen, bezig met verwerken...';
+
+        const uint8 = new Uint8Array(data);
+        const workbook = XLSX.read(uint8, { type: 'array' });
+
+        const sheetName = 'BRON';
+        if (!workbook.SheetNames.includes(sheetName)) {
+            statusEl.textContent = "Tabblad 'BRON' bestaat niet in het Excel-bestand!";
+            return;
+        }
+
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        if (!rows || rows.length === 0) {
+            statusEl.textContent = 'Geen data gevonden in tabblad BRON.';
+            return;
+        }
+
+        allHeaders = rows[0];
+        baseRows = rows.slice(1);
+
+        thead.innerHTML = '';
+        const headerRow = document.createElement('tr');
+        allHeaders.forEach(h => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+
+        dateColIndex = findColumnIndexByNames(allHeaders, ['datum']);
+        chauffeurColIndex = findColumnIndexByNames(allHeaders, ['volledige naam', 'chauffeur', 'naam', 'bestuurder']);
+        voertuigColIndex = findColumnIndexByNames(allHeaders, ['bus/tram', 'bus/ tram']);
+        locatieColIndex = findColumnIndexByNames(allHeaders, ['locatie']);
+        linkColIndex = findColumnIndexByNames(allHeaders, ['link']);
+        personnelColIndex = findColumnIndexByNames(allHeaders, ['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
+        activeColIndex = findColumnIndexByNames(allHeaders, ['actief', 'active']);
+
+        populateYearFilter();
+        updateFilterAndViews();
+    })
+    .catch(err => {
+        console.error(err);
+        statusEl.textContent = 'Er ging iets mis bij het laden of verwerken van het Excel-bestand.';
+    });
+
+// ---------- 2) COACHINGSLIJST LADEN ----------
+
+fetch('coachingslijst.xlsx')
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Kon coachingslijst.xlsx niet laden (HTTP ' + response.status + ')');
+        }
+        return response.arrayBuffer();
+    })
+    .then(data => {
+        const workbook = XLSX.read(new Uint8Array(data), { type: 'array' });
+
+        let sheetName = 'Voltooide coachings';
+        if (!workbook.SheetNames.includes(sheetName)) {
+            sheetName = workbook.SheetNames[0];
+        }
+
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        if (!rows.length) {
+            console.warn('coachingslijst.xlsx bevat geen data in tabblad', sheetName);
+            return;
+        }
+
+        coachingHeaders = rows[0];
+        coachingRows = rows.slice(1);
+
+        // strikt zoeken naar exacte headers
+        const pIndex = coachingHeaders.indexOf('P-nr');
+        const ratingIndex = coachingHeaders.indexOf('Beoordeling coaching');
+
+        if (pIndex === -1 || ratingIndex === -1) {
+            console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in coachingslijst.xlsx');
+            return;
+        }
+
+        coachingRows.forEach(row => {
+            const p = row[pIndex];
+            const rating = row[ratingIndex];
+            const status = getCoachingStatusByText(rating);
+            if (!p || !status) return;
+            coachingMap[String(p).trim()] = status;
         });
 
-    // ---- 2) Tweede Excel: coachingslijst.xlsx (tabblad "Voltooide coachings") ----
-    fetch('coachingslijst.xlsx')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Kon coachingslijst.xlsx niet laden (HTTP ' + response.status + ')');
-            }
-            return response.arrayBuffer();
-        })
-        .then(data => {
-            const workbook = XLSX.read(new Uint8Array(data), { type: 'array' });
-
-            let sheetName = 'Voltooide coachings';
-            if (!workbook.SheetNames.includes(sheetName)) {
-                sheetName = workbook.SheetNames[0]; // fallback: eerste tabblad
-            }
-
-            const sheet = workbook.Sheets[sheetName];
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-            if (!rows.length) {
-                console.warn('coachingslijst.xlsx bevat geen data in tabblad', sheetName);
-                return;
-            }
-
-            coachingHeaders = rows[0];
-            coachingRows = rows.slice(1);
-
-            const pIndex = findColumnIndexByNames(coachingHeaders, ['p-nr', 'p nr', 'personeelsnr', 'personeelsnummer']);
-            const ratingIndex = findColumnIndexByNames(coachingHeaders, ['Beoordeling coaching', 'beoordeling', 'coaching beoordeling']);
-
-            if (pIndex === -1 || ratingIndex === -1) {
-                console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in coachingslijst.');
-                return;
-            }
-
-            // bouw map P-nr -> status
-            coachingRows.forEach(row => {
-                const p = row[pIndex];
-                const rating = row[ratingIndex];
-                if (!p || !rating) return;
-                const status = getCoachingStatusByText(rating);
-                if (!status) return;
-                const key = String(p).trim();
-                if (!key) return;
-                // bij meerdere coachings voor zelfde P-nr: "laatste wint"
-                coachingMap[key] = status;
-            });
-
-            console.log('CoachingMap opgebouwd:', coachingMap);
-            console.log('Aantal P-nrs met coaching:', Object.keys(coachingMap).length);
-
-
-            // nu we coachingMap hebben, alles opnieuw tekenen zodat bolletjes verschijnen
-            updateFilterAndViews();
-            
-        })
-        .catch(err => {
-            console.error('Fout bij coachingslijst:', err);
-        });
+        console.log('CoachingMap:', coachingMap);
+        updateFilterAndViews(); // opnieuw tekenen met bollen
+    })
+    .catch(err => {
+        console.error('Fout bij coachingslijst:', err);
+    });
 </script>
 
 
