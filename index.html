@@ -1,64 +1,3 @@
-<!DOCTYPE html>
-<html lang="nl">
-<head>
-    <meta charset="UTF-8" />
-    <title>Schadegegevens uit Excel (.xlsm)</title>
-
-    <!-- SheetJS (xlsx.js) van een CDN, zodat de browser Excel kan lezen -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 40px;
-            background: #f4f4f4;
-        }
-        h1 {
-            color: #333;
-        }
-        .box {
-            padding: 20px;
-            background: white;
-            border-radius: 8px;
-            max-width: 1000px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-top: 20px;
-            font-size: 14px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 6px 8px;
-            text-align: left;
-        }
-        th {
-            background: #f0f0f0;
-            position: sticky;
-            top: 0;
-        }
-        #status {
-            margin-top: 15px;
-            color: #666;
-            font-size: 14px;
-        }
-    </style>
-</head>
-<body>
-
-<div class="box">
-    <h1>Schadegegevens uit Excel-bestand</h1>
-    <p>Deze tabel komt rechtstreeks uit <code>schade met macro.xlsm</code> in deze GitHub-repository.</p>
-    <p id="status">Bezig met laden van het Excel-bestand...</p>
-
-    <table id="tabel">
-        <thead></thead>
-        <tbody></tbody>
-    </table>
-</div>
-
 <script>
     const statusEl = document.getElementById('status');
     const table = document.getElementById('tabel');
@@ -68,7 +7,43 @@
     // LET OP: spaties in de bestandsnaam moeten in de URL als %20
     const excelFileUrl = 'schade%20met%20macro.xlsm';
 
-    // Haal het Excel-bestand als binary op
+    // Voeg hier een zoekveld toe zodra de pagina geladen is
+    document.addEventListener("DOMContentLoaded", () => {
+        const box = document.querySelector(".box");
+
+        const searchInput = document.createElement("input");
+        searchInput.type = "text";
+        searchInput.placeholder = "Zoeken...";
+        searchInput.style.padding = "8px";
+        searchInput.style.width = "300px";
+        searchInput.style.marginBottom = "15px";
+        searchInput.style.border = "1px solid #ccc";
+        searchInput.style.borderRadius = "5px";
+
+        // Zoekfunctie
+        searchInput.addEventListener("input", () => {
+            const filter = searchInput.value.toLowerCase();
+            const rows = tbody.getElementsByTagName("tr");
+
+            for (let i = 0; i < rows.length; i++) {
+                const cells = rows[i].getElementsByTagName("td");
+                let rowMatch = false;
+
+                for (let c = 0; c < cells.length; c++) {
+                    if (cells[c].textContent.toLowerCase().includes(filter)) {
+                        rowMatch = true;
+                        break;
+                    }
+                }
+
+                rows[i].style.display = rowMatch ? "" : "none";
+            }
+        });
+
+        box.insertBefore(searchInput, table);
+    });
+
+    // Haal Excel-bestand op
     fetch(excelFileUrl)
         .then(response => {
             if (!response.ok) {
@@ -79,52 +54,52 @@
         .then(data => {
             statusEl.textContent = 'Excel-bestand geladen, bezig met verwerken...';
 
-            // Lees het workbook met SheetJS
             const uint8 = new Uint8Array(data);
             const workbook = XLSX.read(uint8, { type: 'array' });
 
-            // Neem het eerste werkblad
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
+            // 👉 Lees specifiek het tabblad "BRON"
+            const sheetName = "BRON";
 
-            // Zet het werkblad om naar een array van rijen (header:1 = alles als ruwe rijen)
-            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-            if (!rows || rows.length === 0) {
-                statusEl.textContent = 'Geen data gevonden in het werkblad.';
+            if (!workbook.SheetNames.includes(sheetName)) {
+                statusEl.textContent = "Tabblad 'BRON' bestaat niet in het Excel-bestand!";
                 return;
             }
 
-            statusEl.textContent = '';
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-            // Eerste rij = kolomnamen
+            if (!rows || rows.length === 0) {
+                statusEl.textContent = "Geen data gevonden in tabblad BRON.";
+                return;
+            }
+
+            statusEl.textContent = "";
+
+            // Kolomnamen
             const headers = rows[0];
-            const headerRow = document.createElement('tr');
+            const headerRow = document.createElement("tr");
             headers.forEach(h => {
-                const th = document.createElement('th');
+                const th = document.createElement("th");
                 th.textContent = h;
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
 
-            // Rest = data-rijen
+            // Data
             rows.slice(1).forEach(r => {
-                const tr = document.createElement('tr');
+                const tr = document.createElement("tr");
                 r.forEach(cell => {
-                    const td = document.createElement('td');
-                    td.textContent = (cell === null || cell === undefined) ? '' : cell;
+                    const td = document.createElement("td");
+                    td.textContent = (cell === null || cell === undefined) ? "" : cell;
                     tr.appendChild(td);
                 });
                 tbody.appendChild(tr);
             });
 
-            statusEl.textContent = 'Klaar. ' + (rows.length - 1) + ' rijen geladen.';
+            statusEl.textContent = "Klaar. " + (rows.length - 1) + " rijen geladen.";
         })
         .catch(err => {
             console.error(err);
-            statusEl.textContent = 'Er ging iets mis bij het laden of verwerken van het Excel-bestand.';
+            statusEl.textContent = "Fout bij het laden van het Excel-bestand.";
         });
 </script>
-
-</body>
-</html>
