@@ -990,7 +990,7 @@ function createCell(idx, rawValue) {
             coachingRows = rows.slice(1);
 
             const pIndex = findColumnIndexByNames(coachingHeaders, ['p-nr', 'p nr', 'personeelsnr', 'personeelsnummer']);
-            const ratingIndex = findColumnIndexByNames(coachingHeaders, ['beoordeling coaching', 'beoordeling', 'coaching beoordeling']);
+            const ratingIndex = findColumnIndexByNames(coachingHeaders, ['Beoordeling coaching', 'beoordeling', 'coaching beoordeling']);
 
             if (pIndex === -1 || ratingIndex === -1) {
                 console.warn('Kolommen P-nr / Beoordeling coaching niet gevonden in coachingslijst.');
