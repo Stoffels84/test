@@ -1544,6 +1544,108 @@ fetch('Coachingslijst.xlsx')
     .catch(err => {
         console.error('Fout bij Coachingslijst:', err);
     });
+
+
+    // ---- LOGIN LOGICA ----
+
+const loginOverlay = document.getElementById('login-overlay');
+const loginPnrInput = document.getElementById('login-pnr');
+const loginCodeInput = document.getElementById('login-code');
+const loginStep2 = document.getElementById('login-step2');
+const loginMsg = document.getElementById('login-message');
+const btnRequestOtp = document.getElementById('btn-request-otp');
+const btnVerifyOtp = document.getElementById('btn-verify-otp');
+
+// optioneel: flag in localStorage zodat je tijdens testen niet telkens moet inloggen
+const LOGIN_KEY = 'schade_login_ok';
+
+function isLoggedIn() {
+  return localStorage.getItem(LOGIN_KEY) === '1';
+}
+
+function setLoggedIn() {
+  localStorage.setItem(LOGIN_KEY, '1');
+}
+
+function showLoginMessage(text, isError = false) {
+  loginMsg.textContent = text;
+  loginMsg.style.color = isError ? '#b91c1c' : '#065f46';
+}
+
+// Bij laden: toon overlay als niet ingelogd
+window.addEventListener('load', () => {
+  if (!isLoggedIn()) {
+    loginOverlay.style.display = 'flex';
+  } else {
+    loginOverlay.style.display = 'none';
+  }
+});
+
+btnRequestOtp.addEventListener('click', async () => {
+  const pnr = loginPnrInput.value.trim();
+  if (!pnr) {
+    showLoginMessage('Vul eerst je personeelsnummer in.', true);
+    return;
+  }
+
+  showLoginMessage('Code wordt verstuurd...', false);
+
+  try {
+    const res = await fetch('/api/request-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pnr })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      showLoginMessage(data.error || 'Er ging iets mis bij het aanvragen.', true);
+      return;
+    }
+    showLoginMessage('Code verstuurd. Kijk je mailbox na.', false);
+    loginStep2.style.display = 'block';
+  } catch (err) {
+    console.error(err);
+    showLoginMessage('Kon geen verbinding maken met de server.', true);
+  }
+});
+
+btnVerifyOtp.addEventListener('click', async () => {
+  const pnr = loginPnrInput.value.trim();
+  const code = loginCodeInput.value.trim();
+  if (!pnr || !code) {
+    showLoginMessage('Vul P-nr en code in.', true);
+    return;
+  }
+
+  showLoginMessage('Bezig met verifiëren...', false);
+
+  try {
+    const res = await fetch('/api/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pnr, code })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      showLoginMessage(data.error || 'Code is ongeldig.', true);
+      return;
+    }
+
+    showLoginMessage('Inloggen geslaagd.', false);
+    setLoggedIn();
+    // overlay weghalen
+    setTimeout(() => {
+      loginOverlay.style.display = 'none';
+    }, 500);
+  } catch (err) {
+    console.error(err);
+    showLoginMessage('Kon geen verbinding maken met de server.', true);
+  }
+});
+
+
+
+    
 </script>
 
 </body>
