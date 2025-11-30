@@ -188,12 +188,23 @@
             </div>
 
             <!-- TAB 7: ANALYSE -->
-            <div class="tab-content" id="tab-analyse">
-                <h2>Analyse</h2>
-                <p class="placeholder-text">
-                    Wordt later uitgewerkt. Hier kun je diepere analyses doen op patronen in de data.
-                </p>
-            </div>
+<div class="tab-content" id="tab-analyse">
+    <h2>Analyse</h2>
+
+    <h3>1. Totaal schades</h3>
+    <p id="analyse-total"></p>
+
+    <h3>2. Histogram — aantal schades per P-nr</h3>
+    <p style="font-size:13px;color:#6b7280;">
+        Deze grafiek gebruikt de data volgens de jaarfilter bovenaan.  
+        De verticale lijn is de mediaan.
+    </p>
+    <div class="chart-container" style="height:350px;">
+        <canvas id="analyse-histogram"></canvas>
+    </div>
+</div>
+
+
         </div>
     </main>
 </div>
