@@ -206,22 +206,13 @@
                     <canvas id="analyse-histogram"></canvas>
                 </div>
 
-                <h3>3. Schades per P-nr (per medewerker)</h3>
-                <p style="font-size:13px;color:#6b7280;">
-                    Elke balk is één P-nr; de hoogte is het aantal schades voor die medewerker.<br>
-                    De groene stippellijn toont de mediaan van de P-nrs in de huidige selectie.
-                </p>
-                <div class="chart-container" style="height:350px;">
-                    <canvas id="analyse-pnr-bar"></canvas>
-                </div>
-
-                <h3>4. Verdeling P-nrs per 1000-tal (Hastus)</h3>
+                <h3>3. Verdeling P-nrs per 1000-tal (Hastus)</h3>
                 <p style="font-size:13px;color:#6b7280;">
                     Gebaseerd op kolom <strong>P-nr</strong> in tabblad <strong>data hastus</strong> van <em>schade met macro.xlsm</em>.<br>
                     Elke balk toont hoeveel personeelsnummers in dat 1000-tal vallen (bv. 5000–5999).
                 </p>
                 <div id="hastus-summary"></div>
-                <div class="chart-container" style="height:300px;">
+                <div class="chart-container" style="height:300px%;">
                     <canvas id="hastus-1000-chart"></canvas>
                 </div>
             </div>
@@ -269,7 +260,6 @@ const coachingPendingSet = new Set();
 
 // Analyse
 let analyseHistogramChart = null;
-let analysePnrChart = null;
 
 // Hastus P-nrs (data hastus)
 let allHastusPnrs = [];
@@ -1129,7 +1119,7 @@ function updateCoachingStats() {
         <ul>
             <li><strong>Aantal P-nrs in tabblad "Coaching" (Coachingslijst):</strong> ${pCoaching}</li>
             <li><strong>Aantal P-nrs in "Voltooide coachings" (Coachingslijst – totaal regels):</strong> ${pVoltooideTotaal}</li>
-        <li><strong>Unieke P-nrs in "Voltooide coachings" (Coachingslijst):</strong> ${pVoltooideUniek}</li>
+            <li><strong>Unieke P-nrs in "Voltooide coachings" (Coachingslijst):</strong> ${pVoltooideUniek}</li>
             <li><strong>P-nrs &gt; 2 schades zonder coaching (jaarfilter):</strong> ${highDamage.length}</li>
         </ul>
     `;
@@ -1146,23 +1136,18 @@ function updateCoachingStats() {
     div.innerHTML = html;
 }
 
-// Analyse: totaal + histogram + P-nr bar
+// Analyse: totaal + histogram
 function updateAnalyse() {
     const totalEl = document.getElementById('analyse-total');
     const canvasHist = document.getElementById('analyse-histogram');
-    const canvasPnr = document.getElementById('analyse-pnr-bar');
 
-    if (!totalEl || !canvasHist || !canvasPnr) return;
+    if (!totalEl || !canvasHist) return;
 
     if (!filteredRows || filteredRows.length === 0 || personnelColIndex === -1) {
         totalEl.textContent = 'Geen gegevens beschikbaar.';
         if (analyseHistogramChart) {
             analyseHistogramChart.destroy();
             analyseHistogramChart = null;
-        }
-        if (analysePnrChart) {
-            analysePnrChart.destroy();
-            analysePnrChart = null;
         }
         return;
     }
@@ -1187,10 +1172,6 @@ function updateAnalyse() {
         if (analyseHistogramChart) {
             analyseHistogramChart.destroy();
             analyseHistogramChart = null;
-        }
-        if (analysePnrChart) {
-            analysePnrChart.destroy();
-            analysePnrChart = null;
         }
         return;
     }
@@ -1244,87 +1225,6 @@ function updateAnalyse() {
                             xMax: medianSchades,
                             borderWidth: 2,
                             borderColor: 'red'
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // --- per P-nr staafdiagram ---
-
-    // sorteer P-nrs numeriek
-    const pnrList = Array.from(teller.keys())
-        .map(k => Number(k))
-        .filter(v => !isNaN(v))
-        .sort((a, b) => a - b);
-
-    if (!pnrList.length) {
-        if (analysePnrChart) {
-            analysePnrChart.destroy();
-            analysePnrChart = null;
-        }
-        return;
-    }
-
-    // mediane P-nr (voor de groene lijn)
-    let medianPnr = 0;
-    const midP = Math.floor(pnrList.length / 2);
-    if (pnrList.length % 2 !== 0) {
-        medianPnr = pnrList[midP];
-    } else {
-        medianPnr = (pnrList[midP - 1] + pnrList[midP]) / 2;
-    }
-
-    const pnrData = pnrList.map(pnr => ({
-        x: pnr,
-        y: teller.get(String(pnr)) || 0
-    }));
-
-    if (analysePnrChart) {
-        analysePnrChart.destroy();
-    }
-
-    const ctxPnr = canvasPnr.getContext('2d');
-
-    analysePnrChart = new Chart(ctxPnr, {
-        type: 'bar',
-        data: {
-            datasets: [{
-                label: 'Aantal schades',
-                data: pnrData
-            }]
-        },
-        options: {
-            parsing: false,
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: {
-                    type: 'linear',
-                    title: { display: true, text: 'Personeelsnummer' }
-                },
-                y: {
-                    beginAtZero: true,
-                    ticks: { precision: 0 },
-                    title: { display: true, text: 'Aantal schades' }
-                }
-            },
-            plugins: {
-                legend: { display: false },
-                annotation: {
-                    annotations: {
-                        medianPnrLine: {
-                            type: 'line',
-                            xMin: medianPnr,
-                            xMax: medianPnr,
-                            borderColor: 'green',
-                            borderWidth: 2,
-                            borderDash: [6, 6],
-                            label: {
-                                enabled: true,
-                                content: 'Mediaan P-nr'
-                            }
                         }
                     }
                 }
