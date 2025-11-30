@@ -8,7 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- Grafieken -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Plugin voor annotaties (mediaanlijn) -->
+    <!-- Plugin voor annotaties (mediaanlijnen) -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0"></script>
 
     <link rel="stylesheet" href="style.css">
@@ -200,20 +200,30 @@
                 <h3>2. Histogram — aantal schades per P-nr</h3>
                 <p style="font-size:13px;color:#6b7280;">
                     Deze grafiek gebruikt de data volgens de jaarfilter bovenaan.<br>
-                    De verticale lijn toont de mediaan van het aantal schades per P-nr.
+                    De rode lijn toont de mediaan van het aantal schades per P-nr.
                 </p>
                 <div class="chart-container" style="height:350px;">
                     <canvas id="analyse-histogram"></canvas>
                 </div>
-                <h3>3. Schades per P-nr (per medewerker)</h3>
-<p style="font-size:13px;color:#6b7280;">
-    Elke balk is één P-nr; de hoogte is het aantal schades voor die medewerker.<br>
-    De groene stippellijn toont de mediaan van de P-nrs in de huidige selectie.
-</p>
-<div class="chart-container" style="height:350px;">
-    <canvas id="analyse-pnr-bar"></canvas>
-</div>
 
+                <h3>3. Schades per P-nr (per medewerker)</h3>
+                <p style="font-size:13px;color:#6b7280;">
+                    Elke balk is één P-nr; de hoogte is het aantal schades voor die medewerker.<br>
+                    De groene stippellijn toont de mediaan van de P-nrs in de huidige selectie.
+                </p>
+                <div class="chart-container" style="height:350px;">
+                    <canvas id="analyse-pnr-bar"></canvas>
+                </div>
+
+                <h3>4. Verdeling P-nrs per 1000-tal (Hastus)</h3>
+                <p style="font-size:13px;color:#6b7280;">
+                    Gebaseerd op kolom <strong>P-nr</strong> in tabblad <strong>data hastus</strong> van <em>schade met macro.xlsm</em>.<br>
+                    Elke balk toont hoeveel personeelsnummers in dat 1000-tal vallen (bv. 5000–5999).
+                </p>
+                <div id="hastus-summary"></div>
+                <div class="chart-container" style="height:300px;">
+                    <canvas id="hastus-1000-chart"></canvas>
+                </div>
             </div>
         </div>
     </main>
@@ -259,8 +269,11 @@ const coachingPendingSet = new Set();
 
 // Analyse
 let analyseHistogramChart = null;
-let analysePnrChart = null;   // nieuw: staafdiagram per P-nr
+let analysePnrChart = null;
 
+// Hastus P-nrs (data hastus)
+let allHastusPnrs = [];
+let hastusChart = null;
 
 // tabs (sidebar)
 const tabButtons = document.querySelectorAll('.tab-button');
@@ -277,7 +290,7 @@ tabButtons.forEach(btn => {
     });
 });
 
-// proberen annotation-plugin te registreren (voor mediaanlijn)
+// Annotation-plugin registreren (voor mediaanlijnen)
 try {
     if (window['chartjs-plugin-annotation']) {
         Chart.register(window['chartjs-plugin-annotation']);
@@ -285,7 +298,7 @@ try {
         Chart.register(ChartAnnotation);
     }
 } catch (e) {
-    console.warn('Kon annotation-plugin niet registreren, mediaanlijn wordt niet getekend.', e);
+    console.warn('Kon annotation-plugin niet registreren, mediaanlijnen worden niet getekend.', e);
 }
 
 // zoeken in tab Alle data
@@ -605,7 +618,6 @@ function buildLocatieData(rows) {
 }
 
 // ---------- DETAILTABELLEN (chauffeur/voertuig/locatie) ----------
-// (ongewijzigd t.o.v. vorige versie; ingekort hier zou alleen maar verwarren)
 
 function showChauffeurDetailsInline(name, clickedRow) {
     const tbodyCh = document.querySelector('#chauffeur-table tbody');
@@ -1117,7 +1129,7 @@ function updateCoachingStats() {
         <ul>
             <li><strong>Aantal P-nrs in tabblad "Coaching" (Coachingslijst):</strong> ${pCoaching}</li>
             <li><strong>Aantal P-nrs in "Voltooide coachings" (Coachingslijst – totaal regels):</strong> ${pVoltooideTotaal}</li>
-            <li><strong>Unieke P-nrs in "Voltooide coachings" (Coachingslijst):</strong> ${pVoltooideUniek}</li>
+        <li><strong>Unieke P-nrs in "Voltooide coachings" (Coachingslijst):</strong> ${pVoltooideUniek}</li>
             <li><strong>P-nrs &gt; 2 schades zonder coaching (jaarfilter):</strong> ${highDamage.length}</li>
         </ul>
     `;
@@ -1134,7 +1146,7 @@ function updateCoachingStats() {
     div.innerHTML = html;
 }
 
-// Analyse: totaal + histogram
+// Analyse: totaal + histogram + P-nr bar
 function updateAnalyse() {
     const totalEl = document.getElementById('analyse-total');
     const canvasHist = document.getElementById('analyse-histogram');
@@ -1183,7 +1195,7 @@ function updateAnalyse() {
         return;
     }
 
-    // --- MEDIAAN AANTAL SCHADES ---
+    // mediaan aantal schades
     let medianSchades = 0;
     const mid = Math.floor(counts.length / 2);
     if (counts.length % 2 !== 0) {
@@ -1192,7 +1204,7 @@ function updateAnalyse() {
         medianSchades = (counts[mid - 1] + counts[mid]) / 2;
     }
 
-    // --- HISTOGRAM DATA (x = #schades, y = #P-nrs) ---
+    // histogram: hoeveel P-nrs hebben 1,2,3,... schades
     const freq = {};
     counts.forEach(c => {
         freq[c] = (freq[c] || 0) + 1;
@@ -1239,7 +1251,7 @@ function updateAnalyse() {
         }
     });
 
-    // --- 3) STAafdiagram PER P-NR (x = P-nr, y = #schades) ---
+    // --- per P-nr staafdiagram ---
 
     // sorteer P-nrs numeriek
     const pnrList = Array.from(teller.keys())
@@ -1264,7 +1276,6 @@ function updateAnalyse() {
         medianPnr = (pnrList[midP - 1] + pnrList[midP]) / 2;
     }
 
-    // data in {x: Pnr, y: Aantal schades}
     const pnrData = pnrList.map(pnr => ({
         x: pnr,
         y: teller.get(String(pnr)) || 0
@@ -1285,7 +1296,7 @@ function updateAnalyse() {
             }]
         },
         options: {
-            parsing: false,           // we gebruiken x/y uit het object
+            parsing: false,
             responsive: true,
             maintainAspectRatio: false,
             scales: {
@@ -1322,61 +1333,46 @@ function updateAnalyse() {
     });
 }
 
+// Hastus-verdeling per 1000-tal
+function updateHastusDistribution() {
+    const summaryEl = document.getElementById('hastus-summary');
+    const canvas = document.getElementById('hastus-1000-chart');
+    if (!summaryEl || !canvas) return;
 
-    // 1) Totaal schades
-    totalEl.textContent = `Totaal aantal schades (jaarfilter): ${filteredRows.length}`;
-
-    // 2) Teller schades per P-nr
-    const teller = new Map();
-    filteredRows.forEach(row => {
-        const p = row[personnelColIndex];
-        if (!p) return;
-        const key = String(p).trim();
-        if (!key) return;
-        if (!teller.has(key)) teller.set(key, 0);
-        teller.set(key, teller.get(key) + 1);
-    });
-
-    const counts = Array.from(teller.values()).sort((a, b) => a - b);
-    if (!counts.length) {
-        totalEl.textContent += ' (geen P-nrs gevonden).';
-        if (analyseHistogramChart) {
-            analyseHistogramChart.destroy();
-            analyseHistogramChart = null;
+    if (!allHastusPnrs || allHastusPnrs.length === 0) {
+        summaryEl.textContent = 'Geen P-nr gegevens gevonden in tabblad "data hastus".';
+        if (hastusChart) {
+            hastusChart.destroy();
+            hastusChart = null;
         }
         return;
     }
 
-    // mediaan
-    let median = 0;
-    const mid = Math.floor(counts.length / 2);
-    if (counts.length % 2 !== 0) {
-        median = counts[mid];
-    } else {
-        median = (counts[mid - 1] + counts[mid]) / 2;
-    }
-
-    // histogram: hoeveel chauffeurs hebben 1,2,3,... schades
-    const freq = {};
-    counts.forEach(c => {
-        freq[c] = (freq[c] || 0) + 1;
+    const countsByBin = {};
+    allHastusPnrs.forEach(pnr => {
+        const bin = Math.floor(pnr / 1000) * 1000; // 5234 -> 5000
+        countsByBin[bin] = (countsByBin[bin] || 0) + 1;
     });
 
-    const labels = Object.keys(freq).map(n => Number(n)).sort((a, b) => a - b);
-    const values = labels.map(l => freq[l]);
+    const bins = Object.keys(countsByBin).map(Number).sort((a, b) => a - b);
+    const labels = bins.map(b => `${b}–${b + 999}`);
+    const values = bins.map(b => countsByBin[b]);
 
-    if (analyseHistogramChart) {
-        analyseHistogramChart.destroy();
+    const totaal = allHastusPnrs.length;
+    summaryEl.innerHTML = `Totaal P-nrs in <strong>"data hastus"</strong>: <strong>${totaal}</strong>`;
+
+    if (hastusChart) {
+        hastusChart.destroy();
+        hastusChart = null;
     }
 
     const ctx = canvas.getContext('2d');
-
-    analyseHistogramChart = new Chart(ctx, {
+    hastusChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
             datasets: [{
-                label: 'Aantal chauffeurs',
+                label: 'Aantal P-nrs',
                 data: values
             }]
         },
@@ -1384,22 +1380,17 @@ function updateAnalyse() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                x: { beginAtZero: true, title: { display: true, text: 'Aantal schades per P-nr' } },
-                y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Aantal P-nrs' } }
+                x: {
+                    ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { precision: 0 },
+                    title: { display: true, text: 'Aantal P-nrs' }
+                }
             },
             plugins: {
-                legend: { display: false },
-                annotation: {
-                    annotations: {
-                        medianLine: {
-                            type: 'line',
-                            xMin: median,
-                            xMax: median,
-                            borderWidth: 2,
-                            borderColor: 'red'
-                        }
-                    }
-                }
+                legend: { display: false }
             }
         }
     });
@@ -1430,6 +1421,7 @@ function updateFilterAndViews() {
 
     updateCoachingStats();
     updateAnalyse();
+    updateHastusDistribution();
 }
 
 // ---------- EVENT LISTENERS ----------
@@ -1444,7 +1436,7 @@ document.getElementById('dashboard-search-input').addEventListener('keyup', (e) 
     if (e.key === 'Enter') searchDashboard();
 });
 
-// ---------- 1) HOOFD-EXCEL LADEN ----------
+// ---------- 1) HOOFD-EXCEL LADEN (incl. data hastus) ----------
 
 fetch(excelFileUrl)
     .then(response => {
@@ -1492,6 +1484,38 @@ fetch(excelFileUrl)
         linkColIndex = findColumnIndexByNames(allHeaders, ['link']);
         personnelColIndex = findColumnIndexByNames(allHeaders, ['personeelsnr', 'personeelsnummer', 'personeels nr', 'p-nr', 'p nr']);
         activeColIndex = findColumnIndexByNames(allHeaders, ['actief', 'active']);
+
+        // --- extra: tabblad "data hastus" voor P-nr verdeling ---
+        const hastusSheetName = 'data hastus';
+        if (workbook.SheetNames.includes(hastusSheetName)) {
+            const wsH = workbook.Sheets[hastusSheetName];
+            const rowsH = XLSX.utils.sheet_to_json(wsH, { header: 1 });
+
+            if (rowsH && rowsH.length) {
+                const headersH = rowsH[0];
+                const pnrIdxH = findColumnIndexByNames(headersH, [
+                    'p-nr', 'pnr', 'personeelsnr', 'personeelsnummer', 'p nr'
+                ]);
+
+                if (pnrIdxH !== -1) {
+                    const bodyH = rowsH.slice(1);
+                    allHastusPnrs = [];
+
+                    bodyH.forEach(r => {
+                        const val = r[pnrIdxH];
+                        if (val == null || val === '') return;
+                        const num = Number(String(val).trim());
+                        if (!isNaN(num)) {
+                            allHastusPnrs.push(num);
+                        }
+                    });
+                } else {
+                    console.warn('Kolom P-nr niet gevonden in "data hastus".');
+                }
+            }
+        } else {
+            console.warn('Tabblad "data hastus" niet gevonden in schade met macro.xlsm');
+        }
 
         populateYearFilter();
         updateFilterAndViews();
