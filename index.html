@@ -15,6 +15,34 @@
 </head>
 <body>
 
+
+    <div id="login-overlay" class="login-overlay">
+  <div class="login-card">
+    <h2>Inloggen</h2>
+    <p>Geef je personeelsnummer in. Je ontvangt een code via e-mail.</p>
+
+    <label>
+      Personeelsnummer
+      <input type="text" id="login-pnr" />
+    </label>
+
+    <button id="btn-request-otp">Stuur code</button>
+
+    <div id="login-step2" style="display:none;margin-top:1rem;">
+      <label>
+        Verificatiecode
+        <input type="text" id="login-code" />
+      </label>
+      <button id="btn-verify-otp">Inloggen</button>
+    </div>
+
+    <div id="login-message" class="login-message"></div>
+  </div>
+</div>
+
+
+
+    
 <div class="app-layout">
     <!-- SIDEBAR -->
     <aside class="sidebar">
