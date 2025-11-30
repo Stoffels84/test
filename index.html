@@ -1114,24 +1114,27 @@ function updateCoachingStats() {
     const div = document.getElementById('coaching-stats');
     if (!div) return;
 
-    const pnrSetYear = getPnrSetFromFilteredRows();
-
-    // GEWENST: puur aantal P-nrs in tabblad "Coaching" in Coachingslijst.xlsx (zonder jaarfilter)
+    // --- 1) Aantal P-nrs in tabblad "Coaching" (Coachingslijst) ---
     const pCoaching = coachingPendingSet.size;
 
-    // Voltooide coachings: P-nrs die ook in BRON voorkomen binnen jaarfilter
-    const pVoltooide = Object.keys(coachingMap)
-        .filter(p => pnrSetYear.has(p)).length;
-    const pVoltooideUniek = pVoltooide;
+    // --- 2) Aantal P-nrs in "Voltooide coachings" (totaal regels, zonder jaarfilter) ---
+    let pVoltooideTotaal = 0;
+    Object.values(coachingMap).forEach(list => {
+        pVoltooideTotaal += list.length;   // elke coaching-entry telt
+    });
 
+    // --- 3) Aantal unieke P-nrs in "Voltooide coachings" (zonder jaarfilter) ---
+    const pVoltooideUniek = Object.keys(coachingMap).length;
+
+    // --- 4) P-nrs > 2 schades zonder coaching (blíjft jaarfilter-gebonden) ---
     const highDamage = findHighDamageWithoutCoaching();
 
     let html = `
         <h3>Coaching overzicht</h3>
         <ul>
             <li><strong>Aantal P-nrs in tabblad "Coaching" (Coachingslijst):</strong> ${pCoaching}</li>
-            <li><strong>Aantal P-nrs in "Voltooide coachings" (jaarfilter):</strong> ${pVoltooide}</li>
-            <li><strong>Unieke P-nrs in "Voltooide coachings" (jaarfilter):</strong> ${pVoltooideUniek}</li>
+            <li><strong>Aantal P-nrs in "Voltooide coachings" (Coachingslijst – totaal regels):</strong> ${pVoltooideTotaal}</li>
+            <li><strong>Unieke P-nrs in "Voltooide coachings" (Coachingslijst):</strong> ${pVoltooideUniek}</li>
             <li><strong>P-nrs &gt; 2 schades zonder coaching (jaarfilter):</strong> ${highDamage.length}</li>
         </ul>
     `;
@@ -1148,6 +1151,7 @@ function updateCoachingStats() {
 
     div.innerHTML = html;
 }
+
 
 // ---------- ALLES HERAUFBOUWEN ----------
 
