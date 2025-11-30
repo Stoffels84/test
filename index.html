@@ -205,6 +205,15 @@
                 <div class="chart-container" style="height:350px;">
                     <canvas id="analyse-histogram"></canvas>
                 </div>
+                <h3>3. Schades per P-nr (per medewerker)</h3>
+<p style="font-size:13px;color:#6b7280;">
+    Elke balk is één P-nr; de hoogte is het aantal schades voor die medewerker.<br>
+    De groene stippellijn toont de mediaan van de P-nrs in de huidige selectie.
+</p>
+<div class="chart-container" style="height:350px;">
+    <canvas id="analyse-pnr-bar"></canvas>
+</div>
+
             </div>
         </div>
     </main>
@@ -250,6 +259,8 @@ const coachingPendingSet = new Set();
 
 // Analyse
 let analyseHistogramChart = null;
+let analysePnrChart = null;   // nieuw: staafdiagram per P-nr
+
 
 // tabs (sidebar)
 const tabButtons = document.querySelectorAll('.tab-button');
@@ -1126,9 +1137,10 @@ function updateCoachingStats() {
 // Analyse: totaal + histogram
 function updateAnalyse() {
     const totalEl = document.getElementById('analyse-total');
-    const canvas = document.getElementById('analyse-histogram');
+    const canvasHist = document.getElementById('analyse-histogram');
+    const canvasPnr = document.getElementById('analyse-pnr-bar');
 
-    if (!totalEl || !canvas) return;
+    if (!totalEl || !canvasHist || !canvasPnr) return;
 
     if (!filteredRows || filteredRows.length === 0 || personnelColIndex === -1) {
         totalEl.textContent = 'Geen gegevens beschikbaar.';
@@ -1136,8 +1148,180 @@ function updateAnalyse() {
             analyseHistogramChart.destroy();
             analyseHistogramChart = null;
         }
+        if (analysePnrChart) {
+            analysePnrChart.destroy();
+            analysePnrChart = null;
+        }
         return;
     }
+
+    // 1) Totaal schades
+    totalEl.textContent = `Totaal aantal schades (jaarfilter): ${filteredRows.length}`;
+
+    // 2) Teller schades per P-nr
+    const teller = new Map();
+    filteredRows.forEach(row => {
+        const p = row[personnelColIndex];
+        if (!p) return;
+        const key = String(p).trim();
+        if (!key) return;
+        if (!teller.has(key)) teller.set(key, 0);
+        teller.set(key, teller.get(key) + 1);
+    });
+
+    const counts = Array.from(teller.values()).sort((a, b) => a - b);
+    if (!counts.length) {
+        totalEl.textContent += ' (geen P-nrs gevonden).';
+        if (analyseHistogramChart) {
+            analyseHistogramChart.destroy();
+            analyseHistogramChart = null;
+        }
+        if (analysePnrChart) {
+            analysePnrChart.destroy();
+            analysePnrChart = null;
+        }
+        return;
+    }
+
+    // --- MEDIAAN AANTAL SCHADES ---
+    let medianSchades = 0;
+    const mid = Math.floor(counts.length / 2);
+    if (counts.length % 2 !== 0) {
+        medianSchades = counts[mid];
+    } else {
+        medianSchades = (counts[mid - 1] + counts[mid]) / 2;
+    }
+
+    // --- HISTOGRAM DATA (x = #schades, y = #P-nrs) ---
+    const freq = {};
+    counts.forEach(c => {
+        freq[c] = (freq[c] || 0) + 1;
+    });
+    const histLabels = Object.keys(freq).map(n => Number(n)).sort((a, b) => a - b);
+    const histValues = histLabels.map(l => freq[l]);
+
+    if (analyseHistogramChart) {
+        analyseHistogramChart.destroy();
+    }
+
+    const ctxHist = canvasHist.getContext('2d');
+
+    analyseHistogramChart = new Chart(ctxHist, {
+        type: 'bar',
+        data: {
+            labels: histLabels,
+            datasets: [{
+                label: 'Aantal chauffeurs',
+                data: histValues
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { beginAtZero: true, title: { display: true, text: 'Aantal schades per P-nr' } },
+                y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Aantal P-nrs' } }
+            },
+            plugins: {
+                legend: { display: false },
+                annotation: {
+                    annotations: {
+                        medianLine: {
+                            type: 'line',
+                            xMin: medianSchades,
+                            xMax: medianSchades,
+                            borderWidth: 2,
+                            borderColor: 'red'
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // --- 3) STAafdiagram PER P-NR (x = P-nr, y = #schades) ---
+
+    // sorteer P-nrs numeriek
+    const pnrList = Array.from(teller.keys())
+        .map(k => Number(k))
+        .filter(v => !isNaN(v))
+        .sort((a, b) => a - b);
+
+    if (!pnrList.length) {
+        if (analysePnrChart) {
+            analysePnrChart.destroy();
+            analysePnrChart = null;
+        }
+        return;
+    }
+
+    // mediane P-nr (voor de groene lijn)
+    let medianPnr = 0;
+    const midP = Math.floor(pnrList.length / 2);
+    if (pnrList.length % 2 !== 0) {
+        medianPnr = pnrList[midP];
+    } else {
+        medianPnr = (pnrList[midP - 1] + pnrList[midP]) / 2;
+    }
+
+    // data in {x: Pnr, y: Aantal schades}
+    const pnrData = pnrList.map(pnr => ({
+        x: pnr,
+        y: teller.get(String(pnr)) || 0
+    }));
+
+    if (analysePnrChart) {
+        analysePnrChart.destroy();
+    }
+
+    const ctxPnr = canvasPnr.getContext('2d');
+
+    analysePnrChart = new Chart(ctxPnr, {
+        type: 'bar',
+        data: {
+            datasets: [{
+                label: 'Aantal schades',
+                data: pnrData
+            }]
+        },
+        options: {
+            parsing: false,           // we gebruiken x/y uit het object
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    type: 'linear',
+                    title: { display: true, text: 'Personeelsnummer' }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { precision: 0 },
+                    title: { display: true, text: 'Aantal schades' }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                annotation: {
+                    annotations: {
+                        medianPnrLine: {
+                            type: 'line',
+                            xMin: medianPnr,
+                            xMax: medianPnr,
+                            borderColor: 'green',
+                            borderWidth: 2,
+                            borderDash: [6, 6],
+                            label: {
+                                enabled: true,
+                                content: 'Mediaan P-nr'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 
     // 1) Totaal schades
     totalEl.textContent = `Totaal aantal schades (jaarfilter): ${filteredRows.length}`;
