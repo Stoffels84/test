@@ -419,10 +419,6 @@ function getFilteredRows() {
 }
 
 // ---------- CEL MAKERS ----------
-//
-// createCellAllData: wordt gebruikt voor tab 'Alle data' – géén bollen.
-// createCell:        wordt gebruikt in detailtabellen en dashboard – met bollen.
-//
 
 function createCellAllData(idx, row) {
     const rawValue = row[idx];
@@ -432,7 +428,6 @@ function createCellAllData(idx, row) {
     }
     const td = document.createElement('td');
 
-    // linkkolom blijft klikbaar
     if (idx === linkColIndex && value) {
         const href = String(value).trim();
         const a = document.createElement('a');
@@ -445,13 +440,11 @@ function createCellAllData(idx, row) {
         return td;
     }
 
-    // chauffeur: enkel tekst
     if (idx === chauffeurColIndex) {
         td.textContent = (value === null || value === undefined) ? '' : value;
         return td;
     }
 
-    // personeelsnr: enkel tekst
     if (idx === personnelColIndex) {
         td.textContent = (value === null || value === undefined) ? '' : value;
         return td;
@@ -557,7 +550,7 @@ function rebuildAllDataTableBody(rows) {
     rows.forEach(row => {
         const tr = document.createElement('tr');
         row.forEach((_, idx) => {
-            const td = createCellAllData(idx, row); // géén bollen in tab 'Alle data'
+            const td = createCellAllData(idx, row);
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -617,7 +610,7 @@ function buildLocatieData(rows) {
     locatieData = Array.from(map.values()).sort((a, b) => b.count - a.count);
 }
 
-// ---------- DETAILTABELLEN (chauffeur/voertuig/locatie) ----------
+// ---------- DETAILTABELLEN ----------
 
 function showChauffeurDetailsInline(name, clickedRow) {
     const tbodyCh = document.querySelector('#chauffeur-table tbody');
@@ -666,7 +659,7 @@ function showChauffeurDetailsInline(name, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row); // hier wél bollen
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -726,7 +719,7 @@ function showVoertuigDetailsInline(type, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row); // bollen
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -786,7 +779,7 @@ function showLocatieDetailsInline(loc, clickedRow) {
     entry.rows.forEach(row => {
         const tr = document.createElement('tr');
         cols.forEach(idx => {
-            const td = createCell(idx, row); // bollen
+            const td = createCell(idx, row);
             tr.appendChild(td);
         });
         tbodyInner.appendChild(tr);
@@ -799,7 +792,7 @@ function showLocatieDetailsInline(loc, clickedRow) {
     clickedRow.insertAdjacentElement('afterend', detailTr);
 }
 
-// ---------- OVERZICHTSTABELLEN (chauffeur/voertuig/locatie) ----------
+// ---------- OVERZICHTSTABELLEN ----------
 
 function updateChauffeurView() {
     const limitSelect = document.getElementById('chauffeur-limit');
@@ -1072,26 +1065,11 @@ function getPnrSetFromFilteredRows() {
     return set;
 }
 
-function countPnrInCoaching() {
-    const pnrSetYear = getPnrSetFromFilteredRows();
-    return Array.from(coachingPendingSet).filter(p => pnrSetYear.has(p)).length;
-}
-
-function countPnrInVoltooide() {
-    const pnrSetYear = getPnrSetFromFilteredRows();
-    return Object.keys(coachingMap).filter(p => pnrSetYear.has(p)).length;
-}
-
-function countUniquePnrInVoltooide() {
-    return countPnrInVoltooide();
-}
-
 function findHighDamageWithoutCoaching() {
     if (personnelColIndex === -1) return [];
 
     const teller = new Map();
 
-    // gebruik alleen gefilterde rijen (jaarfilter)
     filteredRows.forEach(row => {
         const p = row[personnelColIndex];
         if (!p) return;
@@ -1132,22 +1110,18 @@ function findHighDamageWithoutCoaching() {
     return resultaat;
 }
 
-function listPnrInCoaching() {
-    return Array.from(coachingPendingSet).sort();
-}
-
 function updateCoachingStats() {
     const div = document.getElementById('coaching-stats');
     if (!div) return;
 
     const pnrSetYear = getPnrSetFromFilteredRows();
 
-    const pCoaching = Array.from(coachingPendingSet)
-        .filter(p => pnrSetYear.has(p)).length;
+    // GEWENST: puur aantal P-nrs in tabblad "Coaching" in Coachingslijst.xlsx (zonder jaarfilter)
+    const pCoaching = coachingPendingSet.size;
 
+    // Voltooide coachings: P-nrs die ook in BRON voorkomen binnen jaarfilter
     const pVoltooide = Object.keys(coachingMap)
         .filter(p => pnrSetYear.has(p)).length;
-
     const pVoltooideUniek = pVoltooide;
 
     const highDamage = findHighDamageWithoutCoaching();
@@ -1155,7 +1129,7 @@ function updateCoachingStats() {
     let html = `
         <h3>Coaching overzicht</h3>
         <ul>
-            <li><strong>Aantal P-nrs in tabblad "Coaching" (jaarfilter):</strong> ${pCoaching}</li>
+            <li><strong>Aantal P-nrs in tabblad "Coaching" (Coachingslijst):</strong> ${pCoaching}</li>
             <li><strong>Aantal P-nrs in "Voltooide coachings" (jaarfilter):</strong> ${pVoltooide}</li>
             <li><strong>Unieke P-nrs in "Voltooide coachings" (jaarfilter):</strong> ${pVoltooideUniek}</li>
             <li><strong>P-nrs &gt; 2 schades zonder coaching (jaarfilter):</strong> ${highDamage.length}</li>
@@ -1198,7 +1172,6 @@ function updateFilterAndViews() {
         ' rijen geladen (' + filterText + '). Coachings voor ' +
         coachingCount + ' P-nrs geladen.';
 
-    // Belangrijk: coaching-overzicht ook updaten na elke herbouw
     updateCoachingStats();
 }
 
@@ -1357,7 +1330,6 @@ fetch('Coachingslijst.xlsx')
         console.log('CoachingMap:', coachingMap);
         console.log('CoachingPendingSet:', coachingPendingSet);
 
-        // baseRows kan op dit moment al geladen zijn; dan herbouw + stats
         updateFilterAndViews();
     })
     .catch(err => {
