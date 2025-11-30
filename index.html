@@ -6,8 +6,11 @@
 
     <!-- Excel inlezen -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- Grafieken voor Voertuig-tab -->
+    <!-- Grafieken -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Plugin voor annotaties (mediaanlijn) -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0"></script>
+
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -188,23 +191,21 @@
             </div>
 
             <!-- TAB 7: ANALYSE -->
-<div class="tab-content" id="tab-analyse">
-    <h2>Analyse</h2>
+            <div class="tab-content" id="tab-analyse">
+                <h2>Analyse</h2>
 
-    <h3>1. Totaal schades</h3>
-    <p id="analyse-total"></p>
+                <h3>1. Totaal schades</h3>
+                <p id="analyse-total"></p>
 
-    <h3>2. Histogram — aantal schades per P-nr</h3>
-    <p style="font-size:13px;color:#6b7280;">
-        Deze grafiek gebruikt de data volgens de jaarfilter bovenaan.  
-        De verticale lijn is de mediaan.
-    </p>
-    <div class="chart-container" style="height:350px;">
-        <canvas id="analyse-histogram"></canvas>
-    </div>
-</div>
-
-
+                <h3>2. Histogram — aantal schades per P-nr</h3>
+                <p style="font-size:13px;color:#6b7280;">
+                    Deze grafiek gebruikt de data volgens de jaarfilter bovenaan.<br>
+                    De verticale lijn toont de mediaan van het aantal schades per P-nr.
+                </p>
+                <div class="chart-container" style="height:350px;">
+                    <canvas id="analyse-histogram"></canvas>
+                </div>
+            </div>
         </div>
     </main>
 </div>
@@ -247,6 +248,9 @@ const coachingMap = {};
 // P-nrs die in tabblad "Coaching" staan
 const coachingPendingSet = new Set();
 
+// Analyse
+let analyseHistogramChart = null;
+
 // tabs (sidebar)
 const tabButtons = document.querySelectorAll('.tab-button');
 const tabContents = document.querySelectorAll('.tab-content');
@@ -261,6 +265,17 @@ tabButtons.forEach(btn => {
         });
     });
 });
+
+// proberen annotation-plugin te registreren (voor mediaanlijn)
+try {
+    if (window['chartjs-plugin-annotation']) {
+        Chart.register(window['chartjs-plugin-annotation']);
+    } else if (typeof ChartAnnotation !== 'undefined') {
+        Chart.register(ChartAnnotation);
+    }
+} catch (e) {
+    console.warn('Kon annotation-plugin niet registreren, mediaanlijn wordt niet getekend.', e);
+}
 
 // zoeken in tab Alle data
 searchInput.addEventListener('input', () => {
@@ -368,22 +383,6 @@ function getPrimaryCoachingStatusForPnr(pnr) {
     return null;
 }
 
-function getLatestCoachingForPnr(pnr) {
-    const entries = getCoachingEntriesForPnr(pnr);
-    if (!entries.length) return null;
-    let latest = entries[0];
-    let latestTime = latest.date ? latest.date.getTime() : 0;
-    entries.forEach(e => {
-        if (!e.date) return;
-        const t = e.date.getTime();
-        if (t > latestTime) {
-            latestTime = t;
-            latest = e;
-        }
-    });
-    return latest;
-}
-
 function isInCoachingList(pnr) {
     if (pnr === null || pnr === undefined) return false;
     const key = String(pnr).trim();
@@ -451,12 +450,7 @@ function createCellAllData(idx, row) {
         return td;
     }
 
-    if (idx === chauffeurColIndex) {
-        td.textContent = (value === null || value === undefined) ? '' : value;
-        return td;
-    }
-
-    if (idx === personnelColIndex) {
+    if (idx === chauffeurColIndex || idx === personnelColIndex) {
         td.textContent = (value === null || value === undefined) ? '' : value;
         return td;
     }
@@ -489,45 +483,23 @@ function createCell(idx, row) {
         return td;
     }
 
-    if (idx === chauffeurColIndex) {
+    if (idx === chauffeurColIndex || idx === personnelColIndex) {
         const wrapper = document.createElement('span');
         wrapper.style.display = 'inline-flex';
         wrapper.style.alignItems = 'center';
         wrapper.style.gap = '6px';
 
-        if (inCoachingList) {
-            const blackDot = document.createElement('span');
-            blackDot.classList.add('coaching-dot', 'coaching-pending');
-            blackDot.title = 'In Coaching-lijst';
-            wrapper.appendChild(blackDot);
+        if (idx === personnelColIndex) {
+            const numSpan = document.createElement('span');
+            numSpan.textContent = (value === null || value === undefined) ? '' : value;
+            wrapper.appendChild(numSpan);
         }
 
-        if (status) {
-            const dot = document.createElement('span');
-            dot.classList.add('coaching-dot');
-            if (status === 'good')   dot.classList.add('coaching-good');
-            if (status === 'medium') dot.classList.add('coaching-medium');
-            if (status === 'bad')    dot.classList.add('coaching-bad');
-            dot.title = 'Coachingstatus';
-            wrapper.appendChild(dot);
+        if (idx === chauffeurColIndex) {
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = (value === null || value === undefined) ? '' : value;
+            wrapper.appendChild(nameSpan);
         }
-
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = (value === null || value === undefined) ? '' : value;
-        wrapper.appendChild(nameSpan);
-        td.appendChild(wrapper);
-        return td;
-    }
-
-    if (idx === personnelColIndex) {
-        const wrapper = document.createElement('span');
-        wrapper.style.display = 'inline-flex';
-        wrapper.style.alignItems = 'center';
-        wrapper.style.gap = '6px';
-
-        const numSpan = document.createElement('span');
-        numSpan.textContent = (value === null || value === undefined) ? '' : value;
-        wrapper.appendChild(numSpan);
 
         if (inCoachingList) {
             const blackDot = document.createElement('span');
@@ -621,7 +593,8 @@ function buildLocatieData(rows) {
     locatieData = Array.from(map.values()).sort((a, b) => b.count - a.count);
 }
 
-// ---------- DETAILTABELLEN ----------
+// ---------- DETAILTABELLEN (chauffeur/voertuig/locatie) ----------
+// (ongewijzigd t.o.v. vorige versie; ingekort hier zou alleen maar verwarren)
 
 function showChauffeurDetailsInline(name, clickedRow) {
     const tbodyCh = document.querySelector('#chauffeur-table tbody');
@@ -803,7 +776,7 @@ function showLocatieDetailsInline(loc, clickedRow) {
     clickedRow.insertAdjacentElement('afterend', detailTr);
 }
 
-// ---------- OVERZICHTSTABELLEN ----------
+// ---------- OVERZICHTSTABELLEN (chauffeur/voertuig/locatie) ----------
 
 function updateChauffeurView() {
     const limitSelect = document.getElementById('chauffeur-limit');
@@ -1062,19 +1035,7 @@ function searchDashboard() {
     });
 }
 
-// ---------- ANALYSE FUNCTIES (voor tab Coaching) ----------
-
-function getPnrSetFromFilteredRows() {
-    const set = new Set();
-    if (personnelColIndex === -1) return set;
-    filteredRows.forEach(row => {
-        const p = row[personnelColIndex];
-        if (!p) return;
-        const key = String(p).trim();
-        if (key) set.add(key);
-    });
-    return set;
-}
+// ---------- ANALYSE FUNCTIES ----------
 
 function findHighDamageWithoutCoaching() {
     if (personnelColIndex === -1) return [];
@@ -1125,19 +1086,19 @@ function updateCoachingStats() {
     const div = document.getElementById('coaching-stats');
     if (!div) return;
 
-    // --- 1) Aantal P-nrs in tabblad "Coaching" (Coachingslijst) ---
+    // 1) P-nrs in tabblad "Coaching" (Coachingslijst)
     const pCoaching = coachingPendingSet.size;
 
-    // --- 2) Aantal P-nrs in "Voltooide coachings" (totaal regels, zonder jaarfilter) ---
+    // 2) Aantal P-nrs in "Voltooide coachings" (totaal regels, zonder jaarfilter)
     let pVoltooideTotaal = 0;
     Object.values(coachingMap).forEach(list => {
-        pVoltooideTotaal += list.length;   // elke coaching-entry telt
+        pVoltooideTotaal += list.length;
     });
 
-    // --- 3) Aantal unieke P-nrs in "Voltooide coachings" (zonder jaarfilter) ---
+    // 3) Unieke P-nrs in "Voltooide coachings"
     const pVoltooideUniek = Object.keys(coachingMap).length;
 
-    // --- 4) P-nrs > 2 schades zonder coaching (blíjft jaarfilter-gebonden) ---
+    // 4) P-nrs > 2 schades zonder coaching (jaarfilter)
     const highDamage = findHighDamageWithoutCoaching();
 
     let html = `
@@ -1151,8 +1112,7 @@ function updateCoachingStats() {
     `;
 
     if (highDamage.length > 0) {
-        html += `<h4>P-nrs met &gt; 2 schades en geen coaching (jaarfilter):</h4>`;
-        html += `<ul>`;
+        html += `<h4>P-nrs met &gt; 2 schades en geen coaching (jaarfilter):</h4><ul>`;
         highDamage.forEach(e => {
             const naam = e.naam ? ` — ${e.naam}` : '';
             html += `<li>${e.pnr}${naam} — ${e.aantal} schades</li>`;
@@ -1163,6 +1123,103 @@ function updateCoachingStats() {
     div.innerHTML = html;
 }
 
+// Analyse: totaal + histogram
+function updateAnalyse() {
+    const totalEl = document.getElementById('analyse-total');
+    const canvas = document.getElementById('analyse-histogram');
+
+    if (!totalEl || !canvas) return;
+
+    if (!filteredRows || filteredRows.length === 0 || personnelColIndex === -1) {
+        totalEl.textContent = 'Geen gegevens beschikbaar.';
+        if (analyseHistogramChart) {
+            analyseHistogramChart.destroy();
+            analyseHistogramChart = null;
+        }
+        return;
+    }
+
+    // 1) Totaal schades
+    totalEl.textContent = `Totaal aantal schades (jaarfilter): ${filteredRows.length}`;
+
+    // 2) Teller schades per P-nr
+    const teller = new Map();
+    filteredRows.forEach(row => {
+        const p = row[personnelColIndex];
+        if (!p) return;
+        const key = String(p).trim();
+        if (!key) return;
+        if (!teller.has(key)) teller.set(key, 0);
+        teller.set(key, teller.get(key) + 1);
+    });
+
+    const counts = Array.from(teller.values()).sort((a, b) => a - b);
+    if (!counts.length) {
+        totalEl.textContent += ' (geen P-nrs gevonden).';
+        if (analyseHistogramChart) {
+            analyseHistogramChart.destroy();
+            analyseHistogramChart = null;
+        }
+        return;
+    }
+
+    // mediaan
+    let median = 0;
+    const mid = Math.floor(counts.length / 2);
+    if (counts.length % 2 !== 0) {
+        median = counts[mid];
+    } else {
+        median = (counts[mid - 1] + counts[mid]) / 2;
+    }
+
+    // histogram: hoeveel chauffeurs hebben 1,2,3,... schades
+    const freq = {};
+    counts.forEach(c => {
+        freq[c] = (freq[c] || 0) + 1;
+    });
+
+    const labels = Object.keys(freq).map(n => Number(n)).sort((a, b) => a - b);
+    const values = labels.map(l => freq[l]);
+
+    if (analyseHistogramChart) {
+        analyseHistogramChart.destroy();
+    }
+
+    const ctx = canvas.getContext('2d');
+
+    analyseHistogramChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Aantal chauffeurs',
+                data: values
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { beginAtZero: true, title: { display: true, text: 'Aantal schades per P-nr' } },
+                y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Aantal P-nrs' } }
+            },
+            plugins: {
+                legend: { display: false },
+                annotation: {
+                    annotations: {
+                        medianLine: {
+                            type: 'line',
+                            xMin: median,
+                            xMax: median,
+                            borderWidth: 2,
+                            borderColor: 'red'
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
 
 // ---------- ALLES HERAUFBOUWEN ----------
 
@@ -1188,6 +1245,7 @@ function updateFilterAndViews() {
         coachingCount + ' P-nrs geladen.';
 
     updateCoachingStats();
+    updateAnalyse();
 }
 
 // ---------- EVENT LISTENERS ----------
@@ -1322,14 +1380,14 @@ fetch('Coachingslijst.xlsx')
             console.warn("Tabblad 'Voltooide coachings' niet gevonden in Coachingslijst.xlsx");
         }
 
-        // --- Coaching-tab: P-nr staat in kolom D (via echte cellen) ---
+        // --- Coaching-tab: P-nr staat in kolom D ---
         if (sheetPending) {
             coachingPendingSet.clear();
 
             const range = XLSX.utils.decode_range(sheetPending['!ref']);
 
-            for (let r = range.s.r + 1; r <= range.e.r; r++) { // vanaf tweede rij (na header)
-                const cellRef = XLSX.utils.encode_cell({ c: 3, r: r }); // c=3 => kolom D
+            for (let r = range.s.r + 1; r <= range.e.r; r++) {
+                const cellRef = XLSX.utils.encode_cell({ c: 3, r: r }); // kolom D
                 const cell = sheetPending[cellRef];
                 if (!cell || cell.v == null || cell.v === '') continue;
 
