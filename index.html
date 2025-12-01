@@ -215,12 +215,20 @@
                     <canvas id="analyse-histogram"></canvas>
                 </div>
 
-<h3>3. Verdeling P-nrs per 1000-tal (Hastus)</h3>
-<p style="font-size:13px;color:#6b7280;">
-    Gebaseerd op kolom <strong>P-nr</strong> in tabblad <strong>data hastus</strong> van <em>schade met macro.xlsm</em>.<br>
-    Elke balk toont hoeveel personeelsnummers in dat 1000-tal vallen (bv. 5000–5999).
-</p>
+                <h3>3. Boxplot — aantal schades per P-nr</h3>
+                <p style="font-size:13px;color:#6b7280;">
+                    Op basis van dezelfde data als het histogram hierboven.<br>
+                    Toont minimum, Q1, mediaan, Q3 en maximum aantal schades per P-nr.
+                </p>
+                <div class="chart-container" style="height:180px;">
+                    <canvas id="analyse-boxplot" width="900" height="150"></canvas>
+                </div>
 
+                <h3>4. Verdeling P-nrs per 10.000-tal (Hastus)</h3>
+                <p style="font-size:13px;color:#6b7280;">
+                    Gebaseerd op kolom <strong>P-nr</strong> in tabblad <strong>data hastus</strong> van <em>schade met macro.xlsm</em>.<br>
+                    Elke balk toont hoeveel personeelsnummers in dat 10.000-tal vallen (bijv. 40.000–49.999).
+                </p>
                 <div id="hastus-summary"></div>
                 <div class="chart-container" style="height:300px;">
                     <canvas id="hastus-1000-chart"></canvas>
@@ -924,7 +932,7 @@ function buildVoertuigMonthChart(rows) {
         type: 'bar',
         data: {
             labels: monthLabels,
-            datasets: datasets
+            datasets
         },
         options: {
             responsive: true,
@@ -1104,7 +1112,7 @@ function searchDashboard() {
 }
 
 // ========================================================================
-// ANALYSE – COACHING OVERZICHT & HISTOGRAM & HASTUS
+// ANALYSE – COACHING OVERZICHT & HISTOGRAM & HASTUS & BOXPLOT
 // ========================================================================
 
 function findHighDamageWithoutCoaching() {
@@ -1177,6 +1185,136 @@ function updateCoachingStats() {
     div.innerHTML = html;
 }
 
+// ---- BOXPLOT HELPERFUNCTIES ----
+
+function medianOfSorted(arr) {
+    const n = arr.length;
+    if (n === 0) return null;
+    const mid = Math.floor(n / 2);
+    if (n % 2 !== 0) {
+        return arr[mid];
+    } else {
+        return (arr[mid - 1] + arr[mid]) / 2;
+    }
+}
+
+function computeBoxStats(sortedVals) {
+    if (!sortedVals || !sortedVals.length) return null;
+
+    const n = sortedVals.length;
+    const min = sortedVals[0];
+    const max = sortedVals[n - 1];
+    const median = medianOfSorted(sortedVals);
+
+    const mid = Math.floor(n / 2);
+    let lowerHalf, upperHalf;
+
+    if (n % 2 === 0) {
+        lowerHalf = sortedVals.slice(0, mid);
+        upperHalf = sortedVals.slice(mid);
+    } else {
+        lowerHalf = sortedVals.slice(0, mid);
+        upperHalf = sortedVals.slice(mid + 1);
+    }
+
+    const q1 = medianOfSorted(lowerHalf);
+    const q3 = medianOfSorted(upperHalf);
+
+    return { min, q1, median, q3, max };
+}
+
+function drawBoxplot(sortedCounts) {
+    const canvas = document.getElementById('analyse-boxplot');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    if (!sortedCounts || !sortedCounts.length) return;
+
+    const stats = computeBoxStats(sortedCounts);
+    if (!stats) return;
+
+    const { min, q1, median, q3, max } = stats;
+
+    const leftMargin = 60;
+    const rightMargin = 20;
+    const top = height * 0.35;
+    const bottom = height * 0.75;
+    const midY = (top + bottom) / 2;
+
+    function xScale(value) {
+        if (max === min) {
+            return leftMargin + (width - rightMargin - leftMargin) / 2;
+        }
+        return leftMargin + ((value - min) / (max - min)) * (width - rightMargin - leftMargin);
+    }
+
+    const xMin = xScale(min);
+    const xQ1 = xScale(q1);
+    const xMed = xScale(median);
+    const xQ3 = xScale(q3);
+    const xMax = xScale(max);
+
+    ctx.strokeStyle = '#4b5563';
+    ctx.fillStyle = '#374151';
+    ctx.lineWidth = 1;
+
+    // Aslijn
+    ctx.beginPath();
+    ctx.moveTo(leftMargin, midY);
+    ctx.lineTo(width - rightMargin, midY);
+    ctx.stroke();
+
+    // Whiskers
+    ctx.beginPath();
+    ctx.moveTo(xMin, midY);
+    ctx.lineTo(xQ1, midY);
+    ctx.moveTo(xQ3, midY);
+    ctx.lineTo(xMax, midY);
+    ctx.stroke();
+
+    // Whisker-eindjes
+    const capHalf = (bottom - top) / 4;
+    ctx.beginPath();
+    ctx.moveTo(xMin, midY - capHalf);
+    ctx.lineTo(xMin, midY + capHalf);
+    ctx.moveTo(xMax, midY - capHalf);
+    ctx.lineTo(xMax, midY + capHalf);
+    ctx.stroke();
+
+    // Box (Q1–Q3)
+    ctx.fillStyle = 'rgba(59,130,246,0.15)';
+    ctx.strokeStyle = '#3b82f6';
+    ctx.beginPath();
+    ctx.rect(xQ1, top, xQ3 - xQ1, bottom - top);
+    ctx.fill();
+    ctx.stroke();
+
+    // Mediaanlijn
+    ctx.beginPath();
+    ctx.moveTo(xMed, top);
+    ctx.lineTo(xMed, bottom);
+    ctx.stroke();
+
+    // Labels
+    ctx.fillStyle = '#374151';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    const labelY = bottom + 14;
+
+    ctx.fillText(min,    xMin, labelY);
+    ctx.fillText(q1,     xQ1,  labelY);
+    ctx.fillText(median, xMed, labelY);
+    ctx.fillText(q3,     xQ3,  labelY);
+    ctx.fillText(max,    xMax, labelY);
+
+    ctx.textAlign = 'left';
+    ctx.fillText('Min   Q1   Mediaan   Q3   Max', leftMargin, top - 6);
+}
+
 function updateAnalyse() {
     const totalEl = document.getElementById('analyse-total');
     const canvasHist = document.getElementById('analyse-histogram');
@@ -1189,6 +1327,7 @@ function updateAnalyse() {
             analyseHistogramChart.destroy();
             analyseHistogramChart = null;
         }
+        drawBoxplot(null);
         return;
     }
 
@@ -1211,9 +1350,14 @@ function updateAnalyse() {
             analyseHistogramChart.destroy();
             analyseHistogramChart = null;
         }
+        drawBoxplot(null);
         return;
     }
 
+    // Boxplot tekenen
+    drawBoxplot(counts);
+
+    // mediaan aantal schades (voor histogram-annotatie)
     let medianSchades = 0;
     const mid = Math.floor(counts.length / 2);
     if (counts.length % 2 !== 0) {
@@ -1222,6 +1366,7 @@ function updateAnalyse() {
         medianSchades = (counts[mid - 1] + counts[mid]) / 2;
     }
 
+    // histogram: hoeveel P-nrs hebben 1,2,3,... schades
     const freq = {};
     counts.forEach(c => {
         freq[c] = (freq[c] || 0) + 1;
@@ -1275,7 +1420,7 @@ function updateAnalyse() {
     });
 }
 
-// Hastus-verdeling per 1000-tal
+// Hastus-verdeling per 10.000-tal
 function updateHastusDistribution() {
     const summaryEl = document.getElementById('hastus-summary');
     const canvas = document.getElementById('hastus-1000-chart');
@@ -1290,18 +1435,17 @@ function updateHastusDistribution() {
         return;
     }
 
-const countsByBin = {};
-const binSize = 10000; // 10.000-tal
+    const countsByBin = {};
+    const binSize = 10000; // 10.000-tal
 
-allHastusPnrs.forEach(pnr => {
-    const bin = Math.floor(pnr / binSize) * binSize; // 5234 -> 0, 41234 -> 40000
-    countsByBin[bin] = (countsByBin[bin] || 0) + 1;
-});
+    allHastusPnrs.forEach(pnr => {
+        const bin = Math.floor(pnr / binSize) * binSize;
+        countsByBin[bin] = (countsByBin[bin] || 0) + 1;
+    });
 
-const bins = Object.keys(countsByBin).map(Number).sort((a, b) => a - b);
-const labels = bins.map(b => `${b}–${b + binSize - 1}`); // bv. 40000–49999
-const values = bins.map(b => countsByBin[b]);
-
+    const bins = Object.keys(countsByBin).map(Number).sort((a, b) => a - b);
+    const labels = bins.map(b => `${b}–${b + binSize - 1}`);
+    const values = bins.map(b => countsByBin[b]);
 
     const totaal = allHastusPnrs.length;
     summaryEl.innerHTML = `Totaal P-nrs in <strong>"data hastus"</strong>: <strong>${totaal}</strong>`;
