@@ -119,14 +119,15 @@
                     </table>
                 </div>
 
-                <h3>Schades per maand en voertuigtype</h3>
-                <p style="font-size:13px;color:#6b7280;">
-                    Deze grafiek respecteert de gekozen jaarfilter bovenaan.<br>
-                    X-as = maanden, kleur = voertuigtype (Bus/Tram).
-                </p>
-                <div class="chart-container">
-                    <canvas id="voertuig-month-chart"></canvas>
-                </div>
+<h3>Tendens per voertuigtype (lijngrafiek)</h3>
+<p style="font-size:13px;color:#6b7280;">
+    Zelfde data als de staafgrafiek hierboven, maar als lijngrafiek per voertuigtype.<br>
+    Handig om de evolutie doorheen het jaar te zien.
+</p>
+<div class="chart-container">
+    <canvas id="voertuig-month-trend-chart"></canvas>
+</div>
+
             </div>
 
             <!-- TAB 4: LOCATIE -->
@@ -249,6 +250,8 @@ let chauffeurData = [];
 let voertuigData = [];
 let locatieData = [];
 let voertuigMonthChart = null;
+let voertuigMonthTrendChart = null;  // NIEUW
+
 
 // coachingsdata: P-nr -> array van entries { status, date, dateString }
 let coachingHeaders = [];
