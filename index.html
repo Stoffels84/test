@@ -215,11 +215,12 @@
                     <canvas id="analyse-histogram"></canvas>
                 </div>
 
-                <h3>3. Verdeling P-nrs per 1000-tal (Hastus)</h3>
-                <p style="font-size:13px;color:#6b7280;">
-                    Gebaseerd op kolom <strong>P-nr</strong> in tabblad <strong>data hastus</strong> van <em>schade met macro.xlsm</em>.<br>
-                    Elke balk toont hoeveel personeelsnummers in dat 1000-tal vallen (bv. 5000–5999).
-                </p>
+<h3>3. Verdeling P-nrs per 1000-tal (Hastus)</h3>
+<p style="font-size:13px;color:#6b7280;">
+    Gebaseerd op kolom <strong>P-nr</strong> in tabblad <strong>data hastus</strong> van <em>schade met macro.xlsm</em>.<br>
+    Elke balk toont hoeveel personeelsnummers in dat 1000-tal vallen (bv. 5000–5999).
+</p>
+
                 <div id="hastus-summary"></div>
                 <div class="chart-container" style="height:300px;">
                     <canvas id="hastus-1000-chart"></canvas>
@@ -1289,15 +1290,18 @@ function updateHastusDistribution() {
         return;
     }
 
-    const countsByBin = {};
-    allHastusPnrs.forEach(pnr => {
-        const bin = Math.floor(pnr / 1000) * 1000;
-        countsByBin[bin] = (countsByBin[bin] || 0) + 1;
-    });
+const countsByBin = {};
+const binSize = 10000; // 10.000-tal
 
-    const bins = Object.keys(countsByBin).map(Number).sort((a, b) => a - b);
-    const labels = bins.map(b => `${b}–${b + 999}`);
-    const values = bins.map(b => countsByBin[b]);
+allHastusPnrs.forEach(pnr => {
+    const bin = Math.floor(pnr / binSize) * binSize; // 5234 -> 0, 41234 -> 40000
+    countsByBin[bin] = (countsByBin[bin] || 0) + 1;
+});
+
+const bins = Object.keys(countsByBin).map(Number).sort((a, b) => a - b);
+const labels = bins.map(b => `${b}–${b + binSize - 1}`); // bv. 40000–49999
+const values = bins.map(b => countsByBin[b]);
+
 
     const totaal = allHastusPnrs.length;
     summaryEl.innerHTML = `Totaal P-nrs in <strong>"data hastus"</strong>: <strong>${totaal}</strong>`;
