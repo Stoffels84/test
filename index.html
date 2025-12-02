@@ -219,7 +219,7 @@
       <small>
         Verwachte kolommen in je Excel-tabel (eerste rij):<br />
         <strong>datum, bedrag, categorie, in/uitgave, vast/variabel</strong><br />
-        <em>in/uitgave</em> bv. "Inkomst", "In", "Uitgave", "Uit" – alles wat met "in" begint telt als inkomen.
+        Hoofdletters/spaties of bv. "Datum" zijn nu ook oké.
       </small>
 
       <div id="filters" class="hidden">
@@ -342,6 +342,7 @@
     // ------- STATE -------
     let rawData = [];      // alle rijen uit Excel
     let filteredData = []; // na filters
+    let headerMap = {};    // mapping van genormaliseerde naam -> echte kolomnaam
 
     let balanceByMonthChart = null;
     let byCategoryChart = null;
@@ -368,6 +369,31 @@
       return new Date(excelEpoch.getTime() + serial * 86400000);
     }
 
+    function normalizeKey(key) {
+      return key.toString().toLowerCase().trim().replace(/\s+/g, "");
+    }
+
+    function buildHeaderMap(json) {
+      headerMap = {};
+      if (!json || !json.length) return;
+      const firstRow = json[0];
+      Object.keys(firstRow).forEach(origKey => {
+        const norm = normalizeKey(origKey);
+        if (!headerMap[norm]) {
+          headerMap[norm] = origKey;
+        }
+      });
+      console.log("Gevonden kolommen:", headerMap);
+    }
+
+    function getCol(nameOptions) {
+      // nameOptions = array van mogelijke (genormaliseerde) namen
+      for (const opt of nameOptions) {
+        if (headerMap[opt]) return headerMap[opt];
+      }
+      return null;
+    }
+
     // ------- EXCEL LADEN -------
     const fileInput = document.getElementById("fileInput");
     const fileStatus = document.getElementById("fileStatus");
@@ -389,6 +415,7 @@
         const sheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
+        buildHeaderMap(json);
         rawData = preprocessData(json);
 
         if (!rawData.length) {
@@ -409,31 +436,38 @@
     });
 
     function preprocessData(data) {
+      // bepaal welke echte kolomnamen we gebruiken
+      const colDatum = getCol(["datum", "date", "data"]);
+      const colBedrag = getCol(["bedrag", "amount", "waarde"]);
+      const colCategorie = getCol(["categorie", "category"]);
+      const colType = getCol(["in/uitgave", "inuitgave", "inuit", "type"]);
+      const colVV = getCol(["vast/variabel", "vastvariabel", "vastofvariabel"]);
+
+      console.log("Kolommen gebruikt:", { colDatum, colBedrag, colCategorie, colType, colVV });
+
       return data.map(row => {
-        // Datum: kolom 'datum'
-        let rawDate = row["datum"];
+        // Datum
+        let rawDate = colDatum ? row[colDatum] : null;
         let date;
 
         if (rawDate instanceof Date) {
           date = rawDate;
         } else if (typeof rawDate === "number") {
-          // Excel-serienummer
           date = excelSerialDateToJSDate(rawDate);
-        } else {
+        } else if (rawDate) {
           date = new Date(rawDate);
-        }
-
-        const validDate = !isNaN(date.getTime());
-        if (!validDate) {
+        } else {
           return null;
         }
+
+        if (isNaN(date.getTime())) return null;
 
         const year = date.getFullYear();
         const month = date.getMonth() + 1;
         const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-        // Bedrag: kolom 'bedrag'
-        let bedragRaw = row["bedrag"];
+        // Bedrag
+        let bedragRaw = colBedrag ? row[colBedrag] : 0;
         let bedrag;
         if (typeof bedragRaw === "number") {
           bedrag = bedragRaw;
@@ -441,14 +475,15 @@
           bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
         }
 
-        // In/uitgave: kolom 'in/uitgave'
-        const typeRaw = (row["in/uitgave"] || "").toString().trim();
+        // In/uitgave
+        const typeRaw = colType ? (row[colType] || "").toString().trim() : "";
         const isIncome = typeRaw.toLowerCase().startsWith("in"); // "In", "Inkomst", ...
+
         const netto = isIncome ? bedrag : -bedrag;
 
         // Categorie en vast/variabel
-        const categorie = (row["categorie"] || "").toString().trim();
-        const vastVar = (row["vast/variabel"] || "").toString().trim();
+        const categorie = colCategorie ? (row[colCategorie] || "").toString().trim() : "";
+        const vastVar = colVV ? (row[colVV] || "").toString().trim() : "";
 
         return {
           datum: date,
@@ -636,115 +671,4 @@
       categoryTableBody.innerHTML = "";
       entries.forEach(row => {
         const tr = document.createElement("tr");
-        const tdCat = document.createElement("td");
-        const tdNetto = document.createElement("td");
-        tdCat.textContent = row.categorie;
-        tdNetto.textContent = formatEuro(row.netto);
-        tr.appendChild(tdCat);
-        tr.appendChild(tdNetto);
-        categoryTableBody.appendChild(tr);
-      });
-
-      // Grafiek
-      const labels = entries.map(e => e.categorie);
-      const values = entries.map(e => e.netto);
-      const ctx = document.getElementById("byCategoryChart").getContext("2d");
-      if (byCategoryChart) byCategoryChart.destroy();
-      byCategoryChart = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [{
-            label: "Netto per categorie",
-            data: values
-          }]
-        },
-        options: {
-          indexAxis: "y",
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: {
-              ticks: { callback: (val) => formatEuro(val) }
-            }
-          }
-        }
-      });
-    }
-
-    // ------- MONTH TABLE -------
-    const monthTableBody = document.querySelector("#monthTable tbody");
-
-    function updateMonthTable() {
-      const map = new Map();
-      filteredData.forEach(r => {
-        if (!r.yearMonth) return;
-        if (!map.has(r.yearMonth)) {
-          map.set(r.yearMonth, { income: 0, expense: 0, net: 0 });
-        }
-        const obj = map.get(r.yearMonth);
-        if (r.netto >= 0) obj.income += r.netto;
-        else obj.expense += -r.netto;
-        obj.net = obj.income - obj.expense;
-      });
-
-      const rows = Array.from(map.entries())
-        .map(([ym, o]) => ({ yearMonth: ym, ...o }))
-        .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
-
-      monthTableBody.innerHTML = "";
-      rows.forEach(row => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${row.yearMonth}</td>
-          <td>${formatEuro(row.income)}</td>
-          <td>${formatEuro(row.expense)}</td>
-          <td>${formatEuro(row.net)}</td>
-        `;
-        monthTableBody.appendChild(tr);
-      });
-    }
-
-    // ------- TRANSACTIONS TABLE -------
-    const transactionsTableBody = document.querySelector("#transactionsTable tbody");
-
-    function updateTransactionsTable() {
-      const sorted = filteredData.slice().sort((a, b) => b.datum - a.datum);
-      transactionsTableBody.innerHTML = "";
-      sorted.forEach(r => {
-        const tr = document.createElement("tr");
-        const isIncome = r.netto >= 0;
-        const typeChipClass = isIncome ? "income" : "expense";
-        tr.innerHTML = `
-          <td>${r.datumStr}</td>
-          <td><span class="chip ${typeChipClass}">${r.type}</span></td>
-          <td>${r.categorie}</td>
-          <td>${r.vastvariabel}</td>
-          <td>${formatEuro(r.bedrag)}</td>
-        `;
-        transactionsTableBody.appendChild(tr);
-      });
-    }
-
-    // ------- TABS -------
-    const tabButtons = document.querySelectorAll(".tab-button");
-    const tabPanels = {
-      overview: document.getElementById("tab-overview"),
-      category: document.getElementById("tab-category"),
-      month: document.getElementById("tab-month"),
-      transactions: document.getElementById("tab-transactions")
-    };
-
-    tabButtons.forEach(btn => {
-      btn.addEventListener("click", () => {
-        const tab = btn.dataset.tab;
-        tabButtons.forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-
-        Object.values(tabPanels).forEach(panel => panel.classList.remove("active"));
-        tabPanels[tab].classList.add("active");
-      });
-    });
-  </script>
-</body>
-</html>
+        const tdCat
