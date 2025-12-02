@@ -64,8 +64,7 @@
       margin-top: 0.75rem;
       margin-bottom: 0.25rem;
     }
-    aside select,
-    aside input {
+    aside select {
       width: 100%;
       padding: 0.4rem 0.5rem;
       border-radius: 0.4rem;
@@ -91,7 +90,6 @@
       overflow-x: auto;
     }
 
-    /* Sidebar navigatie voor tabs */
     .sidebar-tabs {
       margin-top: 1.2rem;
     }
@@ -125,7 +123,6 @@
       border-color: #e5e7eb;
     }
 
-    /* Panels */
     .tab-panel {
       display: none;
       background: #ffffff;
@@ -200,16 +197,9 @@
       background: #fef2f2;
       color: #b91c1c;
     }
-    .hidden {
-      display: none;
-    }
-    #fileInput {
-      margin-top: 0.5rem;
-      margin-bottom: 0.5rem;
-    }
     .status {
       font-size: 0.8rem;
-      margin-top: 0.3rem;
+      margin-top: 0.4rem;
     }
     .status.error {
       color: #f97316;
@@ -226,18 +216,17 @@
 <body>
   <header>
     <h1><span>💶</span> Huishoudbudget dashboard</h1>
-    <div style="font-size:0.8rem; opacity:0.8;">Leest tabblad “Data” uit huishoud.xlsx</div>
+    <div style="font-size:0.8rem; opacity:0.8;">Laadt automatisch huishoud.xlsx (tabblad “Data”)</div>
   </header>
 
   <main>
     <aside>
       <h2>Data</h2>
-      <label for="fileInput">📂 Laad Excel-bestand (huishoud.xlsx)</label>
-      <input type="file" id="fileInput" accept=".xlsx,.xls" />
-      <div id="fileStatus" class="status">Nog geen bestand geladen.</div>
+      <div id="fileStatus" class="status">Probeer huishoud.xlsx te laden…</div>
       <small>
-        Gegevens staan in tabblad <strong>Data</strong><br />
-        Kolommen (eerste rij): <strong>datum, bedrag, categorie, in/uitgave, vast/variabel</strong>.
+        Bestanden in deze map: <strong>index.html</strong> en <strong>huishoud.xlsx</strong>.<br />
+        Gegevens staan in tabblad <strong>Data</strong> met kolommen:<br />
+        <strong>datum, bedrag, categorie, in/uitgave, vast/variabel</strong>.
       </small>
 
       <div id="filters" class="hidden">
@@ -286,8 +275,6 @@
     </aside>
 
     <section class="content">
-      <!-- Geen tabs meer bovenaan, alleen panelen -->
-
       <div id="tab-overview" class="tab-panel active">
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -369,10 +356,9 @@
 
   <script>
     // ------- STATE -------
-    let rawData = [];      // alle rijen uit Excel
-    let filteredData = []; // na filters
-    let headerMap = {};    // mapping van genormaliseerde naam -> echte kolomnaam
-
+    let rawData = [];
+    let filteredData = [];
+    let headerMap = {};
     let balanceByMonthChart = null;
     let byCategoryChart = null;
 
@@ -394,7 +380,7 @@
     }
 
     function excelSerialDateToJSDate(serial) {
-      const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel dag 0
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
       return new Date(excelEpoch.getTime() + serial * 86400000);
     }
 
@@ -408,9 +394,7 @@
       const firstRow = json[0];
       Object.keys(firstRow).forEach(origKey => {
         const norm = normalizeKey(origKey);
-        if (!headerMap[norm]) {
-          headerMap[norm] = origKey;
-        }
+        if (!headerMap[norm]) headerMap[norm] = origKey;
       });
       console.log("Gevonden kolommen:", headerMap);
     }
@@ -422,54 +406,81 @@
       return null;
     }
 
-    // ------- EXCEL LADEN (specifiek tabblad Data) -------
-    const fileInput = document.getElementById("fileInput");
+    function parseExcelDate(rawDate) {
+      if (rawDate instanceof Date) return rawDate;
+      if (typeof rawDate === "number") return excelSerialDateToJSDate(rawDate);
+      if (typeof rawDate === "string") {
+        const s = rawDate.trim();
+        if (!s) return null;
+
+        let d = new Date(s);
+        if (!isNaN(d.getTime())) return d;
+
+        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (m) {
+          let day = parseInt(m[1], 10);
+          let month = parseInt(m[2], 10);
+          let year = parseInt(m[3], 10);
+          if (year < 100) year += 2000;
+          d = new Date(year, month - 1, day);
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+      return null;
+    }
+
+    // ------- EXCEL LADEN AUTOMATISCH -------
     const fileStatus = document.getElementById("fileStatus");
     const filtersBox = document.getElementById("filters");
 
-    fileInput.addEventListener("change", async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      fileStatus.textContent = "Bezig met Excel lezen...";
-      fileStatus.classList.remove("error");
-
+    async function loadExcelAutomatically() {
       try {
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data, { type: "array" });
+        fileStatus.textContent = "huishoud.xlsx aan het laden…";
+
+        const resp = await fetch("huishoud.xlsx");
+        if (!resp.ok) {
+          fileStatus.textContent = "Kan huishoud.xlsx niet vinden. Staat hij in dezelfde map als index.html?";
+          fileStatus.classList.add("error");
+          return;
+        }
+
+        const data = await resp.arrayBuffer();
+        const workbook = XLSX.read(data, { type: "array", cellDates: true });
 
         const sheetName = "Data";
         if (!workbook.SheetNames.includes(sheetName)) {
-          alert("Het tabblad 'Data' werd niet gevonden! Zorg dat het tabblad exact 'Data' heet.");
-          fileStatus.textContent = "Tabblad 'Data' ontbreekt.";
+          fileStatus.textContent = "Tabblad 'Data' niet gevonden in huishoud.xlsx.";
+          fileStatus.classList.add("error");
           return;
         }
 
         const sheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "", cellDates: true });
+        console.log("Ruwe rijen in Data:", json.length);
 
         buildHeaderMap(json);
         rawData = preprocessData(json);
+        console.log("Rijen na verwerken:", rawData.length);
 
         if (!rawData.length) {
-          fileStatus.textContent = "Geen geldige rijen gevonden in tabblad 'Data'.";
+          fileStatus.textContent = "Geen geldige rijen gevonden (datum/bedrag leeg?).";
+          fileStatus.classList.add("error");
           return;
         }
 
-        fileStatus.textContent = `Bestand geladen: ${file.name} (${rawData.length} transacties)`;
+        fileStatus.textContent = `huishoud.xlsx geladen (${rawData.length} transacties).`;
         filtersBox.classList.remove("hidden");
 
         initFilters();
         applyFiltersAndUpdate();
       } catch (err) {
         console.error(err);
-        fileStatus.textContent = "Fout bij het lezen van Excel-bestand.";
+        fileStatus.textContent = "Fout bij het laden van huishoud.xlsx.";
         fileStatus.classList.add("error");
       }
-    });
+    }
 
     function preprocessData(data) {
-      // zoek echte kolomnamen op basis van varianten
       const colDatum = getCol(["datum", "date", "data"]);
       const colBedrag = getCol(["bedrag", "amount", "waarde"]);
       const colCategorie = getCol(["categorie", "category"]);
@@ -479,27 +490,14 @@
       console.log("Kolommen gebruikt:", { colDatum, colBedrag, colCategorie, colType, colVV });
 
       return data.map(row => {
-        // Datum
         let rawDate = colDatum ? row[colDatum] : null;
-        let date;
-
-        if (rawDate instanceof Date) {
-          date = rawDate;
-        } else if (typeof rawDate === "number") {
-          date = excelSerialDateToJSDate(rawDate);
-        } else if (rawDate) {
-          date = new Date(rawDate);
-        } else {
-          return null;
-        }
-
-        if (isNaN(date.getTime())) return null;
+        let date = parseExcelDate(rawDate);
+        if (!date || isNaN(date.getTime())) return null;
 
         const year = date.getFullYear();
         const month = date.getMonth() + 1;
         const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-        // Bedrag
         let bedragRaw = colBedrag ? row[colBedrag] : 0;
         let bedrag;
         if (typeof bedragRaw === "number") {
@@ -508,12 +506,10 @@
           bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
         }
 
-        // In/uitgave
         const typeRaw = colType ? (row[colType] || "").toString().trim() : "";
         const isIncome = typeRaw.toLowerCase().startsWith("in");
         const netto = isIncome ? bedrag : -bedrag;
 
-        // Categorie en vast/variabel
         const categorie = colCategorie ? (row[colCategorie] || "").toString().trim() : "";
         const vastVar = colVV ? (row[colVV] || "").toString().trim() : "";
 
@@ -532,7 +528,7 @@
       }).filter(r => r !== null);
     }
 
-    // ------- FILTERS -------
+    // ------- FILTERS & UPDATES -------
     const yearSelect = document.getElementById("yearSelect");
     const typeSelect = document.getElementById("typeSelect");
     const categorySelect = document.getElementById("categorySelect");
@@ -541,7 +537,6 @@
     const transactionCount = document.getElementById("transactionCount");
 
     function initFilters() {
-      // Jaar
       yearSelect.innerHTML = "";
       uniqueValues(rawData, "year").forEach(year => {
         const opt = document.createElement("option");
@@ -551,7 +546,6 @@
         yearSelect.appendChild(opt);
       });
 
-      // In/uitgave
       typeSelect.innerHTML = "";
       uniqueValues(rawData, "type").forEach(t => {
         const opt = document.createElement("option");
@@ -561,7 +555,6 @@
         typeSelect.appendChild(opt);
       });
 
-      // Categorie
       categorySelect.innerHTML = "";
       uniqueValues(rawData, "categorie").forEach(c => {
         const opt = document.createElement("option");
@@ -571,7 +564,6 @@
         categorySelect.appendChild(opt);
       });
 
-      // Vast/variabel
       vvSelect.innerHTML = "";
       uniqueValues(rawData, "vastvariabel").forEach(v => {
         const opt = document.createElement("option");
@@ -582,7 +574,7 @@
       });
 
       [yearSelect, typeSelect, categorySelect, vvSelect, topSelect].forEach(el => {
-        el.addEventListener("change", () => applyFiltersAndUpdate());
+        el.addEventListener("change", applyFiltersAndUpdate);
       });
     }
 
@@ -618,7 +610,6 @@
       updateTransactionsTable();
     }
 
-    // ------- KPI's -------
     const kpiIncome = document.getElementById("kpiIncome");
     const kpiExpense = document.getElementById("kpiExpense");
     const kpiBalance = document.getElementById("kpiBalance");
@@ -643,7 +634,6 @@
         : `Je komt ${formatEuro(-balance)} tekort in deze selectie`;
     }
 
-    // ------- GRAFIEK: saldo per maand -------
     function updateBalanceByMonthChart() {
       const map = new Map();
       filteredData.forEach(r => {
@@ -656,30 +646,23 @@
       const values = labels.map(label => map.get(label));
 
       const ctx = document.getElementById("balanceByMonthChart").getContext("2d");
-
       if (balanceByMonthChart) balanceByMonthChart.destroy();
       balanceByMonthChart = new Chart(ctx, {
         type: "line",
         data: {
           labels,
-          datasets: [{
-            label: "Netto per maand",
-            data: values
-          }]
+          datasets: [{ label: "Netto per maand", data: values }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           scales: {
-            y: {
-              ticks: { callback: (val) => formatEuro(val) }
-            }
+            y: { ticks: { callback: val => formatEuro(val) } }
           }
         }
       });
     }
 
-    // ------- CATEGORY VIEW -------
     const categoryTableBody = document.querySelector("#categoryTable tbody");
 
     function updateCategoryView() {
@@ -692,27 +675,18 @@
 
       let entries = Array.from(map.entries())
         .map(([categorie, netto]) => ({ categorie, netto }))
-        .sort((a, b) => a.netto - b.netto); // asc: grootste kosten (negatief) eerst
+        .sort((a, b) => a.netto - b.netto);
 
       const topVal = topSelect.value;
-      if (topVal !== "all") {
-        entries = entries.slice(0, Number(topVal));
-      }
+      if (topVal !== "all") entries = entries.slice(0, Number(topVal));
 
-      // Tabel
       categoryTableBody.innerHTML = "";
       entries.forEach(row => {
         const tr = document.createElement("tr");
-        const tdCat = document.createElement("td");
-        const tdNetto = document.createElement("td");
-        tdCat.textContent = row.categorie;
-        tdNetto.textContent = formatEuro(row.netto);
-        tr.appendChild(tdCat);
-        tr.appendChild(tdNetto);
+        tr.innerHTML = `<td>${row.categorie}</td><td>${formatEuro(row.netto)}</td>`;
         categoryTableBody.appendChild(tr);
       });
 
-      // Grafiek
       const labels = entries.map(e => e.categorie);
       const values = entries.map(e => e.netto);
       const ctx = document.getElementById("byCategoryChart").getContext("2d");
@@ -721,34 +695,26 @@
         type: "bar",
         data: {
           labels,
-          datasets: [{
-            label: "Netto per categorie",
-            data: values
-          }]
+          datasets: [{ label: "Netto per categorie", data: values }]
         },
         options: {
           indexAxis: "y",
           responsive: true,
           maintainAspectRatio: false,
           scales: {
-            x: {
-              ticks: { callback: (val) => formatEuro(val) }
-            }
+            x: { ticks: { callback: val => formatEuro(val) } }
           }
         }
       });
     }
 
-    // ------- MONTH TABLE -------
     const monthTableBody = document.querySelector("#monthTable tbody");
 
     function updateMonthTable() {
       const map = new Map();
       filteredData.forEach(r => {
         if (!r.yearMonth) return;
-        if (!map.has(r.yearMonth)) {
-          map.set(r.yearMonth, { income: 0, expense: 0, net: 0 });
-        }
+        if (!map.has(r.yearMonth)) map.set(r.yearMonth, { income: 0, expense: 0, net: 0 });
         const obj = map.get(r.yearMonth);
         if (r.netto >= 0) obj.income += r.netto;
         else obj.expense += -r.netto;
@@ -772,16 +738,14 @@
       });
     }
 
-    // ------- TRANSACTIONS TABLE -------
     const transactionsTableBody = document.querySelector("#transactionsTable tbody");
 
     function updateTransactionsTable() {
       const sorted = filteredData.slice().sort((a, b) => b.datum - a.datum);
       transactionsTableBody.innerHTML = "";
       sorted.forEach(r => {
+        const typeChipClass = r.netto >= 0 ? "income" : "expense";
         const tr = document.createElement("tr");
-        const isIncome = r.netto >= 0;
-        const typeChipClass = isIncome ? "income" : "expense";
         tr.innerHTML = `
           <td>${r.datumStr}</td>
           <td><span class="chip ${typeChipClass}">${r.type}</span></td>
@@ -793,7 +757,7 @@
       });
     }
 
-    // ------- TABS (sidebar knoppen) -------
+    // Tabs in de sidebar
     const tabButtons = document.querySelectorAll(".sidebar-tabs .tab-button");
     const tabPanels = {
       overview: document.getElementById("tab-overview"),
@@ -807,11 +771,13 @@
         const tab = btn.dataset.tab;
         tabButtons.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-
         Object.values(tabPanels).forEach(panel => panel.classList.remove("active"));
         tabPanels[tab].classList.add("active");
       });
     });
+
+    // Start: laad automatisch de Excel
+    window.addEventListener("load", loadExcelAutomatically);
   </script>
 </body>
 </html>
