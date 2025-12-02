@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Huishoudbudget Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Kleine basic stijl -->
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      background: #f5f5f7;
+      color: #222;
+    }
+    header {
+      background: #1f2937;
+      color: white;
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    header h1 span {
+      font-size: 1.6rem;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      min-height: calc(100vh - 70px);
+    }
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+      aside {
+        order: 2;
+      }
+      section.content {
+        order: 1;
+      }
+    }
+    aside {
+      background: #111827;
+      color: white;
+      padding: 1rem;
+    }
+    aside h2 {
+      font-size: 1.1rem;
+      margin-top: 0;
+    }
+    aside label {
+      font-size: 0.85rem;
+      display: block;
+      margin-top: 0.75rem;
+      margin-bottom: 0.25rem;
+    }
+    aside select,
+    aside input {
+      width: 100%;
+      padding: 0.4rem 0.5rem;
+      border-radius: 0.4rem;
+      border: none;
+      background: #1f2937;
+      color: white;
+      font-size: 0.85rem;
+    }
+    aside small {
+      font-size: 0.75rem;
+      opacity: 0.8;
+    }
+    aside .info {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      padding: 0.5rem;
+      background: #111827;
+      border-radius: 0.5rem;
+      border: 1px solid #374151;
+    }
+    section.content {
+      padding: 1rem 1.5rem 2rem;
+      overflow-x: auto;
+    }
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #ddd;
+      flex-wrap: wrap;
+    }
+    .tab-button {
+      padding: 0.5rem 0.9rem;
+      border: none;
+      background: transparent;
+      border-radius: 0.5rem 0.5rem 0 0;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .tab-button.active {
+      background: #ffffff;
+      border: 1px solid #ddd;
+      border-bottom: 1px solid white;
+    }
+    .tab-panel {
+      display: none;
+      background: #ffffff;
+      padding: 1rem;
+      border-radius: 0 0.75rem 0.75rem 0.75rem;
+      border: 1px solid #ddd;
+      margin-top: -1px;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .kpi-card {
+      background: #f9fafb;
+      border-radius: 0.75rem;
+      padding: 0.8rem 1rem;
+      border: 1px solid #e5e7eb;
+    }
+    .kpi-label {
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .kpi-value {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-top: 0.2rem;
+    }
+    .kpi-delta {
+      font-size: 0.8rem;
+      color: #059669;
+      margin-top: 0.2rem;
+    }
+    .table-wrapper {
+      margin-top: 1rem;
+      overflow-x: auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.85rem;
+    }
+    th, td {
+      padding: 0.4rem 0.5rem;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+    }
+    th {
+      background: #f3f4f6;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background: #fafafa;
+    }
+    .chip {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.75rem;
+      font-size: 0.75rem;
+      background: #e5e7eb;
+    }
+    .chip.income {
+      background: #ecfdf3;
+      color: #166534;
+    }
+    .chip.expense {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    .hidden {
+      display: none;
+    }
+    #fileInput {
+      margin-top: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .status {
+      font-size: 0.8rem;
+      margin-top: 0.3rem;
+    }
+    .status.error {
+      color: #f97316;
+    }
+    canvas {
+      max-width: 100%;
+    }
+  </style>
+
+  <!-- Excel (SheetJS) + Chart.js vanaf CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1><span>💶</span> Huishoudbudget dashboard</h1>
+    <div style="font-size:0.8rem; opacity:0.8;">JavaScript – werkt lokaal in je browser met Excel</div>
+  </header>
+
+  <main>
+    <aside>
+      <h2>Data</h2>
+      <label for="fileInput">📂 Laad Excel-bestand (huishoud.xlsx)</label>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" />
+      <div id="fileStatus" class="status">Nog geen bestand geladen.</div>
+      <small>
+        Verwachte kolommen in je Excel-tabel:<br />
+        <strong>Datum, Type, Categorie, Omschrijving, Bedrag, Rekening, Betaalmethode, Winkel</strong><br />
+        Datum liefst als JJJJ-MM-DD.
+      </small>
+
+      <div id="filters" class="hidden">
+        <h2 style="margin-top:1.2rem;">Filters</h2>
+
+        <label for="yearSelect">Jaar</label>
+        <select id="yearSelect" multiple></select>
+
+        <label for="typeSelect">Type</label>
+        <select id="typeSelect" multiple></select>
+
+        <label for="categorySelect">Categorie</label>
+        <select id="categorySelect" multiple></select>
+
+        <label for="topSelect">Top aantal categorieën</label>
+        <select id="topSelect">
+          <option value="10">Top 10</option>
+          <option value="20">Top 20</option>
+          <option value="50">Top 50</option>
+          <option value="all">Alle</option>
+        </select>
+
+        <div class="info">
+          <div>Transacties na filters: <strong><span id="transactionCount">0</span></strong></div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div class="tabs">
+        <button class="tab-button active" data-tab="overview">📊 Overzicht</button>
+        <button class="tab-button" data-tab="category">📂 Per categorie</button>
+        <button class="tab-button" data-tab="month">📅 Per maand</button>
+        <button class="tab-button" data-tab="transactions">📄 Transacties</button>
+      </div>
+
+      <div id="tab-overview" class="tab-panel active">
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Totaal inkomsten</div>
+            <div id="kpiIncome" class="kpi-value">€ 0,00</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Totaal uitgaven</div>
+            <div id="kpiExpense" class="kpi-value">€ 0,00</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Saldo</div>
+            <div id="kpiBalance" class="kpi-value">€ 0,00</div>
+            <div id="kpiBalanceDelta" class="kpi-delta"></div>
+          </div>
+        </div>
+
+        <h3>Saldo per maand</h3>
+        <div style="height:220px;">
+          <canvas id="balanceByMonthChart"></canvas>
+        </div>
+      </div>
+
+      <div id="tab-category" class="tab-panel">
+        <h3>Netto per categorie</h3>
+        <div style="height:260px;">
+          <canvas id="byCategoryChart"></canvas>
+        </div>
+
+        <div class="table-wrapper">
+          <table id="categoryTable">
+            <thead>
+              <tr>
+                <th>Categorie</th>
+                <th>Netto (€)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-month" class="tab-panel">
+        <h3>Maandelijkse samenvatting</h3>
+        <div class="table-wrapper">
+          <table id="monthTable">
+            <thead>
+              <tr>
+                <th>Jaar-maand</th>
+                <th>Inkomsten (€)</th>
+                <th>Uitgaven (€)</th>
+                <th>Netto (€)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-transactions" class="tab-panel">
+        <h3>Transacties</h3>
+        <div class="table-wrapper">
+          <table id="transactionsTable">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Type</th>
+                <th>Categorie</th>
+                <th>Omschrijving</th>
+                <th>Bedrag (€)</th>
+                <th>Rekening</th>
+                <th>Betaalmethode</th>
+                <th>Winkel</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ------- STATE -------
+    let rawData = [];      // alle rijen uit Excel
+    let filteredData = []; // na filters
+
+    let balanceByMonthChart = null;
+    let byCategoryChart = null;
+
+    // ------- HELPERS -------
+    function formatEuro(value) {
+      return new Intl.NumberFormat("nl-BE", {
+        style: "currency",
+        currency: "EUR",
+        minimumFractionDigits: 2
+      }).format(value || 0);
+    }
+
+    function getSelectedValues(selectEl) {
+      return Array.from(selectEl.selectedOptions).map(opt => opt.value);
+    }
+
+    function uniqueValues(array, key) {
+      return Array.from(new Set(array.map(row => row[key]).filter(v => v !== null && v !== ""))).sort();
+    }
+
+    // ------- EXCEL LADEN -------
+    const fileInput = document.getElementById("fileInput");
+    const fileStatus = document.getElementById("fileStatus");
+    const filtersBox = document.getElementById("filters");
+
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      fileStatus.textContent = "Bezig met Excel lezen...";
+      fileStatus.classList.remove("error");
+
+      try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: "array" });
+
+        // neem eerste tabblad
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+        rawData = preprocessData(json);
+
+        if (!rawData.length) {
+          fileStatus.textContent = "Geen geldige rijen gevonden in Excel.";
+          return;
+        }
+
+        fileStatus.textContent = `Bestand geladen: ${file.name} (${rawData.length} transacties)`;
+        filtersBox.classList.remove("hidden");
+
+        initFilters();
+        applyFiltersAndUpdate();
+      } catch (err) {
+        console.error(err);
+        fileStatus.textContent = "Fout bij het lezen van Excel-bestand.";
+        fileStatus.classList.add("error");
+      }
+    });
+
+    function preprocessData(data) {
+      return data.map(row => {
+        const dateStr = row["Datum"];
+        const type = (row["Type"] || "").trim();
+        const categorie = (row["Categorie"] || "").trim();
+        const omschrijving = (row["Omschrijving"] || "").trim();
+        const bedragRaw = (row["Bedrag"] || "").toString().replace(",", ".");
+        const bedrag = parseFloat(bedragRaw) || 0;
+        const rekening = (row["Rekening"] || "").trim();
+        const betaalmethode = (row["Betaalmethode"] || "").trim();
+        const winkel = (row["Winkel"] || "").trim();
+
+        const date = new Date(dateStr);
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const yearMonth = isFinite(year) ? `${year}-${String(month).padStart(2, "0")}` : null;
+
+        // netto: positief voor inkomsten, negatief voor uitgaven
+        const netto = type.toLowerCase().startsWith("inkom") ? bedrag : -bedrag;
+
+        return {
+          datum: date,
+          datumStr: isFinite(date) ? date.toISOString().slice(0, 10) : (dateStr || ""),
+          year,
+          month,
+          yearMonth,
+          type,
+          categorie,
+          omschrijving,
+          bedrag,
+          netto,
+          rekening,
+          betaalmethode,
+          winkel
+        };
+      }).filter(r => isFinite(r.datum));
+    }
+
+    // ------- FILTERS -------
+    const yearSelect = document.getElementById("yearSelect");
+    const typeSelect = document.getElementById("typeSelect");
+    const categorySelect = document.getElementById("categorySelect");
+    const topSelect = document.getElementById("topSelect");
+    const transactionCount = document.getElementById("transactionCount");
+
+    function initFilters() {
+      // Jaar
+      yearSelect.innerHTML = "";
+      uniqueValues(rawData, "year").forEach(year => {
+        const opt = document.createElement("option");
+        opt.value = year;
+        opt.textContent = year;
+        opt.selected = true;
+        yearSelect.appendChild(opt);
+      });
+
+      // Type
+      typeSelect.innerHTML = "";
+      uniqueValues(rawData, "type").forEach(t => {
+        const opt = document.createElement("option");
+        opt.value = t;
+        opt.textContent = t;
+        opt.selected = true;
+        typeSelect.appendChild(opt);
+      });
+
+      // Categorie
+      categorySelect.innerHTML = "";
+      uniqueValues(rawData, "categorie").forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.textContent = c;
+        opt.selected = true;
+        categorySelect.appendChild(opt);
+      });
+
+      [yearSelect, typeSelect, categorySelect, topSelect].forEach(el => {
+        el.addEventListener("change", () => applyFiltersAndUpdate());
+      });
+    }
+
+    function applyFiltersAndUpdate() {
+      filteredData = rawData.slice();
+
+      const selectedYears = getSelectedValues(yearSelect).map(Number);
+      if (selectedYears.length) {
+        filteredData = filteredData.filter(r => selectedYears.includes(r.year));
+      }
+
+      const selectedTypes = getSelectedValues(typeSelect);
+      if (selectedTypes.length) {
+        filteredData = filteredData.filter(r => selectedTypes.includes(r.type));
+      }
+
+      const selectedCategories = getSelectedValues(categorySelect);
+      if (selectedCategories.length) {
+        filteredData = filteredData.filter(r => selectedCategories.includes(r.categorie));
+      }
+
+      transactionCount.textContent = filteredData.length.toString();
+
+      updateKPIs();
+      updateBalanceByMonthChart();
+      updateCategoryView();
+      updateMonthTable();
+      updateTransactionsTable();
+    }
+
+    // ------- KPI's -------
+    const kpiIncome = document.getElementById("kpiIncome");
+    const kpiExpense = document.getElementById("kpiExpense");
+    const kpiBalance = document.getElementById("kpiBalance");
+    const kpiBalanceDelta = document.getElementById("kpiBalanceDelta");
+
+    function updateKPIs() {
+      let income = 0;
+      let expense = 0;
+
+      filteredData.forEach(r => {
+        if (r.netto >= 0) income += r.netto;
+        else expense += -r.netto;
+      });
+
+      const balance = income - expense;
+
+      kpiIncome.textContent = formatEuro(income);
+      kpiExpense.textContent = formatEuro(expense);
+      kpiBalance.textContent = formatEuro(balance);
+      kpiBalanceDelta.textContent = balance >= 0
+        ? `Je houdt ${formatEuro(balance)} over in deze selectie`
+        : `Je komt ${formatEuro(-balance)} tekort in deze selectie`;
+    }
+
+    // ------- GRAFIEK: saldo per maand -------
+    function updateBalanceByMonthChart() {
+      const map = new Map();
+      filteredData.forEach(r => {
+        if (!r.yearMonth) return;
+        if (!map.has(r.yearMonth)) map.set(r.yearMonth, 0);
+        map.set(r.yearMonth, map.get(r.yearMonth) + r.netto);
+      });
+
+      const labels = Array.from(map.keys()).sort();
+      const values = labels.map(label => map.get(label));
+
+      const ctx = document.getElementById("balanceByMonthChart").getContext("2d");
+
+      if (balanceByMonthChart) balanceByMonthChart.destroy();
+      balanceByMonthChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            label: "Netto per maand",
+            data: values
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              ticks: { callback: (val) => formatEuro(val) }
+            }
+          }
+        }
+      });
+    }
+
+    // ------- CATEGORY VIEW -------
+    const categoryTableBody = document.querySelector("#categoryTable tbody");
+
+    function updateCategoryView() {
+      const map = new Map();
+      filteredData.forEach(r => {
+        const key = r.categorie || "(geen categorie)";
+        if (!map.has(key)) map.set(key, 0);
+        map.set(key, map.get(key) + r.netto);
+      });
+
+      let entries = Array.from(map.entries())
+        .map(([categorie, netto]) => ({ categorie, netto }))
+        .sort((a, b) => a.netto - b.netto); // asc: negatieve (grootste kosten) bovenaan
+
+      const topVal = topSelect.value;
+      if (topVal !== "all") {
+        entries = entries.slice(0, Number(topVal));
+      }
+
+      // Tabel
+      categoryTableBody.innerHTML = "";
+      entries.forEach(row => {
+        const tr = document.createElement("tr");
+        const tdCat = document.createElement("td");
+        const tdNetto = document.createElement("td");
+        tdCat.textContent = row.categorie;
+        tdNetto.textContent = formatEuro(row.netto);
+        tr.appendChild(tdCat);
+        tr.appendChild(tdNetto);
+        categoryTableBody.appendChild(tr);
+      });
+
+      // Grafiek
+      const labels = entries.map(e => e.categorie);
+      const values = entries.map(e => e.netto);
+      const ctx = document.getElementById("byCategoryChart").getContext("2d");
+      if (byCategoryChart) byCategoryChart.destroy();
+      byCategoryChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Netto per categorie",
+            data: values
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              ticks: { callback: (val) => formatEuro(val) }
+            }
+          }
+        }
+      });
+    }
+
+    // ------- MONTH TABLE -------
+    const monthTableBody = document.querySelector("#monthTable tbody");
+
+    function updateMonthTable() {
+      const map = new Map();
+      filteredData.forEach(r => {
+        if (!r.yearMonth) return;
+        if (!map.has(r.yearMonth)) {
+          map.set(r.yearMonth, { income: 0, expense: 0, net: 0 });
+        }
+        const obj = map.get(r.yearMonth);
+        if (r.netto >= 0) obj.income += r.netto;
+        else obj.expense += -r.netto;
+        obj.net = obj.income - obj.expense;
+      });
+
+      const rows = Array.from(map.entries())
+        .map(([ym, o]) => ({ yearMonth: ym, ...o }))
+        .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+
+      monthTableBody.innerHTML = "";
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.yearMonth}</td>
+          <td>${formatEuro(row.income)}</td>
+          <td>${formatEuro(row.expense)}</td>
+          <td>${formatEuro(row.net)}</td>
+        `;
+        monthTableBody.appendChild(tr);
+      });
+    }
+
+    // ------- TRANSACTIONS TABLE -------
+    const transactionsTableBody = document.querySelector("#transactionsTable tbody");
+
+    function updateTransactionsTable() {
+      const sorted = filteredData.slice().sort((a, b) => b.datum - a.datum);
+      transactionsTableBody.innerHTML = "";
+      sorted.forEach(r => {
+        const tr = document.createElement("tr");
+        const typeChipClass = r.netto >= 0 ? "income" : "expense";
+        tr.innerHTML = `
+          <td>${r.datumStr}</td>
+          <td><span class="chip ${typeChipClass}">${r.type}</span></td>
+          <td>${r.categorie}</td>
+          <td>${r.omschrijving}</td>
+          <td>${formatEuro(r.bedrag)}</td>
+          <td>${r.rekening}</td>
+          <td>${r.betaalmethode}</td>
+          <td>${r.winkel}</td>
+        `;
+        transactionsTableBody.appendChild(tr);
+      });
+    }
+
+    // ------- TABS -------
+    const tabButtons = document.querySelectorAll(".tab-button");
+    const tabPanels = {
+      overview: document.getElementById("tab-overview"),
+      category: document.getElementById("tab-category"),
+      month: document.getElementById("tab-month"),
+      transactions: document.getElementById("tab-transactions")
+    };
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.tab;
+        tabButtons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        Object.values(tabPanels).forEach(panel => panel.classList.remove("active"));
+        tabPanels[tab].classList.add("active");
+      });
+    });
+  </script>
+</body>
+</html>
