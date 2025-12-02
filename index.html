@@ -671,4 +671,115 @@
       categoryTableBody.innerHTML = "";
       entries.forEach(row => {
         const tr = document.createElement("tr");
-        const tdCat
+        const tdCat = document.createElement("td");
+        const tdNetto = document.createElement("td");
+        tdCat.textContent = row.categorie;
+        tdNetto.textContent = formatEuro(row.netto);
+        tr.appendChild(tdCat);
+        tr.appendChild(tdNetto);
+        categoryTableBody.appendChild(tr);
+      });
+
+      // Grafiek
+      const labels = entries.map(e => e.categorie);
+      const values = entries.map(e => e.netto);
+      const ctx = document.getElementById("byCategoryChart").getContext("2d");
+      if (byCategoryChart) byCategoryChart.destroy();
+      byCategoryChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Netto per categorie",
+            data: values
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              ticks: { callback: (val) => formatEuro(val) }
+            }
+          }
+        }
+      });
+    }
+
+    // ------- MONTH TABLE -------
+    const monthTableBody = document.querySelector("#monthTable tbody");
+
+    function updateMonthTable() {
+      const map = new Map();
+      filteredData.forEach(r => {
+        if (!r.yearMonth) return;
+        if (!map.has(r.yearMonth)) {
+          map.set(r.yearMonth, { income: 0, expense: 0, net: 0 });
+        }
+        const obj = map.get(r.yearMonth);
+        if (r.netto >= 0) obj.income += r.netto;
+        else obj.expense += -r.netto;
+        obj.net = obj.income - obj.expense;
+      });
+
+      const rows = Array.from(map.entries())
+        .map(([ym, o]) => ({ yearMonth: ym, ...o }))
+        .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+
+      monthTableBody.innerHTML = "";
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.yearMonth}</td>
+          <td>${formatEuro(row.income)}</td>
+          <td>${formatEuro(row.expense)}</td>
+          <td>${formatEuro(row.net)}</td>
+        `;
+        monthTableBody.appendChild(tr);
+      });
+    }
+
+    // ------- TRANSACTIONS TABLE -------
+    const transactionsTableBody = document.querySelector("#transactionsTable tbody");
+
+    function updateTransactionsTable() {
+      const sorted = filteredData.slice().sort((a, b) => b.datum - a.datum);
+      transactionsTableBody.innerHTML = "";
+      sorted.forEach(r => {
+        const tr = document.createElement("tr");
+        const isIncome = r.netto >= 0;
+        const typeChipClass = isIncome ? "income" : "expense";
+        tr.innerHTML = `
+          <td>${r.datumStr}</td>
+          <td><span class="chip ${typeChipClass}">${r.type}</span></td>
+          <td>${r.categorie}</td>
+          <td>${r.vastvariabel}</td>
+          <td>${formatEuro(r.bedrag)}</td>
+        `;
+        transactionsTableBody.appendChild(tr);
+      });
+    }
+
+    // ------- TABS -------
+    const tabButtons = document.querySelectorAll(".tab-button");
+    const tabPanels = {
+      overview: document.getElementById("tab-overview"),
+      category: document.getElementById("tab-category"),
+      month: document.getElementById("tab-month"),
+      transactions: document.getElementById("tab-transactions")
+    };
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.tab;
+        tabButtons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        Object.values(tabPanels).forEach(panel => panel.classList.remove("active"));
+        tabPanels[tab].classList.add("active");
+      });
+    });
+  </script>
+</body>
+</html>
