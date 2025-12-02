@@ -14,9 +14,9 @@
       color: #222;
     }
     header {
-      background: #1f2937;
+      background: #111827;
       color: white;
-      padding: 1rem 1.5rem;
+      padding: 0.75rem 1.5rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -34,7 +34,7 @@
     main {
       display: grid;
       grid-template-columns: 260px 1fr;
-      min-height: calc(100vh - 70px);
+      min-height: calc(100vh - 60px);
     }
     @media (max-width: 900px) {
       main {
@@ -48,13 +48,15 @@
       }
     }
     aside {
-      background: #111827;
+      background: #020617;
       color: white;
       padding: 1rem;
+      border-right: 1px solid #1f2937;
     }
     aside h2 {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       margin-top: 0;
+      margin-bottom: 0.5rem;
     }
     aside label {
       font-size: 0.85rem;
@@ -68,7 +70,7 @@
       padding: 0.4rem 0.5rem;
       border-radius: 0.4rem;
       border: none;
-      background: #1f2937;
+      background: #111827;
       color: white;
       font-size: 0.85rem;
     }
@@ -80,45 +82,62 @@
       margin-top: 1rem;
       font-size: 0.85rem;
       padding: 0.5rem;
-      background: #111827;
+      background: #020617;
       border-radius: 0.5rem;
-      border: 1px solid #374151;
+      border: 1px solid #1f2937;
     }
     section.content {
       padding: 1rem 1.5rem 2rem;
       overflow-x: auto;
     }
-    .tabs {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-      border-bottom: 1px solid #ddd;
-      flex-wrap: wrap;
+
+    /* Sidebar navigatie voor tabs */
+    .sidebar-tabs {
+      margin-top: 1.2rem;
     }
-    .tab-button {
-      padding: 0.5rem 0.9rem;
-      border: none;
-      background: transparent;
-      border-radius: 0.5rem 0.5rem 0 0;
-      cursor: pointer;
+    .sidebar-tabs-title {
       font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      opacity: 0.9;
     }
-    .tab-button.active {
-      background: #ffffff;
-      border: 1px solid #ddd;
-      border-bottom: 1px solid white;
+    .sidebar-tabs .tab-button {
+      width: 100%;
+      text-align: left;
+      padding: 0.45rem 0.6rem;
+      border-radius: 0.5rem;
+      border: 1px solid #1f2937;
+      background: #020617;
+      color: #e5e7eb;
+      cursor: pointer;
+      font-size: 0.85rem;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
     }
+    .sidebar-tabs .tab-button span.icon {
+      font-size: 1rem;
+    }
+    .sidebar-tabs .tab-button.active {
+      background: #e5e7eb;
+      color: #020617;
+      border-color: #e5e7eb;
+    }
+
+    /* Panels */
     .tab-panel {
       display: none;
       background: #ffffff;
       padding: 1rem;
-      border-radius: 0 0.75rem 0.75rem 0.75rem;
-      border: 1px solid #ddd;
-      margin-top: -1px;
+      border-radius: 0.75rem;
+      border: 1px solid #e5e7eb;
+      margin-top: 0.5rem;
     }
     .tab-panel.active {
       display: block;
     }
+
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -207,7 +226,7 @@
 <body>
   <header>
     <h1><span>💶</span> Huishoudbudget dashboard</h1>
-    <div style="font-size:0.8rem; opacity:0.8;">Leest rechtstreeks uit huishoud.xlsx</div>
+    <div style="font-size:0.8rem; opacity:0.8;">Leest tabblad “Data” uit huishoud.xlsx</div>
   </header>
 
   <main>
@@ -217,9 +236,8 @@
       <input type="file" id="fileInput" accept=".xlsx,.xls" />
       <div id="fileStatus" class="status">Nog geen bestand geladen.</div>
       <small>
-        Verwachte kolommen in je Excel-tabel (eerste rij):<br />
-        <strong>datum, bedrag, categorie, in/uitgave, vast/variabel</strong><br />
-        Hoofdletters/spaties of bv. "Datum" zijn nu ook oké.
+        Gegevens staan in tabblad <strong>Data</strong><br />
+        Kolommen (eerste rij): <strong>datum, bedrag, categorie, in/uitgave, vast/variabel</strong>.
       </small>
 
       <div id="filters" class="hidden">
@@ -248,16 +266,27 @@
         <div class="info">
           <div>Transacties na filters: <strong><span id="transactionCount">0</span></strong></div>
         </div>
+
+        <div class="sidebar-tabs">
+          <div class="sidebar-tabs-title">Weergave</div>
+          <button class="tab-button active" data-tab="overview">
+            <span class="icon">📊</span> Overzicht
+          </button>
+          <button class="tab-button" data-tab="category">
+            <span class="icon">📂</span> Per categorie
+          </button>
+          <button class="tab-button" data-tab="month">
+            <span class="icon">📅</span> Per maand
+          </button>
+          <button class="tab-button" data-tab="transactions">
+            <span class="icon">📄</span> Transacties
+          </button>
+        </div>
       </div>
     </aside>
 
     <section class="content">
-      <div class="tabs">
-        <button class="tab-button active" data-tab="overview">📊 Overzicht</button>
-        <button class="tab-button" data-tab="category">📂 Per categorie</button>
-        <button class="tab-button" data-tab="month">📅 Per maand</button>
-        <button class="tab-button" data-tab="transactions">📄 Transacties</button>
-      </div>
+      <!-- Geen tabs meer bovenaan, alleen panelen -->
 
       <div id="tab-overview" class="tab-panel active">
         <div class="kpi-grid">
@@ -387,14 +416,13 @@
     }
 
     function getCol(nameOptions) {
-      // nameOptions = array van mogelijke (genormaliseerde) namen
       for (const opt of nameOptions) {
         if (headerMap[opt]) return headerMap[opt];
       }
       return null;
     }
 
-    // ------- EXCEL LADEN -------
+    // ------- EXCEL LADEN (specifiek tabblad Data) -------
     const fileInput = document.getElementById("fileInput");
     const fileStatus = document.getElementById("fileStatus");
     const filtersBox = document.getElementById("filters");
@@ -410,8 +438,13 @@
         const data = await file.arrayBuffer();
         const workbook = XLSX.read(data, { type: "array" });
 
-        // gebruik gewoon het eerste tabblad
-        const sheetName = workbook.SheetNames[0];
+        const sheetName = "Data";
+        if (!workbook.SheetNames.includes(sheetName)) {
+          alert("Het tabblad 'Data' werd niet gevonden! Zorg dat het tabblad exact 'Data' heet.");
+          fileStatus.textContent = "Tabblad 'Data' ontbreekt.";
+          return;
+        }
+
         const sheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
@@ -419,7 +452,7 @@
         rawData = preprocessData(json);
 
         if (!rawData.length) {
-          fileStatus.textContent = "Geen geldige rijen gevonden in Excel.";
+          fileStatus.textContent = "Geen geldige rijen gevonden in tabblad 'Data'.";
           return;
         }
 
@@ -436,7 +469,7 @@
     });
 
     function preprocessData(data) {
-      // bepaal welke echte kolomnamen we gebruiken
+      // zoek echte kolomnamen op basis van varianten
       const colDatum = getCol(["datum", "date", "data"]);
       const colBedrag = getCol(["bedrag", "amount", "waarde"]);
       const colCategorie = getCol(["categorie", "category"]);
@@ -477,8 +510,7 @@
 
         // In/uitgave
         const typeRaw = colType ? (row[colType] || "").toString().trim() : "";
-        const isIncome = typeRaw.toLowerCase().startsWith("in"); // "In", "Inkomst", ...
-
+        const isIncome = typeRaw.toLowerCase().startsWith("in");
         const netto = isIncome ? bedrag : -bedrag;
 
         // Categorie en vast/variabel
@@ -761,8 +793,8 @@
       });
     }
 
-    // ------- TABS -------
-    const tabButtons = document.querySelectorAll(".tab-button");
+    // ------- TABS (sidebar knoppen) -------
+    const tabButtons = document.querySelectorAll(".sidebar-tabs .tab-button");
     const tabPanels = {
       overview: document.getElementById("tab-overview"),
       category: document.getElementById("tab-category"),
