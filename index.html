@@ -453,73 +453,84 @@
     }
 
     function preprocessRows(data) {
-      const colDatum = getCol(["datum", "date", "data"]);
-      const colBedrag = getCol(["bedrag", "amount", "waarde"]);
-      const colCategorie = getCol(["categorie", "category"]);
-      const colType = getCol([
-        "in/uitgave",
-        "inuitgave",
-        "in uitgave",
-        "in-uitgave",
-        "inuit",
-        "type"
-      ]);
-      const colVV = getCol(["vast/variabel", "vastvariabel", "vastofvariabel"]);
+  const colDatum = getCol(["datum", "date", "data"]);
+  const colBedrag = getCol(["bedrag", "amount", "waarde"]);
+  const colCategorie = getCol(["categorie", "category"]);
+  const colType = getCol([
+    "in/uitgave",
+    "inuitgave",
+    "in uitgave",
+    "in-uitgave",
+    "inuit",
+    "type"
+  ]);
+  const colVV = getCol(["vast/variabel", "vastvariabel", "vastofvariabel"]);
 
-      console.log("Kolommen gebruikt:", { colDatum, colBedrag, colCategorie, colType, colVV });
+  console.log("Kolommen gebruikt:", { colDatum, colBedrag, colCategorie, colType, colVV });
 
-      return data.map(row => {
-        // Datum
-        let rawDate = colDatum ? row[colDatum] : null;
-        let date = parseExcelDate(rawDate);
-        if (!date || isNaN(date.getTime())) return null;
+  return data.map(row => {
+    // Datum
+    let rawDate = colDatum ? row[colDatum] : null;
+    let date = parseExcelDate(rawDate);
+    if (!date || isNaN(date.getTime())) return null;
 
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
-        const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-        // Bedrag
-        let bedragRaw = colBedrag ? row[colBedrag] : 0;
-        let bedrag;
-        if (typeof bedragRaw === "number") {
-          bedrag = bedragRaw;
-        } else {
-          bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
-        }
-
-        // Inkomst / Uitgave
-        let typeRaw = colType ? (row[colType] || "").toString().trim().toLowerCase() : "";
-        let netto = 0;
-
-        if (typeRaw.startsWith("in")) {
-          // Inkomst
-          netto = bedrag;
-        } else if (typeRaw.startsWith("uit")) {
-          // Uitgave
-          netto = -bedrag;
-        } else {
-          // Onbekend type → 0 en waarschuwing
-          console.warn("Onbekend in/uit-type:", row[colType], "rij:", row);
-          netto = 0;
-        }
-
-        const categorie = colCategorie ? (row[colCategorie] || "").toString().trim() : "";
-        const vastVar = colVV ? (row[colVV] || "").toString().trim() : "";
-
-        return {
-          datum: date,
-          datumStr: date.toISOString().slice(0, 10),
-          year,
-          month,
-          yearMonth,
-          type: row[colType] || "",
-          categorie,
-          vastvariabel: vastVar,
-          bedrag,
-          netto
-        };
-      }).filter(r => r !== null);
+    // Bedrag
+    let bedragRaw = colBedrag ? row[colBedrag] : 0;
+    let bedrag;
+    if (typeof bedragRaw === "number") {
+      bedrag = bedragRaw;
+    } else {
+      bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
     }
+
+    // Inkomst / Uitgave
+    const rawTypeOrig = colType ? (row[colType] || "").toString().trim() : "";
+    const typeLower = rawTypeOrig.toLowerCase();
+
+    let netto = bedrag;
+
+    // Logica:
+    //  - als bedrag < 0: vertrouw op Excel → laat het negatief
+    //  - als bedrag > 0: gebruik Inkomst/Uitgave om teken te bepalen
+    if (bedrag > 0) {
+      if (typeLower.startsWith("in")) {
+        // Inkomst: +bedrag (al zo)
+        netto = bedrag;
+      } else if (typeLower.startsWith("uit")) {
+        // Uitgave: maak negatief
+        netto = -bedrag;
+      } else {
+        // onbekend type → laat positief zoals het is
+        console.warn("Onbekend in/uit-type (positief bedrag):", rawTypeOrig, "rij:", row);
+        netto = bedrag;
+      }
+    } else if (bedrag < 0) {
+      // negatieve bedragen altijd negatief laten
+      netto = bedrag;
+    } // bedrag == 0 → netto = 0
+
+    const categorie = colCategorie ? (row[colCategorie] || "").toString().trim() : "";
+    const vastVar = colVV ? (row[colVV] || "").toString().trim() : "";
+
+    return {
+      datum: date,
+      datumStr: date.toISOString().slice(0, 10),
+      year,
+      month,
+      yearMonth,
+      type: rawTypeOrig,
+      categorie,
+      vastvariabel: vastVar,
+      bedrag,
+      netto
+    };
+  }).filter(r => r !== null);
+}
+
 
     // --- JAARFILTER & MAANDEN ---
     function setupYearFilter() {
