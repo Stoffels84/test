@@ -1,8 +1,0 @@
-streamlit
-pandas
-openpyxl
-matplotlib
-reportlab
-plotly
-streamlit-autorefresh
-python-dotenv
