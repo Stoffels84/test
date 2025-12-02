@@ -71,3 +71,645 @@
       width: 100%;
       padding: 0.35rem 0.5rem;
       border-radius: 0.4rem;
+      border: 1px solid #1f2937;
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 0.85rem;
+    }
+    .status {
+      font-size: 0.8rem;
+      margin-top: 0.4rem;
+    }
+    .status.error {
+      color: #f97316;
+    }
+    aside small {
+      font-size: 0.75rem;
+      opacity: 0.8;
+      display: block;
+      margin-top: 0.3rem;
+    }
+
+    .month-list {
+      margin-top: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-height: 60vh;
+      overflow-y: auto;
+      padding-right: 0.2rem;
+    }
+    .month-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      border-radius: 0.55rem;
+      border: 1px solid #1f2937;
+      background: #020617;
+      color: #e5e7eb;
+      padding: 0.35rem 0.5rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .month-item span.label {
+      font-weight: 500;
+    }
+    .month-item span.amount {
+      font-size: 0.8rem;
+      opacity: 0.85;
+    }
+    .month-item.positive span.amount {
+      color: #4ade80;
+    }
+    .month-item.negative span.amount {
+      color: #f97373;
+    }
+    .month-item.active {
+      background: #e5e7eb;
+      color: #020617;
+      border-color: #e5e7eb;
+    }
+
+    section.content {
+      padding: 1rem 1.4rem 2rem;
+      overflow-x: auto;
+    }
+
+    .period-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .period-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .period-subtitle {
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.9rem;
+      margin-bottom: 1rem;
+    }
+    .kpi-card {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      padding: 0.75rem 0.9rem;
+      border: 1px solid #e5e7eb;
+    }
+    .kpi-label {
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .kpi-value {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-top: 0.2rem;
+    }
+    .kpi-delta {
+      font-size: 0.8rem;
+      margin-top: 0.2rem;
+    }
+    .kpi-delta.positive {
+      color: #059669;
+    }
+    .kpi-delta.negative {
+      color: #b91c1c;
+    }
+
+    .panel {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      border: 1px solid #e5e7eb;
+      padding: 0.8rem 0.9rem;
+      margin-bottom: 1rem;
+    }
+    .panel h3 {
+      margin: 0 0 0.4rem 0;
+      font-size: 1rem;
+    }
+    .panel small {
+      font-size: 0.78rem;
+      color: #6b7280;
+    }
+
+    .table-wrapper {
+      margin-top: 0.4rem;
+      overflow-x: auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.82rem;
+    }
+    th, td {
+      padding: 0.35rem 0.45rem;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      background: #f3f4f6;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background: #fafafa;
+    }
+    .chip {
+      display: inline-block;
+      padding: 0.05rem 0.35rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      background: #e5e7eb;
+    }
+    .chip.income {
+      background: #ecfdf3;
+      color: #166534;
+    }
+    .chip.expense {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+  </style>
+
+  <!-- Alleen SheetJS nodig -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1><span>💶</span> Huishoudbudget</h1>
+    <small>Data uit huishoud.xlsx • tabblad “Data”</small>
+  </header>
+
+  <main>
+    <aside>
+      <h2>Periode</h2>
+      <div id="fileStatus" class="status">huishoud.xlsx aan het laden…</div>
+      <small>Bestanden in dezelfde map: <strong>index.html</strong> en <strong>huishoud.xlsx</strong>.</small>
+
+      <label for="yearSelect">Jaar</label>
+      <select id="yearSelect"></select>
+
+      <h2 style="margin-top:0.9rem;">Maanden</h2>
+      <small>Kies een maand of “Alle maanden”.</small>
+      <div id="monthList" class="month-list"></div>
+    </aside>
+
+    <section class="content">
+      <div class="period-header">
+        <div>
+          <div class="period-title" id="periodTitle">Geen periode geselecteerd</div>
+          <div class="period-subtitle" id="periodSubtitle"></div>
+        </div>
+        <div class="period-subtitle" id="rowsInfo"></div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Inkomsten</div>
+          <div id="kpiIncome" class="kpi-value">€ 0,00</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Uitgaven</div>
+          <div id="kpiExpense" class="kpi-value">€ 0,00</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Saldo</div>
+          <div id="kpiBalance" class="kpi-value">€ 0,00</div>
+          <div id="kpiBalanceDelta" class="kpi-delta"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Per categorie</h3>
+        <small>Netto bedrag (inkomsten positief, uitgaven negatief).</small>
+        <div class="table-wrapper">
+          <table id="categoryTable">
+            <thead>
+              <tr>
+                <th>Categorie</th>
+                <th>Netto (€)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Transacties</h3>
+        <small>Gefilterd op geselecteerd jaar/maand.</small>
+        <div class="table-wrapper">
+          <table id="transactionsTable">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>In/uitgave</th>
+                <th>Categorie</th>
+                <th>Vast/variabel</th>
+                <th>Bedrag (€)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- STATE ---
+    let allRows = [];
+    let selectedYear = null;
+    let selectedMonth = "all"; // "all" of 1..12
+    let headerMap = {};
+
+    // --- HELPERS ---
+    function formatEuro(value) {
+      return new Intl.NumberFormat("nl-BE", {
+        style: "currency",
+        currency: "EUR",
+        minimumFractionDigits: 2
+      }).format(value || 0);
+    }
+
+    function normalizeKey(key) {
+      return key.toString().toLowerCase().trim().replace(/\s+/g, "");
+    }
+
+    function buildHeaderMap(json) {
+      headerMap = {};
+      if (!json || !json.length) return;
+      const firstRow = json[0];
+      Object.keys(firstRow).forEach(origKey => {
+        const norm = normalizeKey(origKey);
+        if (!headerMap[norm]) headerMap[norm] = origKey;
+      });
+      console.log("Gevonden kolommen:", headerMap);
+    }
+
+    function getCol(nameOptions) {
+      for (const opt of nameOptions) {
+        if (headerMap[opt]) return headerMap[opt];
+      }
+      return null;
+    }
+
+    function excelSerialDateToJSDate(serial) {
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      return new Date(excelEpoch.getTime() + serial * 86400000);
+    }
+
+    function parseExcelDate(rawDate) {
+      if (rawDate instanceof Date) return rawDate;
+      if (typeof rawDate === "number") return excelSerialDateToJSDate(rawDate);
+      if (typeof rawDate === "string") {
+        const s = rawDate.trim();
+        if (!s) return null;
+        let d = new Date(s);
+        if (!isNaN(d.getTime())) return d;
+        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (m) {
+          let day = parseInt(m[1], 10);
+          let month = parseInt(m[2], 10);
+          let year = parseInt(m[3], 10);
+          if (year < 100) year += 2000;
+          d = new Date(year, month - 1, day);
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+      return null;
+    }
+
+    // --- HTML refs ---
+    const fileStatus = document.getElementById("fileStatus");
+    const yearSelect = document.getElementById("yearSelect");
+    const monthList = document.getElementById("monthList");
+
+    const periodTitle = document.getElementById("periodTitle");
+    const periodSubtitle = document.getElementById("periodSubtitle");
+    const rowsInfo = document.getElementById("rowsInfo");
+
+    const kpiIncome = document.getElementById("kpiIncome");
+    const kpiExpense = document.getElementById("kpiExpense");
+    const kpiBalance = document.getElementById("kpiBalance");
+    const kpiBalanceDelta = document.getElementById("kpiBalanceDelta");
+
+    const categoryTableBody = document.querySelector("#categoryTable tbody");
+    const transactionsTableBody = document.querySelector("#transactionsTable tbody");
+
+    // --- DATA LADEN ---
+    async function loadExcel() {
+      try {
+        fileStatus.textContent = "huishoud.xlsx aan het laden…";
+
+        const resp = await fetch("huishoud.xlsx");
+        if (!resp.ok) {
+          fileStatus.textContent = "huishoud.xlsx niet gevonden. Staat het bestand in dezelfde map?";
+          fileStatus.classList.add("error");
+          return;
+        }
+
+        const buf = await resp.arrayBuffer();
+        const workbook = XLSX.read(buf, { type: "array", cellDates: true });
+
+        const sheetName = "Data";
+        if (!workbook.SheetNames.includes(sheetName)) {
+          fileStatus.textContent = "Tabblad 'Data' niet gevonden in huishoud.xlsx.";
+          fileStatus.classList.add("error");
+          return;
+        }
+
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "", cellDates: true });
+        console.log("Ruwe rijen in Data:", json.length);
+
+        buildHeaderMap(json);
+        allRows = preprocessRows(json);
+        console.log("Bruikbare rijen:", allRows.length);
+
+        if (!allRows.length) {
+          fileStatus.textContent = "Geen geldige rijen gevonden (datum/bedrag leeg?).";
+          fileStatus.classList.add("error");
+          return;
+        }
+
+        fileStatus.textContent = `huishoud.xlsx geladen (${allRows.length} transacties).`;
+        setupYearFilter();
+        updateMonthList();
+        updateView();
+      } catch (err) {
+        console.error(err);
+        fileStatus.textContent = "Fout bij het laden van huishoud.xlsx.";
+        fileStatus.classList.add("error");
+      }
+    }
+
+    function preprocessRows(data) {
+      const colDatum = getCol(["datum", "date", "data"]);
+      const colBedrag = getCol(["bedrag", "amount", "waarde"]);
+      const colCategorie = getCol(["categorie", "category"]);
+      const colType = getCol(["in/uitgave", "inuitgave", "inuit", "type"]);
+      const colVV = getCol(["vast/variabel", "vastvariabel", "vastofvariabel"]);
+
+      console.log("Kolommen gebruikt:", { colDatum, colBedrag, colCategorie, colType, colVV });
+
+      return data.map(row => {
+        let rawDate = colDatum ? row[colDatum] : null;
+        let date = parseExcelDate(rawDate);
+        if (!date || isNaN(date.getTime())) return null;
+
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+        let bedragRaw = colBedrag ? row[colBedrag] : 0;
+        let bedrag;
+        if (typeof bedragRaw === "number") {
+          bedrag = bedragRaw;
+        } else {
+          bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
+        }
+
+        const typeRaw = colType ? (row[colType] || "").toString().trim() : "";
+        const isIncome = typeRaw.toLowerCase().startsWith("in");
+        const netto = isIncome ? bedrag : -bedrag;
+
+        const categorie = colCategorie ? (row[colCategorie] || "").toString().trim() : "";
+        const vastVar = colVV ? (row[colVV] || "").toString().trim() : "";
+
+        return {
+          datum: date,
+          datumStr: date.toISOString().slice(0, 10),
+          year,
+          month,
+          yearMonth,
+          type: typeRaw,
+          categorie,
+          vastvariabel: vastVar,
+          bedrag,
+          netto
+        };
+      }).filter(r => r !== null);
+    }
+
+    // --- JAARFILTER & MAANDEN ---
+    function setupYearFilter() {
+      const years = Array.from(new Set(allRows.map(r => r.year))).sort();
+      yearSelect.innerHTML = "";
+      years.forEach(y => {
+        const opt = document.createElement("option");
+        opt.value = y;
+        opt.textContent = y;
+        yearSelect.appendChild(opt);
+      });
+      // standaard: laatste jaar
+      selectedYear = years[years.length - 1];
+      yearSelect.value = selectedYear;
+
+      yearSelect.addEventListener("change", () => {
+        selectedYear = parseInt(yearSelect.value, 10);
+        selectedMonth = "all";
+        updateMonthList();
+        updateView();
+      });
+    }
+
+    function updateMonthList() {
+      monthList.innerHTML = "";
+      if (!selectedYear) return;
+
+      // maak aggregatie per maand voor gekozen jaar
+      const monthsMap = new Map(); // maand -> {net, count}
+      allRows
+        .filter(r => r.year === selectedYear)
+        .forEach(r => {
+          if (!monthsMap.has(r.month)) {
+            monthsMap.set(r.month, { net: 0, count: 0 });
+          }
+          const obj = monthsMap.get(r.month);
+          obj.net += r.netto;
+          obj.count += 1;
+        });
+
+      // knop "alle maanden"
+      const allObj = Array.from(monthsMap.values()).reduce(
+        (acc, v) => ({ net: acc.net + v.net, count: acc.count + v.count }),
+        { net: 0, count: 0 }
+      );
+
+      const allBtn = document.createElement("button");
+      allBtn.type = "button";
+      allBtn.className = "month-item" + (selectedMonth === "all" ? " active" : "");
+      if (allObj.net > 0) allBtn.classList.add("positive");
+      if (allObj.net < 0) allBtn.classList.add("negative");
+      allBtn.dataset.month = "all";
+      allBtn.innerHTML = `
+        <span class="label">Alle maanden</span>
+        <span class="amount">${allObj.count} tr. • ${formatEuro(allObj.net)}</span>
+      `;
+      allBtn.addEventListener("click", () => {
+        selectedMonth = "all";
+        updateMonthListActiveState();
+        updateView();
+      });
+      monthList.appendChild(allBtn);
+
+      // per maand
+      const monthNames = [
+        "", "januari", "februari", "maart", "april", "mei", "juni",
+        "juli", "augustus", "september", "oktober", "november", "december"
+      ];
+
+      const sortedMonths = Array.from(monthsMap.entries()).sort((a, b) => a[0] - b[0]);
+
+      sortedMonths.forEach(([m, obj]) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "month-item";
+        if (selectedMonth === m) btn.classList.add("active");
+        if (obj.net > 0) btn.classList.add("positive");
+        if (obj.net < 0) btn.classList.add("negative");
+        btn.dataset.month = String(m);
+        btn.innerHTML = `
+          <span class="label">${monthNames[m]}</span>
+          <span class="amount">${obj.count} tr. • ${formatEuro(obj.net)}</span>
+        `;
+        btn.addEventListener("click", () => {
+          selectedMonth = m;
+          updateMonthListActiveState();
+          updateView();
+        });
+        monthList.appendChild(btn);
+      });
+    }
+
+    function updateMonthListActiveState() {
+      document.querySelectorAll(".month-item").forEach(btn => {
+        const m = btn.dataset.month === "all" ? "all" : parseInt(btn.dataset.month, 10);
+        btn.classList.toggle("active", m === selectedMonth);
+      });
+    }
+
+    // --- HOOFDWEERGAVE ---
+    function updateView() {
+      if (!selectedYear) {
+        periodTitle.textContent = "Geen jaar geselecteerd";
+        periodSubtitle.textContent = "";
+        rowsInfo.textContent = "";
+        return;
+      }
+
+      const monthNames = [
+        "", "januari", "februari", "maart", "april", "mei", "juni",
+        "juli", "augustus", "september", "oktober", "november", "december"
+      ];
+
+      const rows = allRows.filter(r =>
+        r.year === selectedYear &&
+        (selectedMonth === "all" || r.month === selectedMonth)
+      );
+
+      if (selectedMonth === "all") {
+        periodTitle.textContent = `Hele jaar ${selectedYear}`;
+      } else {
+        periodTitle.textContent = `${monthNames[selectedMonth]} ${selectedYear}`;
+      }
+
+      if (!rows.length) {
+        periodSubtitle.textContent = "Geen transacties in deze periode.";
+      } else {
+        const minDate = rows.reduce((min, r) => r.datum < min ? r.datum : min, rows[0].datum);
+        const maxDate = rows.reduce((max, r) => r.datum > max ? r.datum : max, rows[0].datum);
+        periodSubtitle.textContent = `Van ${minDate.toISOString().slice(0,10)} t.e.m. ${maxDate.toISOString().slice(0,10)}`;
+      }
+
+      rowsInfo.textContent = `${rows.length} transacties`;
+
+      updateKPIs(rows);
+      updateCategoryTable(rows);
+      updateTransactionsTable(rows);
+    }
+
+    function updateKPIs(rows) {
+      let income = 0;
+      let expense = 0;
+
+      rows.forEach(r => {
+        if (r.netto >= 0) income += r.netto;
+        else expense += -r.netto;
+      });
+
+      const balance = income - expense;
+
+      kpiIncome.textContent = formatEuro(income);
+      kpiExpense.textContent = formatEuro(expense);
+      kpiBalance.textContent = formatEuro(balance);
+
+      kpiBalanceDelta.textContent = "";
+      kpiBalanceDelta.className = "kpi-delta";
+      if (!rows.length) return;
+
+      if (balance >= 0) {
+        kpiBalanceDelta.textContent = `Je houdt ${formatEuro(balance)} over in deze periode.`;
+        kpiBalanceDelta.classList.add("positive");
+      } else {
+        kpiBalanceDelta.textContent = `Je komt ${formatEuro(-balance)} tekort in deze periode.`;
+        kpiBalanceDelta.classList.add("negative");
+      }
+    }
+
+    function updateCategoryTable(rows) {
+      const map = new Map();
+      rows.forEach(r => {
+        const key = r.categorie || "(geen categorie)";
+        if (!map.has(key)) map.set(key, 0);
+        map.set(key, map.get(key) + r.netto);
+      });
+
+      const entries = Array.from(map.entries())
+        .map(([categorie, netto]) => ({ categorie, netto }))
+        .sort((a, b) => a.netto - b.netto); // grootste kosten bovenaan
+
+      categoryTableBody.innerHTML = "";
+      entries.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.categorie}</td>
+          <td>${formatEuro(row.netto)}</td>
+        `;
+        categoryTableBody.appendChild(tr);
+      });
+    }
+
+    function updateTransactionsTable(rows) {
+      const sorted = rows.slice().sort((a, b) => b.datum - a.datum);
+      transactionsTableBody.innerHTML = "";
+      sorted.forEach(r => {
+        const tr = document.createElement("tr");
+        const typeChipClass = r.netto >= 0 ? "income" : "expense";
+        tr.innerHTML = `
+          <td>${r.datumStr}</td>
+          <td><span class="chip ${typeChipClass}">${r.type}</span></td>
+          <td>${r.categorie}</td>
+          <td>${r.vastvariabel}</td>
+          <td>${formatEuro(r.bedrag)}</td>
+        `;
+        transactionsTableBody.appendChild(tr);
+      });
+    }
+
+    // tabs in sidebar (alleen zicht toggelen)
+    document.addEventListener("DOMContentLoaded", () => {
+      loadExcel();
+    });
+  </script>
+</body>
+</html>
