@@ -207,7 +207,7 @@
 <body>
   <header>
     <h1><span>💶</span> Huishoudbudget dashboard</h1>
-    <div style="font-size:0.8rem; opacity:0.8;">Leest rechtstreeks uit huishoud.xlsx (tabblad: data)</div>
+    <div style="font-size:0.8rem; opacity:0.8;">Leest rechtstreeks uit huishoud.xlsx</div>
   </header>
 
   <main>
@@ -217,8 +217,8 @@
       <input type="file" id="fileInput" accept=".xlsx,.xls" />
       <div id="fileStatus" class="status">Nog geen bestand geladen.</div>
       <small>
-        Verwachte kolommen in tabblad <strong>data</strong>:<br />
-        <strong>data, bedrag, categorie, in/uitgave, vast/variabel</strong><br />
+        Verwachte kolommen in je Excel-tabel (eerste rij):<br />
+        <strong>datum, bedrag, categorie, in/uitgave, vast/variabel</strong><br />
         <em>in/uitgave</em> bv. "Inkomst", "In", "Uitgave", "Uit" – alles wat met "in" begint telt als inkomen.
       </small>
 
@@ -384,18 +384,15 @@
         const data = await file.arrayBuffer();
         const workbook = XLSX.read(data, { type: "array" });
 
-        // probeer eerst tabblad 'data', anders eerste tab
-        const sheetName = workbook.SheetNames.includes("data")
-          ? "data"
-          : workbook.SheetNames[0];
-
+        // gebruik gewoon het eerste tabblad
+        const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
         rawData = preprocessData(json);
 
         if (!rawData.length) {
-          fileStatus.textContent = "Geen geldige rijen gevonden in Excel (tabblad 'data').";
+          fileStatus.textContent = "Geen geldige rijen gevonden in Excel.";
           return;
         }
 
@@ -413,8 +410,8 @@
 
     function preprocessData(data) {
       return data.map(row => {
-        // Datum
-        let rawDate = row["data"];
+        // Datum: kolom 'datum'
+        let rawDate = row["datum"];
         let date;
 
         if (rawDate instanceof Date) {
@@ -435,7 +432,7 @@
         const month = date.getMonth() + 1;
         const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-        // Bedrag
+        // Bedrag: kolom 'bedrag'
         let bedragRaw = row["bedrag"];
         let bedrag;
         if (typeof bedragRaw === "number") {
@@ -444,11 +441,12 @@
           bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
         }
 
-        // In/uitgave
+        // In/uitgave: kolom 'in/uitgave'
         const typeRaw = (row["in/uitgave"] || "").toString().trim();
         const isIncome = typeRaw.toLowerCase().startsWith("in"); // "In", "Inkomst", ...
         const netto = isIncome ? bedrag : -bedrag;
 
+        // Categorie en vast/variabel
         const categorie = (row["categorie"] || "").toString().trim();
         const vastVar = (row["vast/variabel"] || "").toString().trim();
 
