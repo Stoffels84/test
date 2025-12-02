@@ -5,7 +5,7 @@
   <title>Huishoudbudget Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Kleine basic stijl -->
+  <!-- Stijl -->
   <style>
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -200,14 +200,14 @@
     }
   </style>
 
-  <!-- Excel (SheetJS) + Chart.js vanaf CDN -->
+  <!-- Excel (SheetJS) + Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header>
     <h1><span>💶</span> Huishoudbudget dashboard</h1>
-    <div style="font-size:0.8rem; opacity:0.8;">JavaScript – werkt lokaal in je browser met Excel</div>
+    <div style="font-size:0.8rem; opacity:0.8;">Leest rechtstreeks uit huishoud.xlsx (tabblad: data)</div>
   </header>
 
   <main>
@@ -217,9 +217,9 @@
       <input type="file" id="fileInput" accept=".xlsx,.xls" />
       <div id="fileStatus" class="status">Nog geen bestand geladen.</div>
       <small>
-        Verwachte kolommen in je Excel-tabel:<br />
-        <strong>Datum, Type, Categorie, Omschrijving, Bedrag, Rekening, Betaalmethode, Winkel</strong><br />
-        Datum liefst als JJJJ-MM-DD.
+        Verwachte kolommen in tabblad <strong>data</strong>:<br />
+        <strong>data, bedrag, categorie, in/uitgave, vast/variabel</strong><br />
+        <em>in/uitgave</em> bv. "Inkomst", "In", "Uitgave", "Uit" – alles wat met "in" begint telt als inkomen.
       </small>
 
       <div id="filters" class="hidden">
@@ -228,11 +228,14 @@
         <label for="yearSelect">Jaar</label>
         <select id="yearSelect" multiple></select>
 
-        <label for="typeSelect">Type</label>
+        <label for="typeSelect">In/uitgave</label>
         <select id="typeSelect" multiple></select>
 
         <label for="categorySelect">Categorie</label>
         <select id="categorySelect" multiple></select>
+
+        <label for="vvSelect">Vast / variabel</label>
+        <select id="vvSelect" multiple></select>
 
         <label for="topSelect">Top aantal categorieën</label>
         <select id="topSelect">
@@ -322,13 +325,10 @@
             <thead>
               <tr>
                 <th>Datum</th>
-                <th>Type</th>
+                <th>In/uitgave</th>
                 <th>Categorie</th>
-                <th>Omschrijving</th>
+                <th>Vast/variabel</th>
                 <th>Bedrag (€)</th>
-                <th>Rekening</th>
-                <th>Betaalmethode</th>
-                <th>Winkel</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -363,6 +363,11 @@
       return Array.from(new Set(array.map(row => row[key]).filter(v => v !== null && v !== ""))).sort();
     }
 
+    function excelSerialDateToJSDate(serial) {
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel dag 0
+      return new Date(excelEpoch.getTime() + serial * 86400000);
+    }
+
     // ------- EXCEL LADEN -------
     const fileInput = document.getElementById("fileInput");
     const fileStatus = document.getElementById("fileStatus");
@@ -379,16 +384,18 @@
         const data = await file.arrayBuffer();
         const workbook = XLSX.read(data, { type: "array" });
 
-        // neem eerste tabblad
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
+        // probeer eerst tabblad 'data', anders eerste tab
+        const sheetName = workbook.SheetNames.includes("data")
+          ? "data"
+          : workbook.SheetNames[0];
 
+        const sheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
         rawData = preprocessData(json);
 
         if (!rawData.length) {
-          fileStatus.textContent = "Geen geldige rijen gevonden in Excel.";
+          fileStatus.textContent = "Geen geldige rijen gevonden in Excel (tabblad 'data').";
           return;
         }
 
@@ -406,46 +413,65 @@
 
     function preprocessData(data) {
       return data.map(row => {
-        const dateStr = row["Datum"];
-        const type = (row["Type"] || "").trim();
-        const categorie = (row["Categorie"] || "").trim();
-        const omschrijving = (row["Omschrijving"] || "").trim();
-        const bedragRaw = (row["Bedrag"] || "").toString().replace(",", ".");
-        const bedrag = parseFloat(bedragRaw) || 0;
-        const rekening = (row["Rekening"] || "").trim();
-        const betaalmethode = (row["Betaalmethode"] || "").trim();
-        const winkel = (row["Winkel"] || "").trim();
+        // Datum
+        let rawDate = row["data"];
+        let date;
 
-        const date = new Date(dateStr);
+        if (rawDate instanceof Date) {
+          date = rawDate;
+        } else if (typeof rawDate === "number") {
+          // Excel-serienummer
+          date = excelSerialDateToJSDate(rawDate);
+        } else {
+          date = new Date(rawDate);
+        }
+
+        const validDate = !isNaN(date.getTime());
+        if (!validDate) {
+          return null;
+        }
+
         const year = date.getFullYear();
         const month = date.getMonth() + 1;
-        const yearMonth = isFinite(year) ? `${year}-${String(month).padStart(2, "0")}` : null;
+        const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-        // netto: positief voor inkomsten, negatief voor uitgaven
-        const netto = type.toLowerCase().startsWith("inkom") ? bedrag : -bedrag;
+        // Bedrag
+        let bedragRaw = row["bedrag"];
+        let bedrag;
+        if (typeof bedragRaw === "number") {
+          bedrag = bedragRaw;
+        } else {
+          bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
+        }
+
+        // In/uitgave
+        const typeRaw = (row["in/uitgave"] || "").toString().trim();
+        const isIncome = typeRaw.toLowerCase().startsWith("in"); // "In", "Inkomst", ...
+        const netto = isIncome ? bedrag : -bedrag;
+
+        const categorie = (row["categorie"] || "").toString().trim();
+        const vastVar = (row["vast/variabel"] || "").toString().trim();
 
         return {
           datum: date,
-          datumStr: isFinite(date) ? date.toISOString().slice(0, 10) : (dateStr || ""),
+          datumStr: date.toISOString().slice(0, 10),
           year,
           month,
           yearMonth,
-          type,
+          type: typeRaw,
           categorie,
-          omschrijving,
+          vastvariabel: vastVar,
           bedrag,
-          netto,
-          rekening,
-          betaalmethode,
-          winkel
+          netto
         };
-      }).filter(r => isFinite(r.datum));
+      }).filter(r => r !== null);
     }
 
     // ------- FILTERS -------
     const yearSelect = document.getElementById("yearSelect");
     const typeSelect = document.getElementById("typeSelect");
     const categorySelect = document.getElementById("categorySelect");
+    const vvSelect = document.getElementById("vvSelect");
     const topSelect = document.getElementById("topSelect");
     const transactionCount = document.getElementById("transactionCount");
 
@@ -460,7 +486,7 @@
         yearSelect.appendChild(opt);
       });
 
-      // Type
+      // In/uitgave
       typeSelect.innerHTML = "";
       uniqueValues(rawData, "type").forEach(t => {
         const opt = document.createElement("option");
@@ -480,7 +506,17 @@
         categorySelect.appendChild(opt);
       });
 
-      [yearSelect, typeSelect, categorySelect, topSelect].forEach(el => {
+      // Vast/variabel
+      vvSelect.innerHTML = "";
+      uniqueValues(rawData, "vastvariabel").forEach(v => {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = v;
+        opt.selected = true;
+        vvSelect.appendChild(opt);
+      });
+
+      [yearSelect, typeSelect, categorySelect, vvSelect, topSelect].forEach(el => {
         el.addEventListener("change", () => applyFiltersAndUpdate());
       });
     }
@@ -501,6 +537,11 @@
       const selectedCategories = getSelectedValues(categorySelect);
       if (selectedCategories.length) {
         filteredData = filteredData.filter(r => selectedCategories.includes(r.categorie));
+      }
+
+      const selectedVV = getSelectedValues(vvSelect);
+      if (selectedVV.length) {
+        filteredData = filteredData.filter(r => selectedVV.includes(r.vastvariabel));
       }
 
       transactionCount.textContent = filteredData.length.toString();
@@ -586,7 +627,7 @@
 
       let entries = Array.from(map.entries())
         .map(([categorie, netto]) => ({ categorie, netto }))
-        .sort((a, b) => a.netto - b.netto); // asc: negatieve (grootste kosten) bovenaan
+        .sort((a, b) => a.netto - b.netto); // asc: grootste kosten (negatief) eerst
 
       const topVal = topSelect.value;
       if (topVal !== "all") {
@@ -674,16 +715,14 @@
       transactionsTableBody.innerHTML = "";
       sorted.forEach(r => {
         const tr = document.createElement("tr");
-        const typeChipClass = r.netto >= 0 ? "income" : "expense";
+        const isIncome = r.netto >= 0;
+        const typeChipClass = isIncome ? "income" : "expense";
         tr.innerHTML = `
           <td>${r.datumStr}</td>
           <td><span class="chip ${typeChipClass}">${r.type}</span></td>
           <td>${r.categorie}</td>
-          <td>${r.omschrijving}</td>
+          <td>${r.vastvariabel}</td>
           <td>${formatEuro(r.bedrag)}</td>
-          <td>${r.rekening}</td>
-          <td>${r.betaalmethode}</td>
-          <td>${r.winkel}</td>
         `;
         transactionsTableBody.appendChild(tr);
       });
