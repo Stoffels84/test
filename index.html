@@ -184,6 +184,42 @@
       color: #b91c1c;
     }
 
+    /* Gauges */
+    .gauge-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin: 0 0 1rem 0;
+    }
+    .gauge-card {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      border: 1px solid #e5e7eb;
+      padding: 0.8rem 0.9rem 1rem;
+      text-align: center;
+    }
+    .gauge-card h3 {
+      margin: 0 0 0.4rem 0;
+      font-size: 1rem;
+    }
+    .gauge-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    .gauge-value {
+      margin-top: 0.3rem;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #4b5563;
+    }
+    .gauge-caption {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-top: 0.15rem;
+    }
+
     .panel {
       background: #ffffff;
       border-radius: 0.75rem;
@@ -239,8 +275,9 @@
     }
   </style>
 
-  <!-- SheetJS -->
+  <!-- SheetJS + Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header>
@@ -287,6 +324,27 @@
         </div>
       </div>
 
+      <!-- NIEUW: gauges -->
+      <div class="gauge-grid">
+        <div class="gauge-card">
+          <h3>Gezondheidsindex</h3>
+          <div class="gauge-wrapper">
+            <canvas id="healthGauge"></canvas>
+          </div>
+          <div id="healthGaugeValue" class="gauge-value">–</div>
+          <div class="gauge-caption">0 = slecht, 100 = zeer gezond</div>
+        </div>
+
+        <div class="gauge-card">
+          <h3>Uitgaven t.o.v. inkomen</h3>
+          <div class="gauge-wrapper">
+            <canvas id="ratioGauge"></canvas>
+          </div>
+          <div id="ratioGaugeValue" class="gauge-value">–</div>
+          <div class="gauge-caption">Groen &lt; 33%, geel 33–100%, rood ≥ 100%</div>
+        </div>
+      </div>
+
       <div class="panel">
         <h3>Per categorie</h3>
         <small>Netto bedrag (inkomsten positief, uitgaven negatief).</small>
@@ -328,8 +386,10 @@
     // --- STATE ---
     let allRows = [];
     let selectedYear = null;
-    let selectedMonth = "all"; // "all" of 1..12
+    let selectedMonth = "all";
     let headerMap = {};
+    let healthGaugeChart = null;
+    let ratioGaugeChart = null;
 
     // --- HELPERS ---
     function formatEuro(value) {
@@ -452,87 +512,76 @@
       }
     }
 
+    // bedragen + Inkomst/Uitgave-logica
     function preprocessRows(data) {
-  const colDatum = getCol(["datum", "date", "data"]);
-  const colBedrag = getCol(["bedrag", "amount", "waarde"]);
-  const colCategorie = getCol(["categorie", "category"]);
-  const colType = getCol([
-    "in/uitgave",
-    "inuitgave",
-    "in uitgave",
-    "in-uitgave",
-    "inuit",
-    "type"
-  ]);
-  const colVV = getCol(["vast/variabel", "vastvariabel", "vastofvariabel"]);
+      const colDatum = getCol(["datum", "date", "data"]);
+      const colBedrag = getCol(["bedrag", "amount", "waarde"]);
+      const colCategorie = getCol(["categorie", "category"]);
+      const colType = getCol([
+        "in/uitgave",
+        "inuitgave",
+        "in uitgave",
+        "in-uitgave",
+        "inuit",
+        "type"
+      ]);
+      const colVV = getCol(["vast/variabel", "vastvariabel", "vastofvariabel"]);
 
-  console.log("Kolommen gebruikt:", { colDatum, colBedrag, colCategorie, colType, colVV });
+      console.log("Kolommen gebruikt:", { colDatum, colBedrag, colCategorie, colType, colVV });
 
-  return data.map(row => {
-    // Datum
-    let rawDate = colDatum ? row[colDatum] : null;
-    let date = parseExcelDate(rawDate);
-    if (!date || isNaN(date.getTime())) return null;
+      return data.map(row => {
+        let rawDate = colDatum ? row[colDatum] : null;
+        let date = parseExcelDate(rawDate);
+        if (!date || isNaN(date.getTime())) return null;
 
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-    // Bedrag
-    let bedragRaw = colBedrag ? row[colBedrag] : 0;
-    let bedrag;
-    if (typeof bedragRaw === "number") {
-      bedrag = bedragRaw;
-    } else {
-      bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
+        let bedragRaw = colBedrag ? row[colBedrag] : 0;
+        let bedrag;
+        if (typeof bedragRaw === "number") {
+          bedrag = bedragRaw;
+        } else {
+          bedrag = parseFloat(bedragRaw.toString().replace(",", ".")) || 0;
+        }
+
+        const rawTypeOrig = colType ? (row[colType] || "").toString().trim() : "";
+        const typeLower = rawTypeOrig.toLowerCase();
+
+        let netto = bedrag;
+        if (bedrag > 0) {
+          if (typeLower.startsWith("in")) {
+            netto = bedrag;
+          } else if (typeLower.startsWith("uit")) {
+            netto = -bedrag;
+          } else {
+            console.warn("Onbekend in/uit-type (positief bedrag):", rawTypeOrig, "rij:", row);
+            netto = bedrag;
+          }
+        } else if (bedrag < 0) {
+          netto = bedrag; // al negatief in Excel
+        }
+
+        const categorie = colCategorie ? (row[colCategorie] || "").toString().trim() : "";
+        const vastVar = colVV ? (row[colVV] || "").toString().trim() : "";
+
+        return {
+          datum: date,
+          datumStr: date.toISOString().slice(0, 10),
+          year,
+          month,
+          yearMonth,
+          type: rawTypeOrig,
+          categorie,
+          vastvariabel: vastVar,
+          bedrag,
+          netto
+        };
+      }).filter(r => r !== null);
     }
 
-    // Inkomst / Uitgave
-    const rawTypeOrig = colType ? (row[colType] || "").toString().trim() : "";
-    const typeLower = rawTypeOrig.toLowerCase();
-
-    let netto = bedrag;
-
-    // Logica:
-    //  - als bedrag < 0: vertrouw op Excel → laat het negatief
-    //  - als bedrag > 0: gebruik Inkomst/Uitgave om teken te bepalen
-    if (bedrag > 0) {
-      if (typeLower.startsWith("in")) {
-        // Inkomst: +bedrag (al zo)
-        netto = bedrag;
-      } else if (typeLower.startsWith("uit")) {
-        // Uitgave: maak negatief
-        netto = -bedrag;
-      } else {
-        // onbekend type → laat positief zoals het is
-        console.warn("Onbekend in/uit-type (positief bedrag):", rawTypeOrig, "rij:", row);
-        netto = bedrag;
-      }
-    } else if (bedrag < 0) {
-      // negatieve bedragen altijd negatief laten
-      netto = bedrag;
-    } // bedrag == 0 → netto = 0
-
-    const categorie = colCategorie ? (row[colCategorie] || "").toString().trim() : "";
-    const vastVar = colVV ? (row[colVV] || "").toString().trim() : "";
-
-    return {
-      datum: date,
-      datumStr: date.toISOString().slice(0, 10),
-      year,
-      month,
-      yearMonth,
-      type: rawTypeOrig,
-      categorie,
-      vastvariabel: vastVar,
-      bedrag,
-      netto
-    };
-  }).filter(r => r !== null);
-}
-
-
-    // --- JAARFILTER & MAANDEN ---
+    // --- JAAR & MAAND ---
     function setupYearFilter() {
       const years = Array.from(new Set(allRows.map(r => r.year))).sort();
       yearSelect.innerHTML = "";
@@ -557,7 +606,7 @@
       monthList.innerHTML = "";
       if (!selectedYear) return;
 
-      const monthsMap = new Map(); // maand -> {net, count}
+      const monthsMap = new Map();
       allRows
         .filter(r => r.year === selectedYear)
         .forEach(r => {
@@ -569,7 +618,6 @@
           obj.count += 1;
         });
 
-      // knop "alle maanden"
       const allObj = Array.from(monthsMap.values()).reduce(
         (acc, v) => ({ net: acc.net + v.net, count: acc.count + v.count }),
         { net: 0, count: 0 }
@@ -626,7 +674,7 @@
       });
     }
 
-    // --- HOOFDWEERGAVE ---
+    // --- VIEW ---
     function updateView() {
       if (!selectedYear) {
         periodTitle.textContent = "Geen jaar geselecteerd";
@@ -663,6 +711,7 @@
       rowsInfo.textContent = `${rows.length} transacties`;
 
       updateKPIs(rows);
+      updateGauges(rows);
       updateCategoryTable(rows);
       updateTransactionsTable(rows);
     }
@@ -695,6 +744,114 @@
       }
     }
 
+    // --- GAUGES (optie B) ---
+    function drawGauge(canvasId, chartRefName, value, max, stops, colors, labelId, labelText) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const v = Math.max(0, Math.min(value, max));
+
+      if (window[chartRefName]) {
+        window[chartRefName].destroy();
+      }
+
+      const segments = [];
+      for (let i = 0; i < stops.length - 1; i++) {
+        segments.push(stops[i + 1] - stops[i]);
+      }
+
+      window[chartRefName] = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              data: segments,
+              backgroundColor: colors,
+              borderWidth: 0
+            },
+            {
+              data: [v, max - v],
+              backgroundColor: ["#166534", "#e5e7eb"],
+              borderWidth: 0,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          rotation: 270,
+          circumference: 180,
+          cutout: "65%",
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false }
+          }
+        }
+      });
+
+      document.getElementById(labelId).textContent = labelText;
+    }
+
+    function updateGauges(rows) {
+      let income = 0;
+      let expense = 0;
+
+      rows.forEach(r => {
+        if (r.netto >= 0) income += r.netto;
+        else expense += -r.netto;
+      });
+
+      let ratio = 0;
+      if (income > 0) {
+        ratio = (expense / income) * 100;
+      }
+
+      // Gezondheidsindex optie B:
+      //  - ratio <= 30%  → gezondheid 100
+      //  - ratio >= 100% → gezondheid 0
+      //  - daartussen lineair van 100 → 0
+      let health = 0;
+      if (income === 0 && expense === 0) {
+        health = 0;
+      } else if (ratio <= 30) {
+        health = 100;
+      } else if (ratio >= 100) {
+        health = 0;
+      } else {
+        const t = (ratio - 30) / (100 - 30); // 0..1
+        health = 100 * (1 - t);
+      }
+      health = Math.max(0, Math.min(100, health));
+
+      // Health gauge: 0–100, kleuren van rood naar groen
+      drawGauge(
+        "healthGauge",
+        "healthGaugeChart",
+        health,
+        100,
+        [0, 40, 60, 80, 100],
+        ["#f8d7da", "#ffe08a", "#d1f7c4", "#b2f2bb"],
+        "healthGaugeValue",
+        `${Math.round(health)}/100`
+      );
+
+      // Ratio gauge: 0–120%, groen <33%, geel 33–100, rood 100+
+      const maxRatio = 120;
+      const clampedRatio = Math.max(0, Math.min(ratio, maxRatio));
+
+      drawGauge(
+        "ratioGauge",
+        "ratioGaugeChart",
+        clampedRatio,
+        maxRatio,
+        [0, 33, 100, 120],
+        ["#b2f2bb", "#ffe08a", "#f8d7da"],
+        "ratioGaugeValue",
+        `${ratio.toFixed(1)}%`
+      );
+    }
+
     function updateCategoryTable(rows) {
       const map = new Map();
       rows.forEach(r => {
@@ -705,7 +862,7 @@
 
       const entries = Array.from(map.entries())
         .map(([categorie, netto]) => ({ categorie, netto }))
-        .sort((a, b) => a.netto - b.netto); // grootste kosten bovenaan
+        .sort((a, b) => a.netto - b.netto);
 
       categoryTableBody.innerHTML = "";
       entries.forEach(row => {
