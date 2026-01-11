@@ -9,23 +9,12 @@
 # Sidebar links:
 # - Dashboard
 # - Schade: Chauffeur, Voertuig, Locatie, Coaching, Analyse
-# - Alle info teamcoach: Gesprekken
 #
 # Dashboard:
 # - Zoeken op personeelsnr/naam/voertuig
 # - Tabel met klikbare Link (=> naar EAF)
 # - Coachings datums voor gevonden P-nr
 # - Gesprekken voor die chauffeur (met rommelkolommen gefilterd)
-#
-# Chauffeur:
-# - Teamcoach filter + Top 10/20/Alles
-# - Tabel Chauffeur/Aantal
-# - Bar chart: schades per teamcoach
-#
-# Voertuig:
-# - Tabel type voertuig + aantallen
-# - Gestapelde balk per maand + voertuigtype
-# - Lijngrafiek tendens per voertuigtype
 #
 # Run:
 #   pip install -r requirements.txt
@@ -168,23 +157,31 @@ def coaching_status_from_text(text) -> str | None:
     return None
 
 
-def gesprekken_column_config(cols: list[str]) -> dict:
+def render_wrap_table(df: pd.DataFrame):
     """
-    Column config voor gesprekken zodat tekst (zeker Info) mooi wrapt
-    met st.data_editor (read-only via disabled=True).
+    Render een leesbare HTML-tabel met automatische wrap + hogere rijen.
+    => Alle tekst direct zichtbaar (geen 2x klikken).
     """
-    cfg: dict = {}
-    for c in cols:
-        if norm(c) == "info":
-            cfg[c] = st.column_config.TextColumn(c, width="large")
-        elif norm(c) == "onderwerp":
-            cfg[c] = st.column_config.TextColumn(c, width="medium")
-        elif norm(c) == "chauffeurnaam":
-            cfg[c] = st.column_config.TextColumn(c, width="medium")
-        else:
-            # default: laat Streamlit beslissen
-            pass
-    return cfg
+    html = df.to_html(index=False, escape=True)
+
+    st.markdown(
+        """
+        <style>
+        .wrap-table table { width: 100%; border-collapse: collapse; }
+        .wrap-table th, .wrap-table td {
+            border-bottom: 1px solid rgba(255,255,255,0.10);
+            padding: 8px 10px;
+            vertical-align: top;
+            white-space: pre-wrap;       /* behoud line breaks + wrap */
+            word-break: break-word;      /* breek lange woorden/strings */
+        }
+        .wrap-table th { font-weight: 600; text-align: left; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f'<div class="wrap-table">{html}</div>', unsafe_allow_html=True)
 
 
 # ============================================================
@@ -306,11 +303,6 @@ if st.sidebar.button("Coaching", use_container_width=True, type="primary" if st.
 if st.sidebar.button("Analyse", use_container_width=True, type="primary" if st.session_state.page == "analyse" else "secondary"):
     go("analyse")
 
-st.sidebar.markdown("")
-st.sidebar.markdown("**Alle info teamcoach**")
-if st.sidebar.button("Gesprekken", use_container_width=True, type="primary" if st.session_state.page == "gesprekken" else "secondary"):
-    go("gesprekken")
-
 st.sidebar.divider()
 
 # ============================================================
@@ -357,7 +349,9 @@ if not df_coach_done.empty:
             if pd.notna(dt):
                 date_str = pd.to_datetime(dt).strftime("%d/%m/%Y")
 
-            coaching_map.setdefault(key, []).append({"status": status, "date": dt if pd.notna(dt) else None, "dateString": date_str})
+            coaching_map.setdefault(key, []).append(
+                {"status": status, "date": dt if pd.notna(dt) else None, "dateString": date_str}
+            )
 
 
 def sidebar_status():
@@ -455,9 +449,9 @@ def page_dashboard():
         },
     )
 
-    # gesprekken onderaan
+    # gesprekken onderaan (blijft in dashboard)
     st.markdown("### Gesprekken")
-    st.caption("ℹ️ Lange teksten worden automatisch gewrapt. (Indien nodig kan je in een cel scrollen.)")
+    st.caption("Alle tekst staat meteen volledig open (geen doorklikken).")
 
     if df_gesprekken.empty:
         st.info("Gesprekkenbestand is leeg.")
@@ -491,17 +485,12 @@ def page_dashboard():
         st.info("Geen gesprekken gevonden (binnen de gekozen jaarfilter).")
         return
 
+    # datumformaat
     if gesprek_datum_col and gesprek_datum_col in df_g_match.columns:
         df_g_match[gesprek_datum_col] = to_datetime_utc_series(df_g_match[gesprek_datum_col]).dt.strftime("%d/%m/%Y")
 
-    # >>> Hier: data_editor i.p.v. dataframe (wrapping + hogere rijen)
-    st.data_editor(
-        df_g_match[GESPREK_COLS],
-        use_container_width=True,
-        hide_index=True,
-        disabled=True,
-        column_config=gesprekken_column_config(GESPREK_COLS),
-    )
+    # HTML wrap table: alles direct zichtbaar
+    render_wrap_table(df_g_match[GESPREK_COLS])
 
 
 def page_chauffeur():
@@ -560,7 +549,6 @@ def page_voertuig():
         st.warning("Geen kolom voertuigtype (Bus/Tram/...) gevonden in BRON.")
         return
 
-    # ---- TOP TABLE ----
     lim_choice = st.selectbox("Toon", ["Top 10", "Top 20", "Alle types"], index=0)
     lim = 10 if lim_choice == "Top 10" else 20 if lim_choice == "Top 20" else None
 
@@ -572,7 +560,6 @@ def page_voertuig():
 
     st.dataframe(table_view.rename(columns={"_veh": "Type voertuig"}), use_container_width=True, hide_index=True)
 
-    # ---- MONTH DATA (basis voor beide grafieken) ----
     if "_datum_dt" not in temp.columns:
         st.info("Geen datumkolom verwerkt.")
         return
@@ -589,17 +576,11 @@ def page_voertuig():
 
     pivot = dm.groupby(["_maand", "_m_name", "_veh"]).size().reset_index(name="Aantal")
 
-    # Zorg dat alle maanden zichtbaar blijven (ook met 0)
     vehicles = sorted(pivot["_veh"].unique().tolist())
     full_index = pd.MultiIndex.from_product([range(1, 13), vehicles], names=["_maand", "_veh"])
-    filled = (
-        pivot.set_index(["_maand", "_veh"])
-        .reindex(full_index, fill_value=0)
-        .reset_index()
-    )
+    filled = pivot.set_index(["_maand", "_veh"]).reindex(full_index, fill_value=0).reset_index()
     filled["_m_name"] = filled["_maand"].apply(lambda m: month_names[m - 1])
 
-    # ---- 1) STACKED BAR ----
     st.subheader("Schades per maand en voertuigtype (gestapelde balken)")
     st.caption("X-as = maanden, kleur = voertuigtype. Respecteert de gekozen jaarfilter.")
 
@@ -614,12 +595,8 @@ def page_voertuig():
     fig_bar.update_layout(xaxis_title="Maand", yaxis_title="Aantal schades")
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # ---- 2) LINE TREND ----
     st.subheader("Tendens per voertuigtype (lijngrafiek)")
-    st.caption(
-        "Zelfde data als de staafgrafiek hierboven, maar als lijngrafiek per voertuigtype. "
-        "Handig om de evolutie doorheen het jaar te zien."
-    )
+    st.caption("Zelfde data als de staafgrafiek hierboven, maar als lijngrafiek per voertuigtype.")
 
     fig_line = px.line(
         filled,
@@ -762,54 +739,6 @@ def page_analyse():
     st.plotly_chart(fig2, use_container_width=True)
 
 
-def page_gesprekken():
-    st.header("Gesprekken")
-    st.write("Overzicht uit **Overzicht gesprekken (aangepast).xlsx** (respecteert de jaarfilter).")
-    st.caption("ℹ️ Lange teksten worden automatisch gewrapt. (Indien nodig kan je in een cel scrollen.)")
-
-    gesprek_nummer_col = find_col(df_gesprekken, ["nummer"])
-    gesprek_naam_col = find_col(df_gesprekken, ["chauffeurnaam"])
-    gesprek_datum_col = find_col(df_gesprekken, ["datum"])
-
-    df_g = df_gesprekken.copy()
-
-    if gesprek_datum_col:
-        df_g["_dt"] = to_datetime_utc_series(df_g[gesprek_datum_col])
-        df_g["_jaar"] = df_g["_dt"].dt.year
-        if year_choice != "ALL":
-            df_g = df_g[df_g["_jaar"] == int(year_choice)]
-
-    c1, c2 = st.columns([3, 1])
-    g_term = c1.text_input("Zoek", placeholder="Zoek personeelsnr of naam...", label_visibility="collapsed")
-    reset = c2.button("Reset", use_container_width=True)
-    if reset:
-        st.rerun()
-
-    if g_term.strip():
-        tt = g_term.strip().lower()
-        m = pd.Series(False, index=df_g.index)
-        if gesprek_nummer_col:
-            m |= df_g[gesprek_nummer_col].apply(pnr_to_clean_string).astype(str).str.lower().str.contains(re.escape(tt), na=False)
-        if gesprek_naam_col:
-            m |= df_g[gesprek_naam_col].astype(str).str.lower().str.contains(re.escape(tt), na=False)
-        df_g = df_g[m]
-
-    st.caption(f"Resultaten: {len(df_g)}")
-
-    out = df_g.copy()
-    if gesprek_datum_col and gesprek_datum_col in out.columns:
-        out[gesprek_datum_col] = to_datetime_utc_series(out[gesprek_datum_col]).dt.strftime("%d/%m/%Y")
-
-    # >>> Hier: data_editor i.p.v. dataframe (wrapping + hogere rijen)
-    st.data_editor(
-        out[GESPREK_COLS],
-        use_container_width=True,
-        hide_index=True,
-        disabled=True,
-        column_config=gesprekken_column_config(GESPREK_COLS),
-    )
-
-
 # ============================================================
 # ROUTER
 # ============================================================
@@ -827,8 +756,6 @@ elif page == "coaching":
     page_coaching()
 elif page == "analyse":
     page_analyse()
-elif page == "gesprekken":
-    page_gesprekken()
 else:
     st.session_state.page = DEFAULT_PAGE
     page_dashboard()
