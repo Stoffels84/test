@@ -663,4 +663,160 @@ def page_voertuig():
         y="Aantal",
         color="_veh",
         markers=True,
-        category_orders={"_m_name_
+        category_orders={"_m_name": month_names},
+    )
+    fig_line.update_layout(xaxis_title="Maand", yaxis_title="Aantal schades")
+    st.plotly_chart(fig_line, use_container_width=True)
+
+
+def page_locatie():
+    st.header("Data rond locatie")
+    st.write("Overzicht van aantal schades per locatie (gefilterd op gekozen jaren).")
+
+    if not col_locatie:
+        st.warning("Geen kolom locatie gevonden in BRON.")
+        return
+
+    lim_choice = st.selectbox("Toon", ["Top 10", "Top 20", "Alle locaties"], index=0)
+    lim = 10 if lim_choice == "Top 10" else 20 if lim_choice == "Top 20" else None
+
+    temp = df_filtered.copy()
+    temp["_loc"] = temp[col_locatie].fillna("Onbekend").astype(str).str.strip()
+    table = temp.groupby("_loc").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
+    table_view = table.head(lim) if lim else table
+
+    st.dataframe(table_view.rename(columns={"_loc": "Locatie"}), use_container_width=True, hide_index=True)
+
+
+def page_coaching():
+    st.header("Coaching – vergelijkingen")
+
+    if not col_pnr:
+        st.info("Geen P-nr kolom gevonden in BRON.")
+        return
+
+    damage_pnr_set = set(df_bron[col_pnr].dropna().apply(pnr_to_clean_string))
+    damage_pnr_set.discard("")
+
+    done_pnr_set = set(coaching_map.keys())
+
+    pending_in_damage = len([p for p in coaching_pending_set if p in damage_pnr_set])
+    done_in_damage = len([p for p in done_pnr_set if p in damage_pnr_set])
+
+    cA, cB = st.columns(2)
+    with cA:
+        st.metric("📄 Lopend – ruwe rijen (coachingslijst)", pending_raw_count)
+        st.metric("🔵 Lopend (in schadelijst)", pending_in_damage)
+    with cB:
+        st.metric("📄 Voltooid – ruwe rijen (coachingslijst)", done_raw_count)
+        st.metric("🟡 Voltooid (in schadelijst)", done_in_damage)
+
+    st.divider()
+
+    counts = df_filtered.groupby(df_filtered[col_pnr].apply(pnr_to_clean_string)).size()
+    high_damage = []
+    for pnr_key, cnt in counts.items():
+        if not pnr_key:
+            continue
+        if cnt > 2 and (pnr_key not in coaching_map) and (pnr_key not in coaching_pending_set):
+            nm = ""
+            if col_naam:
+                nm_ser = df_filtered[df_filtered[col_pnr].apply(pnr_to_clean_string) == pnr_key][col_naam].dropna()
+                nm = str(nm_ser.iloc[0]).strip() if len(nm_ser) else ""
+            high_damage.append({"P-nr": pnr_key, "Naam": nm, "Aantal": int(cnt)})
+
+    st.markdown("### P-nrs > 2 schades zonder coaching (jaarfilter)")
+    st.write(f"Aantal: **{len(high_damage)}**")
+    if high_damage:
+        st.dataframe(pd.DataFrame(high_damage).sort_values("Aantal", ascending=False), use_container_width=True, hide_index=True)
+
+
+def page_analyse():
+    st.header("Analyse")
+
+    st.subheader("1. Totaal schades")
+    st.write(f"Totaal aantal schades (jaarfilter): **{len(df_filtered)}**")
+
+    st.subheader("2. Histogram — aantal schades per medewerker")
+    st.caption("Mediaan is op basis van alle P-nrs in 'data hastus' indien aanwezig.")
+
+    if not col_pnr:
+        st.info("Geen P-nr kolom gevonden in BRON.")
+        return
+
+    pnr_series = df_filtered[col_pnr].apply(pnr_to_clean_string)
+    damage_per_pnr = pnr_series.value_counts().to_dict()
+
+    damages_all = []
+    col_h_pnr = None
+    if not df_hastus.empty:
+        col_h_pnr = find_col(df_hastus, ["p-nr", "pnr", "personeelsnr", "personeelsnummer", "p nr"])
+
+    if col_h_pnr:
+        hastus_pnrs = df_hastus[col_h_pnr].dropna().apply(pnr_to_clean_string).tolist()
+        hastus_pnrs = [p for p in hastus_pnrs if p]
+        damages_all = [int(damage_per_pnr.get(p, 0)) for p in hastus_pnrs]
+    else:
+        damages_all = list(map(int, damage_per_pnr.values()))
+
+    if not damages_all:
+        st.info("Geen bruikbare P-nrs gevonden.")
+        return
+
+    median = float(np.median(damages_all))
+    freq = pd.Series(damages_all).value_counts().sort_index()
+    hist_df = pd.DataFrame({"Schades": freq.index.astype(int), "Medewerkers": freq.values.astype(int)})
+
+    fig = px.bar(hist_df, x="Schades", y="Medewerkers")
+    fig.add_vline(
+        x=round(median),
+        line_dash="dash",
+        line_width=2,
+        line_color="red",
+        annotation_text=f"Mediaan ≈ {median:.2f}",
+        annotation_position="top",
+    )
+    fig.update_layout(xaxis_title="Aantal schades per medewerker", yaxis_title="Aantal medewerkers", showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("3. Verdeling P-nrs per 10.000-tal (Hastus)")
+    if df_hastus.empty or not col_h_pnr:
+        st.info("Tabblad 'data hastus' of P-nr kolom niet gevonden.")
+        return
+
+    pnrs = pd.to_numeric(df_hastus[col_h_pnr], errors="coerce").dropna().astype(int)
+    st.write(f"Totaal P-nrs in **data hastus**: **{len(pnrs)}**")
+
+    bin_size = 10000
+    bins = (pnrs // bin_size) * bin_size
+    counts = bins.value_counts().sort_index()
+    labels = [f"{b}–{b + bin_size - 1}" for b in counts.index.tolist()]
+    dist_df = pd.DataFrame({"Range": labels, "Aantal": counts.values})
+
+    fig2 = px.bar(dist_df, x="Range", y="Aantal")
+    fig2.update_layout(xaxis_title="10.000-tal range", yaxis_title="Aantal P-nrs", showlegend=False)
+    st.plotly_chart(fig2, use_container_width=True)
+
+
+# ============================================================
+# ROUTER
+# ============================================================
+page = st.session_state.page
+
+if page == "dashboard":
+    page_dashboard()
+elif page == "chauffeur":
+    page_chauffeur()
+elif page == "voertuig":
+    page_voertuig()
+elif page == "locatie":
+    page_locatie()
+elif page == "coaching":
+    page_coaching()
+elif page == "analyse":
+    page_analyse()
+else:
+    st.session_state.page = DEFAULT_PAGE
+    page_dashboard()
+
+sidebar_status()
