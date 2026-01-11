@@ -12,16 +12,24 @@
 # - Alle info teamcoach: Gesprekken
 #
 # Dashboard:
-# - Resultaten uit BRON (zonder extra coaching/status-kolommen)
-# - Link is aanklikbaar (=> naar EAF)
+# - Zoeken op personeelsnr/naam/voertuig
+# - Tabel met klikbare Link (=> naar EAF)
 # - Coachings datums voor gevonden P-nr
-# - Gesprekken-tabel voor die chauffeur (rommelkolommen gefilterd)
+# - Gesprekken voor die chauffeur (met rommelkolommen gefilterd)
 #
-# Chauffeur-tab:
-# - Teamcoach filter
-# - Top 10/20/Alles
+# Chauffeur:
+# - Teamcoach filter + Top 10/20/Alles
 # - Tabel Chauffeur/Aantal
-# - Bar chart: Schades per teamcoach (respecteert jaarfilter + geselecteerde teamcoach)
+# - Bar chart: schades per teamcoach
+#
+# Voertuig:
+# - Tabel type voertuig + aantallen
+# - Gestapelde balk per maand + voertuigtype
+# - Lijngrafiek tendens per voertuigtype (zoals je screenshot)
+#
+# Run:
+#   pip install -r requirements.txt
+#   streamlit run app.py
 # ============================================================
 
 from __future__ import annotations
@@ -35,13 +43,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+
 # ============================================================
 # CONFIG
 # ============================================================
 st.set_page_config(page_title="OT GENT - Overzicht & rapportering", layout="wide")
 
 BASE_DIR = Path(__file__).parent
-
 FILE_SCHADE = BASE_DIR / "schade met macro.xlsm"
 FILE_COACHING = BASE_DIR / "Coachingslijst.xlsx"
 FILE_GESPREKKEN = BASE_DIR / "Overzicht gesprekken (aangepast).xlsx"
@@ -246,6 +254,7 @@ df_bron = df_bron.copy()
 df_bron["_datum_dt"] = to_datetime_utc_series(df_bron[col_datum])
 df_bron["_jaar"] = df_bron["_datum_dt"].dt.year
 
+
 # ============================================================
 # SIDEBAR NAVIGATIE (links)
 # ============================================================
@@ -423,11 +432,7 @@ def page_dashboard():
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Link": st.column_config.LinkColumn(
-                "Link",
-                display_text="=> naar EAF",
-                validate="^https?://.*",
-            )
+            "Link": st.column_config.LinkColumn("Link", display_text="=> naar EAF", validate="^https?://.*")
         },
     )
 
@@ -456,7 +461,6 @@ def page_dashboard():
     if selected_pnr and gesprek_nummer_col:
         gmask |= df_g[gesprek_nummer_col].apply(pnr_to_clean_string).astype(str).str.strip() == selected_pnr
 
-    # fallback naam
     if (not gmask.any()) and selected_name and gesprek_naam_col:
         nm = selected_name.strip().lower()
         gmask |= df_g[gesprek_naam_col].astype(str).str.lower().str.contains(re.escape(nm), na=False)
@@ -473,13 +477,6 @@ def page_dashboard():
     st.dataframe(df_g_match[GESPREK_COLS], use_container_width=True, hide_index=True)
 
 
-def build_teamcoach_bar(df: pd.DataFrame, teamcoach_col: str) -> pd.DataFrame:
-    temp = df.copy()
-    temp["_tc"] = temp[teamcoach_col].fillna("Onbekend").astype(str).str.strip()
-    bar = temp.groupby("_tc").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
-    return bar
-
-
 def page_chauffeur():
     st.header("Data rond chauffeur")
     st.write("Overzicht van aantal schades per chauffeur (gefilterd op gekozen jaar).")
@@ -488,13 +485,10 @@ def page_chauffeur():
         st.warning("Geen kolom 'volledige naam / chauffeur / naam' gevonden in BRON.")
         return
 
-    # teamcoach opties
     tc_options = ["Alle teamcoaches"]
     if col_teamcoach:
         vals = df_filtered[col_teamcoach].dropna().astype(str).str.strip()
         tc_options += sorted([v for v in vals.unique() if v])
-    else:
-        tc_options = ["Alle teamcoaches"]  # geen kolom -> enkel default
 
     c1, c2 = st.columns([2, 1])
     tc_choice = c1.selectbox("Teamcoach", tc_options)
@@ -502,28 +496,16 @@ def page_chauffeur():
     lim = 10 if lim_choice == "Top 10" else 20 if lim_choice == "Top 20" else None
 
     df_ch = df_filtered.copy()
-
-    # filter teamcoach (als kolom bestaat)
     if col_teamcoach and tc_choice != "Alle teamcoaches":
         df_ch = df_ch[df_ch[col_teamcoach].astype(str).str.strip() == tc_choice]
 
-    # tabel chauffeurs
     temp = df_ch.copy()
     temp["_chauffeur"] = temp[col_naam].fillna("Onbekend").astype(str).str.strip()
     table = temp.groupby("_chauffeur").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
+    table_view = table.head(lim) if lim else table
 
-    if lim:
-        table_view = table.head(lim)
-    else:
-        table_view = table
+    st.dataframe(table_view.rename(columns={"_chauffeur": "Chauffeur"}), use_container_width=True, hide_index=True)
 
-    st.dataframe(
-        table_view.rename(columns={"_chauffeur": "Chauffeur"}),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    # grafiek schades per teamcoach (respecteert jaarfilter + (optioneel) gekozen teamcoach)
     st.subheader("Schades per teamcoach")
     st.caption("Gebaseerd op de huidige jaarfilter en eventueel geselecteerde teamcoach.")
 
@@ -531,44 +513,103 @@ def page_chauffeur():
         st.info("Kolom 'teamcoach' niet gevonden in BRON.")
         return
 
-    bar = build_teamcoach_bar(df_ch, col_teamcoach)
+    bar = df_ch.copy()
+    bar["_tc"] = bar[col_teamcoach].fillna("Onbekend").astype(str).str.strip()
+    bar_df = bar.groupby("_tc").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
 
-    # als er teamcoach-filter actief is (niet alle), toont bar enkel die ene => nog steeds ok
-    fig = px.bar(bar, x="_tc", y="Aantal")
+    fig = px.bar(bar_df, x="_tc", y="Aantal")
     fig.update_layout(xaxis_title="Teamcoach", yaxis_title="Aantal schades", showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
 
 def page_voertuig():
     st.header("Data rond voertuig (Bus/Tram)")
+    st.write(
+        "Overzicht van aantal schades per type voertuig op basis van kolom **Bus/Tram** (of gelijkaardig). "
+        "Respecteert de jaarfilter."
+    )
+
     if not col_voertuigtype:
         st.warning("Geen kolom voertuigtype (Bus/Tram/...) gevonden in BRON.")
         return
 
+    # ---- TOP TABLE ----
     lim_choice = st.selectbox("Toon", ["Top 10", "Top 20", "Alle types"], index=0)
     lim = 10 if lim_choice == "Top 10" else 20 if lim_choice == "Top 20" else None
 
     temp = df_filtered.copy()
     temp["_veh"] = temp[col_voertuigtype].fillna("Onbekend").astype(str).str.strip()
+
     table = temp.groupby("_veh").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
     table_view = table.head(lim) if lim else table
 
     st.dataframe(table_view.rename(columns={"_veh": "Type voertuig"}), use_container_width=True, hide_index=True)
 
-    st.subheader("Schades per maand en voertuigtype (gestapelde balken)")
-    dm = df_filtered[df_filtered["_datum_dt"].notna()].copy()
-    dm["_maand"] = dm["_datum_dt"].dt.month
-    dm["_m_name"] = dm["_maand"].apply(lambda m: ["Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"][m - 1])
-    dm["_veh"] = dm[col_voertuigtype].fillna("Onbekend").astype(str).str.strip()
+    # ---- MONTH DATA (basis voor beide grafieken) ----
+    if "_datum_dt" not in temp.columns:
+        st.info("Geen datumkolom verwerkt.")
+        return
 
-    pivot = dm.groupby(["_m_name", "_veh"]).size().reset_index(name="Aantal")
-    fig = px.bar(pivot, x="_m_name", y="Aantal", color="_veh", barmode="stack")
-    fig.update_layout(xaxis_title="Maand", yaxis_title="Aantal schades")
-    st.plotly_chart(fig, use_container_width=True)
+    dm = temp[temp["_datum_dt"].notna()].copy()
+    if dm.empty:
+        st.info("Geen datums gevonden om per maand te groeperen.")
+        return
+
+    dm["_maand"] = dm["_datum_dt"].dt.month
+    month_names = ["Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"]
+    dm["_m_name"] = dm["_maand"].apply(lambda m: month_names[m - 1])
+    dm["_veh"] = dm["_veh"].replace("", "Onbekend")
+
+    pivot = dm.groupby(["_maand", "_m_name", "_veh"]).size().reset_index(name="Aantal")
+
+    # Zorg dat alle maanden zichtbaar blijven (ook met 0)
+    vehicles = sorted(pivot["_veh"].unique().tolist())
+    full_index = pd.MultiIndex.from_product([range(1, 13), vehicles], names=["_maand", "_veh"])
+    filled = (
+        pivot.set_index(["_maand", "_veh"])
+        .reindex(full_index, fill_value=0)
+        .reset_index()
+    )
+    filled["_m_name"] = filled["_maand"].apply(lambda m: month_names[m - 1])
+
+    # ---- 1) STACKED BAR ----
+    st.subheader("Schades per maand en voertuigtype (gestapelde balken)")
+    st.caption("X-as = maanden, kleur = voertuigtype. Respecteert de gekozen jaarfilter.")
+
+    fig_bar = px.bar(
+        filled,
+        x="_m_name",
+        y="Aantal",
+        color="_veh",
+        barmode="stack",
+        category_orders={"_m_name": month_names},
+    )
+    fig_bar.update_layout(xaxis_title="Maand", yaxis_title="Aantal schades")
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    # ---- 2) LINE TREND (zoals screenshot) ----
+    st.subheader("Tendens per voertuigtype (lijngrafiek)")
+    st.caption(
+        "Zelfde data als de staafgrafiek hierboven, maar als lijngrafiek per voertuigtype. "
+        "Handig om de evolutie doorheen het jaar te zien."
+    )
+
+    fig_line = px.line(
+        filled,
+        x="_m_name",
+        y="Aantal",
+        color="_veh",
+        markers=True,
+        category_orders={"_m_name": month_names},
+    )
+    fig_line.update_layout(xaxis_title="Maand", yaxis_title="Aantal schades")
+    st.plotly_chart(fig_line, use_container_width=True)
 
 
 def page_locatie():
     st.header("Data rond locatie")
+    st.write("Overzicht van aantal schades per locatie (gefilterd op gekozen jaar).")
+
     if not col_locatie:
         st.warning("Geen kolom locatie gevonden in BRON.")
         return
