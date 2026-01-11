@@ -4,9 +4,11 @@
 # - Schade (submenu: Chauffeur, Voertuig, Locatie, Coaching, Analyse)
 # - Alle info teamcoach (submenu: Gesprekken)
 #
-# Dashboard-aanpassing:
-# - Kolommen "In coaching-lijst" en "Status" zijn VERWIJDERD
-# - Kolom "Link" is aanklikbaar (LinkColumn)
+# Dashboard:
+# - Zoeken op personeelsnr / naam / voertuig
+# - Toont resultaten uit schade (BRON) + klikbare Link (=> naar EAF)
+# - Toont coachings (Voltooide coachings) voor gevonden P-nr
+# - NIEUW: toont óók gesprekken van die chauffeur (uit gesprekkenbestand) met dezelfde kolommen als in gesprekkenblad
 #
 # Bestanden verwacht in dezelfde map als app.py:
 # - schade met macro.xlsm
@@ -91,28 +93,6 @@ def coaching_status_from_text(text) -> str | None:
     return None
 
 
-def primary_status(statuses: list[str]) -> str | None:
-    if not statuses:
-        return None
-    if "bad" in statuses:
-        return "bad"
-    if "medium" in statuses:
-        return "medium"
-    if "good" in statuses:
-        return "good"
-    return None
-
-
-def status_emoji(status: str | None) -> str:
-    if status == "good":
-        return "🟢"
-    if status == "medium":
-        return "🟡"
-    if status == "bad":
-        return "🔴"
-    return ""
-
-
 def safe_read_excel(path: Path, sheet_name=None) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Bestand niet gevonden: {path.name}")
@@ -127,6 +107,42 @@ def clean_url(v) -> str:
     s = str(v).strip()
     if not s or s.lower() == "nan":
         return ""
+    return s
+
+
+def as_searchable_text(x) -> str:
+    if x is None:
+        return ""
+    if isinstance(x, float) and np.isnan(x):
+        return ""
+    return str(x).strip()
+
+
+def looks_like_pnr(term: str) -> bool:
+    t = term.strip()
+    return bool(re.fullmatch(r"\d{4,}", t))
+
+
+def pnr_to_clean_string(v) -> str:
+    """
+    Fix voor Excel floats zoals 41520.0.
+    We willen "41520".
+    """
+    if v is None:
+        return ""
+    if isinstance(v, float) and np.isnan(v):
+        return ""
+    # als het een float is met .0
+    try:
+        f = float(v)
+        if f.is_integer():
+            return str(int(f))
+    except Exception:
+        pass
+    s = str(v).strip()
+    # ook strings "41520.0"
+    if re.fullmatch(r"\d+\.0", s):
+        return s.split(".")[0]
     return s
 
 
@@ -163,7 +179,6 @@ def load_coaching() -> tuple[pd.DataFrame, set[str], int, int]:
         done_raw = len(done_df)
 
     if SHEET_COACH_PENDING in xls.sheet_names:
-        # mimic JS: kolom D (index 3), vanaf rij 2
         pending_sheet = pd.read_excel(xls, sheet_name=SHEET_COACH_PENDING, header=None)
         if pending_sheet.shape[1] >= 4:
             col = pending_sheet.iloc[1:, 3]
@@ -177,13 +192,13 @@ def load_coaching() -> tuple[pd.DataFrame, set[str], int, int]:
 
 @st.cache_data(show_spinner=True)
 def load_gesprekken() -> pd.DataFrame:
-    df = safe_read_excel(FILE_GESPREKKEN, sheet_name=0)
+    df = safe_read_excel(FILE_GESPREKKEN, sheet_name=0)  # eerste tab
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
 
 # ============================================================
-# SIDEBAR NAVIGATIE (jouw gewenste structuur)
+# SIDEBAR NAVIGATIE
 # ============================================================
 DEFAULT_PAGE = "dashboard"
 if "page" not in st.session_state:
@@ -198,7 +213,6 @@ st.sidebar.markdown("## OT GENT")
 st.sidebar.caption("Overzicht & rapportering")
 st.sidebar.divider()
 
-# Dashboard (bovenaan)
 if st.sidebar.button(
     "Dashboard",
     use_container_width=True,
@@ -208,7 +222,6 @@ if st.sidebar.button(
 
 st.sidebar.markdown("")
 
-# Schade + submenu
 st.sidebar.markdown("**Schade**")
 if st.sidebar.button("Chauffeur", use_container_width=True, type="primary" if st.session_state.page == "chauffeur" else "secondary"):
     go("chauffeur")
@@ -222,8 +235,6 @@ if st.sidebar.button("Analyse", use_container_width=True, type="primary" if st.s
     go("analyse")
 
 st.sidebar.markdown("")
-
-# Alle info teamcoach + submenu gesprekken
 st.sidebar.markdown("**Alle info teamcoach**")
 if st.sidebar.button("Gesprekken", use_container_width=True, type="primary" if st.session_state.page == "gesprekken" else "secondary"):
     go("gesprekken")
@@ -246,7 +257,7 @@ df_coach_done, coaching_pending_set, done_raw_count, pending_raw_count = load_co
 df_gesprekken = load_gesprekken()
 
 # ============================================================
-# MAP COLUMNS (like your JS)
+# MAP COLUMNS (BRON)
 # ============================================================
 col_datum = find_col(df_bron, ["datum"])
 col_naam = find_col(df_bron, ["volledige naam", "chauffeur", "naam", "bestuurder"])
@@ -262,10 +273,12 @@ if col_datum is None:
     st.error("Kolom 'datum' niet gevonden in tab BRON.")
     st.stop()
 
-# Dates + year
 df_bron = df_bron.copy()
 df_bron["_datum_dt"] = to_datetime_utc_series(df_bron[col_datum])
 df_bron["_jaar"] = df_bron["_datum_dt"].dt.year
+
+# Gesprekken kolommen (we tonen exact zoals in het sheet)
+gesprek_cols = df_gesprekken.columns.tolist()
 
 # ============================================================
 # SIDEBAR FILTER: JAAR
@@ -284,7 +297,7 @@ def apply_year_filter(df: pd.DataFrame) -> pd.DataFrame:
 df_filtered = apply_year_filter(df_bron)
 
 # ============================================================
-# BUILD COACHING MAP (zoals je JS, voor coaching-tab + summary)
+# BUILD COACHING MAP (voor dashboard coaching summary + coaching tab)
 # ============================================================
 coaching_map: dict[str, list[dict]] = {}
 
@@ -301,7 +314,7 @@ if not df_coach_done.empty:
             p = r.get(col_done_pnr, None)
             if pd.isna(p):
                 continue
-            key = str(p).strip()
+            key = pnr_to_clean_string(p)
             status = coaching_status_from_text(r.get(col_done_rating, None))
             if not status:
                 continue
@@ -313,25 +326,9 @@ if not df_coach_done.empty:
 
             coaching_map.setdefault(key, []).append({"status": status, "date": dt if pd.notna(dt) else None, "dateString": date_str})
 
-# (Optioneel) Indicators, nuttig voor andere tabs
-df_filtered = df_filtered.copy()
-if col_pnr:
-    df_filtered["_pnr_str"] = df_filtered[col_pnr].astype(str).str.strip()
-    df_filtered["_in_coaching_list"] = df_filtered["_pnr_str"].isin(coaching_pending_set)
-
-    def compute_primary(p):
-        key = str(p).strip()
-        statuses = [e["status"] for e in coaching_map.get(key, [])]
-        return primary_status(statuses)
-
-    df_filtered["_coach_primary"] = df_filtered["_pnr_str"].apply(compute_primary)
-else:
-    df_filtered["_pnr_str"] = ""
-    df_filtered["_in_coaching_list"] = False
-    df_filtered["_coach_primary"] = None
 
 # ============================================================
-# GLOBAL STATUS (sidebar footer)
+# SIDEBAR STATUS
 # ============================================================
 def sidebar_status():
     coach_count = len(coaching_map.keys())
@@ -340,7 +337,7 @@ def sidebar_status():
 
 
 # ============================================================
-# PAGE RENDERERS
+# PAGE: DASHBOARD
 # ============================================================
 def page_dashboard():
     st.header("Dashboard – Chauffeur opzoeken")
@@ -348,7 +345,7 @@ def page_dashboard():
 
     c1, c2 = st.columns([3, 1])
     term = c1.text_input("Zoek", placeholder="Personeelsnr, naam of voertuignummer...", label_visibility="collapsed")
-    c2.button("Zoeken", use_container_width=True)  # visueel (Streamlit rerun vanzelf)
+    c2.button("Zoeken", use_container_width=True)
 
     if not term.strip():
         st.info("Tip: je kunt een deel van de naam, het nummer of het voertuignummer ingeven.")
@@ -377,32 +374,52 @@ def page_dashboard():
         st.warning("Geen resultaten gevonden voor deze zoekopdracht (binnen de gekozen jaarfilter).")
         return
 
-    # Coaching summary (eerste gevonden pnr)
-    if col_pnr:
-        first_pnr = str(results.iloc[0][col_pnr]).strip()
-        entries = coaching_map.get(first_pnr, [])
+    # Bepaal "de chauffeur" voor dashboard-context:
+    # - prefer: exact pnr als term numeriek
+    # - else: pnr van eerste resultaat
+    selected_pnr = ""
+    selected_name = ""
+
+    if col_pnr and looks_like_pnr(term):
+        selected_pnr = pnr_to_clean_string(term)
+        # probeer naam uit eerste rij met dat pnr
+        sub_p = results[results[col_pnr].apply(pnr_to_clean_string) == selected_pnr]
+        if not sub_p.empty and col_naam:
+            selected_name = as_searchable_text(sub_p.iloc[0][col_naam])
+        elif col_naam:
+            selected_name = as_searchable_text(results.iloc[0][col_naam])
+    else:
+        if col_pnr:
+            selected_pnr = pnr_to_clean_string(results.iloc[0][col_pnr])
+        if col_naam:
+            selected_name = as_searchable_text(results.iloc[0][col_naam])
+
+    # 1) Coaching summary
+    if selected_pnr:
+        entries = coaching_map.get(selected_pnr, [])
         if entries:
             entries_sorted = sorted(entries, key=lambda e: (e["date"] is None, e["date"]))
-            st.markdown(f"#### Coachings voor **{first_pnr}**")
+            title = f"Coachings voor **{selected_pnr}**"
+            if selected_name:
+                title += f" — {selected_name}"
+            st.markdown(f"#### {title}")
             dates = [e["dateString"] for e in entries_sorted if e.get("dateString")]
             if dates:
                 st.write(" ".join([f"`{d}`" for d in dates]))
         else:
-            st.caption(f"Geen coachings gevonden voor P-nr {first_pnr}.")
+            st.caption(f"Geen coachings gevonden voor P-nr {selected_pnr}.")
 
-    # Dashboard tabel (zonder de twee ongewenste kolommen)
+    # 2) Schade-tabel (BRON resultaten)
     out = pd.DataFrame()
     out["Datum"] = results["_datum_dt"].dt.strftime("%d/%m/%Y")
-
     out["Chauffeur"] = results[col_naam] if col_naam else ""
-    out["Personeelsnr"] = results[col_pnr] if col_pnr else ""
+    out["Personeelsnr"] = results[col_pnr].apply(pnr_to_clean_string) if col_pnr else ""
     out["Voertuignr"] = results[col_voertuignr] if col_voertuignr else ""
     out["Voertuigtype"] = results[col_voertuigtype] if col_voertuigtype else ""
     out["Type"] = results[col_type] if col_type else ""
     out["Locatie"] = results[col_locatie] if col_locatie else ""
     out["Link"] = results[col_link].map(clean_url) if col_link else ""
 
-    # Aanklikbare links via column_config (werkt in Streamlit 1.30+)
     st.dataframe(
         out,
         use_container_width=True,
@@ -417,7 +434,63 @@ def page_dashboard():
         },
     )
 
+    # 3) Gesprekken voor die chauffeur (zelfde kolommen als gesprekken-sheet)
+    st.markdown("### Gesprekken")
 
+    if df_gesprekken.empty:
+        st.info("Gesprekkenbestand is leeg of kon niet gelezen worden.")
+        return
+
+    # Zoek in gesprekken: op personeelsnr (nummer) en/of naam
+    gesprek_nummer_col = find_col(df_gesprekken, ["nummer", "personeelsnr", "personeelsnummer", "p-nr", "p nr"])
+    gesprek_naam_col = find_col(df_gesprekken, ["chauffeurnaam", "volledige naam", "naam"])
+    gesprek_datum_col = find_col(df_gesprekken, ["datum"])
+
+    df_g = df_gesprekken.copy()
+
+    # Jaarfilter ook toepassen op gesprekken
+    if gesprek_datum_col:
+        df_g["_dt"] = to_datetime_utc_series(df_g[gesprek_datum_col])
+        df_g["_jaar"] = df_g["_dt"].dt.year
+        if year_choice != "ALL":
+            df_g = df_g[df_g["_jaar"] == int(year_choice)]
+
+    # Filter op selected_pnr/selected_name (met fallback op search term)
+    gmask = pd.Series(False, index=df_g.index)
+
+    if selected_pnr and gesprek_nummer_col:
+        gmask |= df_g[gesprek_nummer_col].apply(pnr_to_clean_string).astype(str).str.strip() == selected_pnr
+
+    # als geen pnr match / geen nummerkolom, probeer naam
+    if (not gmask.any()) and selected_name and gesprek_naam_col:
+        nm = selected_name.strip().lower()
+        gmask |= df_g[gesprek_naam_col].astype(str).str.lower().str.contains(re.escape(nm), na=False)
+
+    # fallback: gebruik oorspronkelijke term (kan ook naamfragment zijn)
+    if (not gmask.any()) and term.strip():
+        tt = term.strip().lower()
+        if gesprek_nummer_col:
+            gmask |= df_g[gesprek_nummer_col].apply(pnr_to_clean_string).astype(str).str.lower().str.contains(re.escape(tt), na=False)
+        if gesprek_naam_col:
+            gmask |= df_g[gesprek_naam_col].astype(str).str.lower().str.contains(re.escape(tt), na=False)
+
+    df_g_match = df_g[gmask].copy()
+
+    if df_g_match.empty:
+        st.info("Geen gesprekken gevonden voor deze chauffeur (binnen de gekozen jaarfilter).")
+        return
+
+    # Datum netjes formatteren maar kolomnamen behouden
+    if gesprek_datum_col and gesprek_datum_col in df_g_match.columns:
+        df_g_match[gesprek_datum_col] = to_datetime_utc_series(df_g_match[gesprek_datum_col]).dt.strftime("%d/%m/%Y")
+
+    # Toon exact dezelfde kolommen als in het sheet (volgorde behouden)
+    st.dataframe(df_g_match[gesprek_cols], use_container_width=True, hide_index=True)
+
+
+# ============================================================
+# OTHER PAGES (zelfde als eerder, compact gehouden)
+# ============================================================
 def page_chauffeur():
     st.header("Data rond chauffeur")
     st.write("Overzicht van aantal schades per chauffeur. Open een chauffeur voor details.")
@@ -464,10 +537,11 @@ def page_chauffeur():
             out = sub[cols].copy()
             if col_datum in out.columns:
                 out[col_datum] = to_datetime_utc_series(out[col_datum]).dt.strftime("%d/%m/%Y")
+            if col_pnr in out.columns:
+                out[col_pnr] = out[col_pnr].apply(pnr_to_clean_string)
             if col_link in out.columns:
                 out[col_link] = out[col_link].map(clean_url)
 
-            # Klikbare links in details
             cfg = {}
             if col_link in out.columns:
                 cfg[col_link] = st.column_config.LinkColumn(col_link, display_text="=> naar EAF", validate="^https?://.*")
@@ -508,6 +582,8 @@ def page_voertuig():
             out = sub[cols].copy()
             if col_datum in out.columns:
                 out[col_datum] = to_datetime_utc_series(out[col_datum]).dt.strftime("%d/%m/%Y")
+            if col_pnr in out.columns:
+                out[col_pnr] = out[col_pnr].apply(pnr_to_clean_string)
             if col_link in out.columns:
                 out[col_link] = out[col_link].map(clean_url)
 
@@ -523,7 +599,6 @@ def page_voertuig():
     df_m["_maand"] = df_m["_datum_dt"].dt.month
     df_m["_m_name"] = df_m["_maand"].apply(lambda m: ["Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"][m - 1])
     df_m["_veh"] = df_m[col_voertuigtype].fillna("Onbekend").astype(str).str.strip()
-
     pivot = df_m.groupby(["_maand", "_m_name", "_veh"]).size().reset_index(name="Aantal")
 
     fig = px.bar(pivot, x="_m_name", y="Aantal", color="_veh", barmode="stack")
@@ -577,6 +652,8 @@ def page_locatie():
             out = sub[cols].copy()
             if col_datum in out.columns:
                 out[col_datum] = to_datetime_utc_series(out[col_datum]).dt.strftime("%d/%m/%Y")
+            if col_pnr in out.columns:
+                out[col_pnr] = out[col_pnr].apply(pnr_to_clean_string)
             if col_link in out.columns:
                 out[col_link] = out[col_link].map(clean_url)
 
@@ -592,11 +669,10 @@ def page_coaching():
 
     damage_pnr_set = set()
     if col_pnr:
-        damage_pnr_set = set(df_bron[col_pnr].dropna().astype(str).str.strip())
+        damage_pnr_set = set(df_bron[col_pnr].dropna().apply(pnr_to_clean_string))
         damage_pnr_set.discard("")
 
     done_pnr_set = set(coaching_map.keys())
-
     pending_in_damage = len([p for p in coaching_pending_set if p in damage_pnr_set])
     done_in_damage = len([p for p in done_pnr_set if p in damage_pnr_set])
 
@@ -612,15 +688,15 @@ def page_coaching():
 
     high_damage = []
     if col_pnr:
-        counts = df_filtered.groupby(df_filtered[col_pnr].astype(str).str.strip()).size()
+        counts = df_filtered.groupby(df_filtered[col_pnr].apply(pnr_to_clean_string)).size()
         for pnr_key, cnt in counts.items():
             pnr_key = str(pnr_key).strip()
-            if not pnr_key or pnr_key == "nan":
+            if not pnr_key:
                 continue
             if cnt > 2 and (pnr_key not in coaching_map) and (pnr_key not in coaching_pending_set):
                 nm = ""
                 if col_naam:
-                    nm_ser = df_filtered[df_filtered[col_pnr].astype(str).str.strip() == pnr_key][col_naam].dropna()
+                    nm_ser = df_filtered[df_filtered[col_pnr].apply(pnr_to_clean_string) == pnr_key][col_naam].dropna()
                     nm = str(nm_ser.iloc[0]).strip() if len(nm_ser) else ""
                 high_damage.append({"P-nr": pnr_key, "Naam": nm, "Aantal": int(cnt)})
 
@@ -643,7 +719,6 @@ def page_coaching():
 
 def page_analyse():
     st.header("Analyse")
-
     st.subheader("1. Totaal schades")
     st.write(f"Totaal aantal schades (jaarfilter): **{len(df_filtered)}**")
 
@@ -653,16 +728,18 @@ def page_analyse():
     if not col_pnr:
         st.info("Geen P-nr kolom gevonden in BRON.")
     else:
-        damage_per_pnr = df_filtered.groupby(df_filtered[col_pnr].astype(str).str.strip()).size().to_dict()
+        pnr_series = df_filtered[col_pnr].apply(pnr_to_clean_string)
+        damage_per_pnr = pnr_series.value_counts().to_dict()
 
         damages_all = []
-        col_h_pnr = None
         if not df_hastus.empty:
             col_h_pnr = find_col(df_hastus, ["p-nr", "pnr", "personeelsnr", "personeelsnummer", "p nr"])
+        else:
+            col_h_pnr = None
 
         if col_h_pnr:
-            hastus_pnrs = df_hastus[col_h_pnr].dropna().astype(str).str.strip().tolist()
-            hastus_pnrs = [p for p in hastus_pnrs if p and p != "nan"]
+            hastus_pnrs = df_hastus[col_h_pnr].dropna().apply(pnr_to_clean_string).tolist()
+            hastus_pnrs = [p for p in hastus_pnrs if p]
             damages_all = [int(damage_per_pnr.get(p, 0)) for p in hastus_pnrs]
         else:
             damages_all = list(map(int, damage_per_pnr.values()))
@@ -671,7 +748,6 @@ def page_analyse():
             st.info("Geen bruikbare P-nrs gevonden.")
         else:
             median = float(np.median(damages_all))
-
             freq = pd.Series(damages_all).value_counts().sort_index()
             hist_df = pd.DataFrame({"Schades": freq.index.astype(int), "Medewerkers": freq.values.astype(int)})
 
@@ -702,8 +778,8 @@ def page_analyse():
             bins = (pnrs // bin_size) * bin_size
             counts = bins.value_counts().sort_index()
             labels = [f"{b}–{b + bin_size - 1}" for b in counts.index.tolist()]
-
             dist_df = pd.DataFrame({"Range": labels, "Aantal": counts.values})
+
             fig = px.bar(dist_df, x="Range", y="Aantal")
             fig.update_layout(xaxis_title="10.000-tal range", yaxis_title="Aantal P-nrs", showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
@@ -713,16 +789,14 @@ def page_gesprekken():
     st.header("Gesprekken")
     st.write("Overzicht uit **Overzicht gesprekken (aangepast).xlsx** (respecteert de jaarfilter).")
 
-    col_g_num = find_col(df_gesprekken, ["nummer"])
-    col_g_name = find_col(df_gesprekken, ["chauffeurnaam"])
-    col_g_date = find_col(df_gesprekken, ["datum"])
-    col_g_subject = find_col(df_gesprekken, ["onderwerp"])
-    col_g_info = find_col(df_gesprekken, ["info"])
+    gesprek_nummer_col = find_col(df_gesprekken, ["nummer"])
+    gesprek_naam_col = find_col(df_gesprekken, ["chauffeurnaam"])
+    gesprek_datum_col = find_col(df_gesprekken, ["datum"])
 
     df_g = df_gesprekken.copy()
 
-    if col_g_date:
-        df_g["_dt"] = to_datetime_utc_series(df_g[col_g_date])
+    if gesprek_datum_col:
+        df_g["_dt"] = to_datetime_utc_series(df_g[gesprek_datum_col])
         df_g["_jaar"] = df_g["_dt"].dt.year
         if year_choice != "ALL":
             df_g = df_g[df_g["_jaar"] == int(year_choice)]
@@ -730,35 +804,29 @@ def page_gesprekken():
     c1, c2 = st.columns([3, 1])
     g_term = c1.text_input("Zoek", placeholder="Zoek personeelsnr of naam...", label_visibility="collapsed")
     reset = c2.button("Reset", use_container_width=True)
-
     if reset:
         st.rerun()
 
     if g_term.strip():
         tt = g_term.strip().lower()
         m = pd.Series(False, index=df_g.index)
-        if col_g_num:
-            m |= df_g[col_g_num].astype(str).str.lower().str.contains(re.escape(tt), na=False)
-        if col_g_name:
-            m |= df_g[col_g_name].astype(str).str.lower().str.contains(re.escape(tt), na=False)
+        if gesprek_nummer_col:
+            m |= df_g[gesprek_nummer_col].apply(pnr_to_clean_string).astype(str).str.lower().str.contains(re.escape(tt), na=False)
+        if gesprek_naam_col:
+            m |= df_g[gesprek_naam_col].astype(str).str.lower().str.contains(re.escape(tt), na=False)
         df_g = df_g[m]
 
     st.caption(f"Resultaten: {len(df_g)}")
 
-    out_cols = []
-    for c in [col_g_num, col_g_name, col_g_date, col_g_subject, col_g_info]:
-        if c:
-            out_cols.append(c)
+    out = df_g.copy()
+    if gesprek_datum_col and gesprek_datum_col in out.columns:
+        out[gesprek_datum_col] = to_datetime_utc_series(out[gesprek_datum_col]).dt.strftime("%d/%m/%Y")
 
-    out = df_g[out_cols].copy() if out_cols else df_g.copy()
-    if col_g_date and col_g_date in out.columns:
-        out[col_g_date] = to_datetime_utc_series(out[col_g_date]).dt.strftime("%d/%m/%Y")
-
-    st.dataframe(out, use_container_width=True, hide_index=True)
+    st.dataframe(out[gesprek_cols], use_container_width=True, hide_index=True)
 
 
 # ============================================================
-# MAIN ROUTER
+# ROUTER
 # ============================================================
 page = st.session_state.page
 
