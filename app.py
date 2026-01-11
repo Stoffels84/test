@@ -580,4 +580,52 @@ def page_chauffeur():
         st.info("Kolom 'teamcoach' niet gevonden in BRON.")
         return
 
-    # BELANGRIJK: alle
+    # BELANGRIJK: alleen voor deze grafiek "uit dienst" uitsluiten
+    bar = df_ch.copy()
+    bar["_tc_raw"] = bar[col_teamcoach].fillna("Onbekend").astype(str).str.strip()
+    bar = bar[~bar["_tc_raw"].map(is_uit_dienst_value)].copy()  # alleen hier filteren
+    bar["_tc"] = bar["_tc_raw"].replace("", "Onbekend")
+
+    if bar.empty:
+        st.info("Geen data voor grafiek (na uitsluiten 'uit dienst').")
+        return
+
+    bar_df = bar.groupby("_tc").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
+
+    fig = px.bar(bar_df, x="_tc", y="Aantal")
+    fig.update_layout(xaxis_title="Teamcoach", yaxis_title="Aantal schades", showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def page_voertuig():
+    st.header("Data rond voertuig (Bus/Tram)")
+    st.write(
+        "Overzicht van aantal schades per type voertuig op basis van kolom **Bus/Tram** (of gelijkaardig). "
+        "Respecteert de jaarfilter."
+    )
+
+    if not col_voertuigtype:
+        st.warning("Geen kolom voertuigtype (Bus/Tram/...) gevonden in BRON.")
+        return
+
+    lim_choice = st.selectbox("Toon", ["Top 10", "Top 20", "Alle types"], index=0)
+    lim = 10 if lim_choice == "Top 10" else 20 if lim_choice == "Top 20" else None
+
+    temp = df_filtered.copy()
+    temp["_veh"] = temp[col_voertuigtype].fillna("Onbekend").astype(str).str.strip()
+
+    table = temp.groupby("_veh").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
+    table_view = table.head(lim) if lim else table
+
+    st.dataframe(table_view.rename(columns={"_veh": "Type voertuig"}), use_container_width=True, hide_index=True)
+
+    if "_datum_dt" not in temp.columns:
+        st.info("Geen datumkolom verwerkt.")
+        return
+
+    dm = temp[temp["_datum_dt"].notna()].copy()
+    if dm.empty:
+        st.info("Geen datums gevonden om per maand te groeperen.")
+        return
+
+    dm["_maand"_]()
