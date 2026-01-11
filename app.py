@@ -4,6 +4,10 @@
 # - Schade (submenu: Chauffeur, Voertuig, Locatie, Coaching, Analyse)
 # - Alle info teamcoach (submenu: Gesprekken)
 #
+# Dashboard-aanpassing:
+# - Kolommen "In coaching-lijst" en "Status" zijn VERWIJDERD
+# - Kolom "Link" is aanklikbaar (LinkColumn)
+#
 # Bestanden verwacht in dezelfde map als app.py:
 # - schade met macro.xlsm
 # - Coachingslijst.xlsx
@@ -115,14 +119,14 @@ def safe_read_excel(path: Path, sheet_name=None) -> pd.DataFrame:
     return pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl")
 
 
-def linkify_url(v) -> str:
-    if v is None or (isinstance(v, float) and np.isnan(v)):
+def clean_url(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, float) and np.isnan(v):
         return ""
     s = str(v).strip()
-    if not s:
+    if not s or s.lower() == "nan":
         return ""
-    # klikbare link in Streamlit dataframe is beperkt; daarom: toon de URL zelf,
-    # en in detailviews/expander tonen we via st.markdown.
     return s
 
 
@@ -181,16 +185,6 @@ def load_gesprekken() -> pd.DataFrame:
 # ============================================================
 # SIDEBAR NAVIGATIE (jouw gewenste structuur)
 # ============================================================
-PAGES = {
-    "dashboard": {"title": "Dashboard"},
-    "chauffeur": {"title": "Chauffeur"},
-    "voertuig": {"title": "Voertuig"},
-    "locatie": {"title": "Locatie"},
-    "coaching": {"title": "Coaching"},
-    "analyse": {"title": "Analyse"},
-    "gesprekken": {"title": "Gesprekken"},
-}
-
 DEFAULT_PAGE = "dashboard"
 if "page" not in st.session_state:
     st.session_state.page = DEFAULT_PAGE
@@ -200,35 +194,36 @@ def go(page_key: str):
     st.session_state.page = page_key
 
 
-# Sidebar header
 st.sidebar.markdown("## OT GENT")
 st.sidebar.caption("Overzicht & rapportering")
 st.sidebar.divider()
 
 # Dashboard (bovenaan)
-if st.sidebar.button("Dashboard", use_container_width=True, type="primary" if st.session_state.page == "dashboard" else "secondary"):
+if st.sidebar.button(
+    "Dashboard",
+    use_container_width=True,
+    type="primary" if st.session_state.page == "dashboard" else "secondary",
+):
     go("dashboard")
 
-st.sidebar.markdown("")  # spacing
+st.sidebar.markdown("")
 
 # Schade + submenu
 st.sidebar.markdown("**Schade**")
-with st.sidebar.container():
-    cols = st.sidebar.columns(1)
-    if st.sidebar.button("Chauffeur", use_container_width=True, type="primary" if st.session_state.page == "chauffeur" else "secondary"):
-        go("chauffeur")
-    if st.sidebar.button("Voertuig", use_container_width=True, type="primary" if st.session_state.page == "voertuig" else "secondary"):
-        go("voertuig")
-    if st.sidebar.button("Locatie", use_container_width=True, type="primary" if st.session_state.page == "locatie" else "secondary"):
-        go("locatie")
-    if st.sidebar.button("Coaching", use_container_width=True, type="primary" if st.session_state.page == "coaching" else "secondary"):
-        go("coaching")
-    if st.sidebar.button("Analyse", use_container_width=True, type="primary" if st.session_state.page == "analyse" else "secondary"):
-        go("analyse")
+if st.sidebar.button("Chauffeur", use_container_width=True, type="primary" if st.session_state.page == "chauffeur" else "secondary"):
+    go("chauffeur")
+if st.sidebar.button("Voertuig", use_container_width=True, type="primary" if st.session_state.page == "voertuig" else "secondary"):
+    go("voertuig")
+if st.sidebar.button("Locatie", use_container_width=True, type="primary" if st.session_state.page == "locatie" else "secondary"):
+    go("locatie")
+if st.sidebar.button("Coaching", use_container_width=True, type="primary" if st.session_state.page == "coaching" else "secondary"):
+    go("coaching")
+if st.sidebar.button("Analyse", use_container_width=True, type="primary" if st.session_state.page == "analyse" else "secondary"):
+    go("analyse")
 
-st.sidebar.markdown("")  # spacing
+st.sidebar.markdown("")
 
-# Nieuw hoofdmenu: Alle info teamcoach + submenu gesprekken
+# Alle info teamcoach + submenu gesprekken
 st.sidebar.markdown("**Alle info teamcoach**")
 if st.sidebar.button("Gesprekken", use_container_width=True, type="primary" if st.session_state.page == "gesprekken" else "secondary"):
     go("gesprekken")
@@ -289,7 +284,7 @@ def apply_year_filter(df: pd.DataFrame) -> pd.DataFrame:
 df_filtered = apply_year_filter(df_bron)
 
 # ============================================================
-# BUILD COACHING MAP (like your JS)
+# BUILD COACHING MAP (zoals je JS, voor coaching-tab + summary)
 # ============================================================
 coaching_map: dict[str, list[dict]] = {}
 
@@ -318,7 +313,7 @@ if not df_coach_done.empty:
 
             coaching_map.setdefault(key, []).append({"status": status, "date": dt if pd.notna(dt) else None, "dateString": date_str})
 
-# Add indicators to filtered dataset
+# (Optioneel) Indicators, nuttig voor andere tabs
 df_filtered = df_filtered.copy()
 if col_pnr:
     df_filtered["_pnr_str"] = df_filtered[col_pnr].astype(str).str.strip()
@@ -336,7 +331,7 @@ else:
     df_filtered["_coach_primary"] = None
 
 # ============================================================
-# GLOBAL STATUS (footer)
+# GLOBAL STATUS (sidebar footer)
 # ============================================================
 def sidebar_status():
     coach_count = len(coaching_map.keys())
@@ -353,7 +348,7 @@ def page_dashboard():
 
     c1, c2 = st.columns([3, 1])
     term = c1.text_input("Zoek", placeholder="Personeelsnr, naam of voertuignummer...", label_visibility="collapsed")
-    c2.button("Zoeken", use_container_width=True)  # puur visueel; Streamlit her-runt vanzelf
+    c2.button("Zoeken", use_container_width=True)  # visueel (Streamlit rerun vanzelf)
 
     if not term.strip():
         st.info("Tip: je kunt een deel van de naam, het nummer of het voertuignummer ingeven.")
@@ -395,29 +390,32 @@ def page_dashboard():
         else:
             st.caption(f"Geen coachings gevonden voor P-nr {first_pnr}.")
 
-    # Tabel zoals je colOrder (maar met duidelijke indicatoren)
+    # Dashboard tabel (zonder de twee ongewenste kolommen)
     out = pd.DataFrame()
-    if col_datum:
-        out["Datum"] = results["_datum_dt"].dt.strftime("%d/%m/%Y")
-    out["Chauffeur"] = results[col_naam] if col_naam else ""
-    if col_pnr:
-        out["⚫ In coaching-lijst"] = results["_in_coaching_list"].map(lambda x: "⚫" if x else "")
-        out["Status"] = results["_coach_primary"].map(status_emoji)
-        out["Personeelsnr"] = results[col_pnr]
-    else:
-        out["Personeelsnr"] = ""
+    out["Datum"] = results["_datum_dt"].dt.strftime("%d/%m/%Y")
 
+    out["Chauffeur"] = results[col_naam] if col_naam else ""
+    out["Personeelsnr"] = results[col_pnr] if col_pnr else ""
     out["Voertuignr"] = results[col_voertuignr] if col_voertuignr else ""
     out["Voertuigtype"] = results[col_voertuigtype] if col_voertuigtype else ""
     out["Type"] = results[col_type] if col_type else ""
     out["Locatie"] = results[col_locatie] if col_locatie else ""
-    out["Link"] = results[col_link].map(linkify_url) if col_link else ""
+    out["Link"] = results[col_link].map(clean_url) if col_link else ""
 
-    st.dataframe(out, use_container_width=True, hide_index=True)
-
-    # Links klikbaar in detail (optioneel)
-    if col_link and out["Link"].astype(str).str.strip().replace("nan", "").ne("").any():
-        st.caption("Tip: kopieer de link uit de tabel (Streamlit tabel maakt URLs niet altijd klikbaar).")
+    # Aanklikbare links via column_config (werkt in Streamlit 1.30+)
+    st.dataframe(
+        out,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Link": st.column_config.LinkColumn(
+                "Link",
+                display_text="=> naar EAF",
+                help="Klik om de EAF-link te openen",
+                validate="^https?://.*",
+            )
+        },
+    )
 
 
 def page_chauffeur():
@@ -428,7 +426,6 @@ def page_chauffeur():
         st.warning("Geen kolom chauffeur/naam gevonden.")
         return
 
-    # Filters
     tc_options = ["ALL"]
     if col_teamcoach:
         tc_options += sorted([x for x in df_filtered[col_teamcoach].dropna().astype(str).str.strip().unique() if x])
@@ -468,17 +465,14 @@ def page_chauffeur():
             if col_datum in out.columns:
                 out[col_datum] = to_datetime_utc_series(out[col_datum]).dt.strftime("%d/%m/%Y")
             if col_link in out.columns:
-                out[col_link] = out[col_link].map(linkify_url)
+                out[col_link] = out[col_link].map(clean_url)
 
-            st.dataframe(out, use_container_width=True, hide_index=True)
+            # Klikbare links in details
+            cfg = {}
+            if col_link in out.columns:
+                cfg[col_link] = st.column_config.LinkColumn(col_link, display_text="=> naar EAF", validate="^https?://.*")
 
-            # klikbare linkslijst (handig)
-            if col_link and col_link in out.columns:
-                links = [s for s in out[col_link].astype(str).tolist() if s and s != "nan"]
-                if links:
-                    st.markdown("**Links:**")
-                    for u in links[:50]:
-                        st.markdown(f"- {u}")
+            st.dataframe(out, use_container_width=True, hide_index=True, column_config=cfg)
 
 
 def page_voertuig():
@@ -515,10 +509,14 @@ def page_voertuig():
             if col_datum in out.columns:
                 out[col_datum] = to_datetime_utc_series(out[col_datum]).dt.strftime("%d/%m/%Y")
             if col_link in out.columns:
-                out[col_link] = out[col_link].map(linkify_url)
-            st.dataframe(out, use_container_width=True, hide_index=True)
+                out[col_link] = out[col_link].map(clean_url)
 
-    # Maandgrafieken
+            cfg = {}
+            if col_link in out.columns:
+                cfg[col_link] = st.column_config.LinkColumn(col_link, display_text="=> naar EAF", validate="^https?://.*")
+
+            st.dataframe(out, use_container_width=True, hide_index=True, column_config=cfg)
+
     st.subheader("Schades per maand en voertuigtype (gestapelde balken)")
     df_m = df_filtered.copy()
     df_m = df_m[df_m["_datum_dt"].notna()]
@@ -580,15 +578,18 @@ def page_locatie():
             if col_datum in out.columns:
                 out[col_datum] = to_datetime_utc_series(out[col_datum]).dt.strftime("%d/%m/%Y")
             if col_link in out.columns:
-                out[col_link] = out[col_link].map(linkify_url)
+                out[col_link] = out[col_link].map(clean_url)
 
-            st.dataframe(out, use_container_width=True, hide_index=True)
+            cfg = {}
+            if col_link in out.columns:
+                cfg[col_link] = st.column_config.LinkColumn(col_link, display_text="=> naar EAF", validate="^https?://.*")
+
+            st.dataframe(out, use_container_width=True, hide_index=True, column_config=cfg)
 
 
 def page_coaching():
     st.header("Coaching – vergelijkingen")
 
-    # Damage PNR set gebaseerd op alle base rows (zoals je JS)
     damage_pnr_set = set()
     if col_pnr:
         damage_pnr_set = set(df_bron[col_pnr].dropna().astype(str).str.strip())
@@ -609,7 +610,6 @@ def page_coaching():
 
     st.divider()
 
-    # High damage without coaching (>2, jaarfilter)
     high_damage = []
     if col_pnr:
         counts = df_filtered.groupby(df_filtered[col_pnr].astype(str).str.strip()).size()
@@ -732,7 +732,6 @@ def page_gesprekken():
     reset = c2.button("Reset", use_container_width=True)
 
     if reset:
-        st.session_state["_g_term_reset"] = True
         st.rerun()
 
     if g_term.strip():
