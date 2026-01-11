@@ -158,30 +158,60 @@ def coaching_status_from_text(text) -> str | None:
 
 
 def render_wrap_table(df: pd.DataFrame):
-    """
-    Render een leesbare HTML-tabel met automatische wrap + hogere rijen.
-    => Alle tekst direct zichtbaar (geen 2x klikken).
-    """
     html = df.to_html(index=False, escape=True)
 
     st.markdown(
         """
         <style>
-        .wrap-table table { width: 100%; border-collapse: collapse; }
-        .wrap-table th, .wrap-table td {
+        .wrap-table table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed; /* essentieel */
+        }
+
+        /* Algemene cell styling */
+        .wrap-table th,
+        .wrap-table td {
             border-bottom: 1px solid rgba(255,255,255,0.10);
             padding: 8px 10px;
             vertical-align: top;
-            white-space: pre-wrap;       /* behoud line breaks + wrap */
-            word-break: break-word;      /* breek lange woorden/strings */
+            white-space: pre-wrap;
+            word-break: break-word;
+            text-align: left;
         }
-        .wrap-table th { font-weight: 600; text-align: left; }
+
+        .wrap-table th {
+            font-weight: 600;
+        }
+
+        /* Kolombreedtes (volgorde = kolommen in dataframe!) */
+        .wrap-table th:nth-child(1),
+        .wrap-table td:nth-child(1) {
+            width: 180px;   /* Chauffeurnaam */
+        }
+
+        .wrap-table th:nth-child(2),
+        .wrap-table td:nth-child(2) {
+            width: 90px;    /* Datum */
+            white-space: nowrap;
+        }
+
+        .wrap-table th:nth-child(3),
+        .wrap-table td:nth-child(3) {
+            width: 160px;   /* Onderwerp */
+        }
+
+        .wrap-table th:nth-child(4),
+        .wrap-table td:nth-child(4) {
+            width: auto;    /* Info → krijgt alle resterende ruimte */
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
     st.markdown(f'<div class="wrap-table">{html}</div>', unsafe_allow_html=True)
+
 
 
 # ============================================================
