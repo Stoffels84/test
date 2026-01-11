@@ -628,4 +628,39 @@ def page_voertuig():
         st.info("Geen datums gevonden om per maand te groeperen.")
         return
 
-    dm["_maand"_]()
+    dm["_maand"] = dm["_datum_dt"].dt.month
+    month_names = ["Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"]
+    dm["_m_name"] = dm["_maand"].apply(lambda m: month_names[m - 1])
+    dm["_veh"] = dm["_veh"].replace("", "Onbekend")
+
+    pivot = dm.groupby(["_maand", "_m_name", "_veh"]).size().reset_index(name="Aantal")
+
+    vehicles = sorted(pivot["_veh"].unique().tolist())
+    full_index = pd.MultiIndex.from_product([range(1, 13), vehicles], names=["_maand", "_veh"])
+    filled = pivot.set_index(["_maand", "_veh"]).reindex(full_index, fill_value=0).reset_index()
+    filled["_m_name"] = filled["_maand"].apply(lambda m: month_names[m - 1])
+
+    st.subheader("Schades per maand en voertuigtype (gestapelde balken)")
+    st.caption("X-as = maanden, kleur = voertuigtype. Respecteert de gekozen jaarfilter.")
+
+    fig_bar = px.bar(
+        filled,
+        x="_m_name",
+        y="Aantal",
+        color="_veh",
+        barmode="stack",
+        category_orders={"_m_name": month_names},
+    )
+    fig_bar.update_layout(xaxis_title="Maand", yaxis_title="Aantal schades")
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    st.subheader("Tendens per voertuigtype (lijngrafiek)")
+    st.caption("Zelfde data als de staafgrafiek hierboven, maar als lijngrafiek per voertuigtype.")
+
+    fig_line = px.line(
+        filled,
+        x="_m_name",
+        y="Aantal",
+        color="_veh",
+        markers=True,
+        category_orders={"_m_name_
