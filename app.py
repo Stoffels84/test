@@ -157,21 +157,13 @@ def coaching_status_from_text(text) -> str | None:
     return None
 
 
-def render_wrap_table(df: pd.DataFrame):
-    html = df.to_html(index=False, escape=True)
-
+def inject_css():
+    """Globale CSS (1x), zodat render_wrap_table geen CSS telkens opnieuw moet injecteren."""
     st.markdown(
         """
         <style>
-        .wrap-table table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed; /* essentieel */
-        }
-
-        /* Algemene cell styling */
-        .wrap-table th,
-        .wrap-table td {
+        .wrap-table table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .wrap-table th, .wrap-table td {
             border-bottom: 1px solid rgba(255,255,255,0.10);
             padding: 8px 10px;
             vertical-align: top;
@@ -179,39 +171,27 @@ def render_wrap_table(df: pd.DataFrame):
             word-break: break-word;
             text-align: left;
         }
+        .wrap-table th { font-weight: 600; }
 
-        .wrap-table th {
-            font-weight: 600;
-        }
-
-        /* Kolombreedtes (volgorde = kolommen in dataframe!) */
-        .wrap-table th:nth-child(1),
-        .wrap-table td:nth-child(1) {
-            width: 180px;   /* Chauffeurnaam */
-        }
-
-        .wrap-table th:nth-child(2),
-        .wrap-table td:nth-child(2) {
-            width: 90px;    /* Datum */
-            white-space: nowrap;
-        }
-
-        .wrap-table th:nth-child(3),
-        .wrap-table td:nth-child(3) {
-            width: 160px;   /* Onderwerp */
-        }
-
-        .wrap-table th:nth-child(4),
-        .wrap-table td:nth-child(4) {
-            width: auto;    /* Info → krijgt alle resterende ruimte */
-        }
+        /* Kolombreedtes gesprekken (volgorde = GESPREK_COLS) */
+        .wrap-table th:nth-child(1), .wrap-table td:nth-child(1) { width: 180px; }
+        .wrap-table th:nth-child(2), .wrap-table td:nth-child(2) { width: 90px; white-space: nowrap; }
+        .wrap-table th:nth-child(3), .wrap-table td:nth-child(3) { width: 160px; }
+        .wrap-table th:nth-child(4), .wrap-table td:nth-child(4) { width: auto; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
+
+def render_wrap_table(df: pd.DataFrame):
+    """Render een leesbare HTML-tabel met automatische wrap + hogere rijen."""
+    html = df.to_html(index=False, escape=True)
     st.markdown(f'<div class="wrap-table">{html}</div>', unsafe_allow_html=True)
 
+
+# Inject CSS meteen (1x)
+inject_css()
 
 
 # ============================================================
@@ -277,7 +257,17 @@ def load_gesprekken() -> pd.DataFrame:
 df_bron, df_hastus = load_schade()
 df_coach_done, coaching_pending_set, done_raw_count, pending_raw_count = load_coaching()
 df_gesprekken = load_gesprekken()
-GESPREK_COLS = gesprekken_keep_columns(df_gesprekken)
+
+# Prefer vaste, herkenbare volgorde voor gesprekken als die kolommen bestaan:
+gesp_chauffeur = find_col(df_gesprekken, ["Chauffeurnaam", "chauffeurnaam", "volledige naam", "naam"])
+gesp_datum = find_col(df_gesprekken, ["Datum", "datum"])
+gesp_onderwerp = find_col(df_gesprekken, ["Onderwerp", "onderwerp"])
+gesp_info = find_col(df_gesprekken, ["Info", "info"])
+
+if all([gesp_chauffeur, gesp_datum, gesp_onderwerp, gesp_info]):
+    GESPREK_COLS = [gesp_chauffeur, gesp_datum, gesp_onderwerp, gesp_info]
+else:
+    GESPREK_COLS = gesprekken_keep_columns(df_gesprekken)
 
 # ============================================================
 # MAP COLUMNS (BRON)
@@ -316,6 +306,11 @@ def go(page_key: str):
 st.sidebar.markdown("## OT GENT")
 st.sidebar.caption("Overzicht & rapportering")
 st.sidebar.divider()
+
+# Refresh data knop (cache clear + rerun)
+if st.sidebar.button("🔄 Data herladen", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
 
 if st.sidebar.button("Dashboard", use_container_width=True, type="primary" if st.session_state.page == "dashboard" else "secondary"):
     go("dashboard")
@@ -397,11 +392,13 @@ def page_dashboard():
     st.header("Dashboard – Chauffeur opzoeken")
     st.write("Zoek op **personeelsnummer**, **naam** of **voertuig**. Resultaten respecteren de jaarfilter.")
 
-    c1, c2 = st.columns([3, 1])
-    term = c1.text_input("Zoek", placeholder="Personeelsnr, naam of voertuignummer...", label_visibility="collapsed")
-    c2.button("Zoeken", use_container_width=True)
+    # Zoekveld in form => Enter + knop werken identiek
+    with st.form("search_form", clear_on_submit=False):
+        c1, c2 = st.columns([3, 1])
+        term = c1.text_input("Zoek", placeholder="Personeelsnr, naam of voertuignummer...", label_visibility="collapsed")
+        submitted = c2.form_submit_button("Zoeken", use_container_width=True)
 
-    if not term.strip():
+    if not submitted and not term.strip():
         st.info("Tip: je kunt een deel van de naam, het nummer of het voertuignummer ingeven.")
         return
 
@@ -443,6 +440,9 @@ def page_dashboard():
             selected_pnr = pnr_to_clean_string(results.iloc[0][col_pnr])
         if col_naam:
             selected_name = str(results.iloc[0][col_naam]).strip()
+
+    if selected_name or selected_pnr:
+        st.info(f"📌 Geselecteerd: **{selected_name or 'Onbekend'}** — P-nr **{selected_pnr or 'Onbekend'}**")
 
     # coachings
     if selected_pnr:
@@ -515,9 +515,13 @@ def page_dashboard():
         st.info("Geen gesprekken gevonden (binnen de gekozen jaarfilter).")
         return
 
-    # datumformaat
+    # sorteer newest first op echte datetime
     if gesprek_datum_col and gesprek_datum_col in df_g_match.columns:
-        df_g_match[gesprek_datum_col] = to_datetime_utc_series(df_g_match[gesprek_datum_col]).dt.strftime("%d/%m/%Y")
+        df_g_match["_dt_sort"] = to_datetime_utc_series(df_g_match[gesprek_datum_col])
+        df_g_match = df_g_match.sort_values("_dt_sort", ascending=False)
+
+        # datumformaat voor weergave
+        df_g_match[gesprek_datum_col] = df_g_match["_dt_sort"].dt.strftime("%d/%m/%Y")
 
     # HTML wrap table: alles direct zichtbaar
     render_wrap_table(df_g_match[GESPREK_COLS])
