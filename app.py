@@ -25,7 +25,7 @@
 # Voertuig:
 # - Tabel type voertuig + aantallen
 # - Gestapelde balk per maand + voertuigtype
-# - Lijngrafiek tendens per voertuigtype (zoals je screenshot)
+# - Lijngrafiek tendens per voertuigtype
 #
 # Run:
 #   pip install -r requirements.txt
@@ -166,6 +166,25 @@ def coaching_status_from_text(text) -> str | None:
     if "zeer goed" in t or t == "goed" or " goed" in t:
         return "good"
     return None
+
+
+def gesprekken_column_config(cols: list[str]) -> dict:
+    """
+    Column config voor gesprekken zodat tekst (zeker Info) mooi wrapt
+    met st.data_editor (read-only via disabled=True).
+    """
+    cfg: dict = {}
+    for c in cols:
+        if norm(c) == "info":
+            cfg[c] = st.column_config.TextColumn(c, width="large")
+        elif norm(c) == "onderwerp":
+            cfg[c] = st.column_config.TextColumn(c, width="medium")
+        elif norm(c) == "chauffeurnaam":
+            cfg[c] = st.column_config.TextColumn(c, width="medium")
+        else:
+            # default: laat Streamlit beslissen
+            pass
+    return cfg
 
 
 # ============================================================
@@ -438,6 +457,7 @@ def page_dashboard():
 
     # gesprekken onderaan
     st.markdown("### Gesprekken")
+    st.caption("ℹ️ Lange teksten worden automatisch gewrapt. (Indien nodig kan je in een cel scrollen.)")
 
     if df_gesprekken.empty:
         st.info("Gesprekkenbestand is leeg.")
@@ -474,7 +494,14 @@ def page_dashboard():
     if gesprek_datum_col and gesprek_datum_col in df_g_match.columns:
         df_g_match[gesprek_datum_col] = to_datetime_utc_series(df_g_match[gesprek_datum_col]).dt.strftime("%d/%m/%Y")
 
-    st.dataframe(df_g_match[GESPREK_COLS], use_container_width=True, hide_index=True)
+    # >>> Hier: data_editor i.p.v. dataframe (wrapping + hogere rijen)
+    st.data_editor(
+        df_g_match[GESPREK_COLS],
+        use_container_width=True,
+        hide_index=True,
+        disabled=True,
+        column_config=gesprekken_column_config(GESPREK_COLS),
+    )
 
 
 def page_chauffeur():
@@ -587,7 +614,7 @@ def page_voertuig():
     fig_bar.update_layout(xaxis_title="Maand", yaxis_title="Aantal schades")
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # ---- 2) LINE TREND (zoals screenshot) ----
+    # ---- 2) LINE TREND ----
     st.subheader("Tendens per voertuigtype (lijngrafiek)")
     st.caption(
         "Zelfde data als de staafgrafiek hierboven, maar als lijngrafiek per voertuigtype. "
@@ -738,6 +765,7 @@ def page_analyse():
 def page_gesprekken():
     st.header("Gesprekken")
     st.write("Overzicht uit **Overzicht gesprekken (aangepast).xlsx** (respecteert de jaarfilter).")
+    st.caption("ℹ️ Lange teksten worden automatisch gewrapt. (Indien nodig kan je in een cel scrollen.)")
 
     gesprek_nummer_col = find_col(df_gesprekken, ["nummer"])
     gesprek_naam_col = find_col(df_gesprekken, ["chauffeurnaam"])
@@ -772,7 +800,14 @@ def page_gesprekken():
     if gesprek_datum_col and gesprek_datum_col in out.columns:
         out[gesprek_datum_col] = to_datetime_utc_series(out[gesprek_datum_col]).dt.strftime("%d/%m/%Y")
 
-    st.dataframe(out[GESPREK_COLS], use_container_width=True, hide_index=True)
+    # >>> Hier: data_editor i.p.v. dataframe (wrapping + hogere rijen)
+    st.data_editor(
+        out[GESPREK_COLS],
+        use_container_width=True,
+        hide_index=True,
+        disabled=True,
+        column_config=gesprekken_column_config(GESPREK_COLS),
+    )
 
 
 # ============================================================
