@@ -454,4 +454,130 @@ def page_dashboard():
         if not sub_p.empty and col_naam:
             selected_name = str(sub_p.iloc[0][col_naam]).strip()
         elif col_naam:
-            selected_name = s_
+            selected_name = str(results.iloc[0][col_naam]).strip()
+    else:
+        if col_pnr:
+            selected_pnr = pnr_to_clean_string(results.iloc[0][col_pnr])
+        if col_naam:
+            selected_name = str(results.iloc[0][col_naam]).strip()
+
+    if selected_name or selected_pnr:
+        st.info(f"📌 Geselecteerd: **{selected_name or 'Onbekend'}** — P-nr **{selected_pnr or 'Onbekend'}**")
+
+    # coachings
+    if selected_pnr:
+        entries = coaching_map.get(selected_pnr, [])
+        if entries:
+            entries_sorted = sorted(entries, key=lambda e: (e["date"] is None, e["date"]))
+            title = f"Coachings voor **{selected_pnr}**"
+            if selected_name:
+                title += f" — {selected_name}"
+            st.markdown(f"#### {title}")
+            dates = [e["dateString"] for e in entries_sorted if e.get("dateString")]
+            if dates:
+                st.write(" ".join([f"`{d}`" for d in dates]))
+        else:
+            st.caption(f"Geen coachings gevonden voor P-nr {selected_pnr}.")
+
+    # schade tabel
+    out = pd.DataFrame()
+    out["Datum"] = results["_datum_dt"].dt.strftime("%d/%m/%Y")
+    out["Chauffeur"] = results[col_naam] if col_naam else ""
+    out["Personeelsnr"] = results[col_pnr].apply(pnr_to_clean_string) if col_pnr else ""
+    out["Voertuignr"] = results[col_voertuignr] if col_voertuignr else ""
+    out["Voertuigtype"] = results[col_voertuigtype] if col_voertuigtype else ""
+    out["Type"] = results[col_type] if col_type else ""
+    out["Locatie"] = results[col_locatie] if col_locatie else ""
+    out["Link"] = results[col_link].map(clean_url) if col_link else ""
+
+    st.dataframe(
+        out,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Link": st.column_config.LinkColumn("Link", display_text="=> naar EAF", validate="^https?://.*")
+        },
+    )
+
+    # gesprekken onderaan (blijft in dashboard)
+    st.markdown("### Gesprekken")
+    st.caption("Alle tekst staat meteen volledig open (geen doorklikken).")
+
+    if df_gesprekken.empty:
+        st.info("Gesprekkenbestand is leeg.")
+        return
+
+    gesprek_nummer_col = find_col(df_gesprekken, ["nummer", "personeelsnr", "personeelsnummer", "p-nr", "p nr"])
+    gesprek_naam_col = find_col(df_gesprekken, ["chauffeurnaam", "volledige naam", "naam"])
+    gesprek_datum_col = find_col(df_gesprekken, ["datum"])
+
+    df_g = df_gesprekken.copy()
+
+    # jaarfilter gesprekken (multiselect)
+    if gesprek_datum_col:
+        df_g["_dt"] = to_datetime_utc_series(df_g[gesprek_datum_col])
+        df_g["_jaar"] = df_g["_dt"].dt.year
+        if years_choice:
+            df_g = df_g[df_g["_jaar"].isin([int(y) for y in years_choice])]
+
+    gmask = pd.Series(False, index=df_g.index)
+
+    if selected_pnr and gesprek_nummer_col:
+        gmask |= df_g[gesprek_nummer_col].apply(pnr_to_clean_string).astype(str).str.strip() == selected_pnr
+
+    if (not gmask.any()) and selected_name and gesprek_naam_col:
+        nm = selected_name.strip().lower()
+        gmask |= df_g[gesprek_naam_col].astype(str).str.lower().str.contains(re.escape(nm), na=False)
+
+    df_g_match = df_g[gmask].copy()
+
+    if df_g_match.empty:
+        st.info("Geen gesprekken gevonden (binnen de gekozen jaarfilter).")
+        return
+
+    # sorteer newest first
+    if gesprek_datum_col and gesprek_datum_col in df_g_match.columns:
+        df_g_match["_dt_sort"] = to_datetime_utc_series(df_g_match[gesprek_datum_col])
+        df_g_match = df_g_match.sort_values("_dt_sort", ascending=False)
+        df_g_match[gesprek_datum_col] = df_g_match["_dt_sort"].dt.strftime("%d/%m/%Y")
+
+    render_wrap_table(df_g_match[GESPREK_COLS])
+
+
+def page_chauffeur():
+    st.header("Data rond chauffeur")
+    st.write("Overzicht van aantal schades per chauffeur (gefilterd op gekozen jaren).")
+
+    if not col_naam:
+        st.warning("Geen kolom 'volledige naam / chauffeur / naam' gevonden in BRON.")
+        return
+
+    tc_options = ["Alle teamcoaches"]
+    if col_teamcoach:
+        vals = df_filtered[col_teamcoach].dropna().astype(str).str.strip()
+        tc_options += sorted([v for v in vals.unique() if v])
+
+    c1, c2 = st.columns([2, 1])
+    tc_choice = c1.selectbox("Teamcoach", tc_options)
+    lim_choice = c2.selectbox("Toon", ["Top 10", "Top 20", "Alle chauffeurs"], index=0)
+    lim = 10 if lim_choice == "Top 10" else 20 if lim_choice == "Top 20" else None
+
+    df_ch = df_filtered.copy()
+    if col_teamcoach and tc_choice != "Alle teamcoaches":
+        df_ch = df_ch[df_ch[col_teamcoach].astype(str).str.strip() == tc_choice]
+
+    temp = df_ch.copy()
+    temp["_chauffeur"] = temp[col_naam].fillna("Onbekend").astype(str).str.strip()
+    table = temp.groupby("_chauffeur").size().reset_index(name="Aantal").sort_values("Aantal", ascending=False)
+    table_view = table.head(lim) if lim else table
+
+    st.dataframe(table_view.rename(columns={"_chauffeur": "Chauffeur"}), use_container_width=True, hide_index=True)
+
+    st.subheader("Schades per teamcoach")
+    st.caption("Gebaseerd op de huidige jaarfilter en eventueel geselecteerde teamcoach. ('uit dienst' telt niet mee.)")
+
+    if not col_teamcoach:
+        st.info("Kolom 'teamcoach' niet gevonden in BRON.")
+        return
+
+    # BELANGRIJK: alle
