@@ -429,7 +429,6 @@ def set_page(page_id: str) -> None:
 # Remote Excel Loaders
 # ----------------------------
 @st.cache_data(show_spinner=False)
-@st.cache_data(show_spinner=False)
 def load_schade_df() -> pd.DataFrame:
     content = fetch_bytes(data_url(XLSM_NAME))
     bio = BytesIO(content)
