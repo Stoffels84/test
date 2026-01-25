@@ -428,36 +428,7 @@ def set_page(page_id: str) -> None:
 # ----------------------------
 # Remote Excel Loaders
 # ----------------------------
-@st.cache_data(show_spinner=False)
-def load_schade_df() -> pd.DataFrame:
-    content = fetch_bytes(data_url(XLSM_NAME))
-    bio = BytesIO(content)
 
-    # Lees alleen wat je nodig hebt
-    df = pd.read_excel(
-        bio,
-        sheet_name=SCHADESHEET,
-        engine="openpyxl",
-        dtype=str,
-        usecols=SCHADE_COLS,   # als kolomnamen exact matchen
-    ).fillna("")
-
-    # Als kolomnamen soms variëren (bus/ tram etc.), dan kan je na read_excel nog renamen.
-
-    df["personeelsnr"] = df["personeelsnr"].apply(clean_id)
-    df["volledige naam"] = df["volledige naam"].apply(clean_text)
-    df["teamcoach"] = df["teamcoach"].apply(clean_text)
-    df["voertuig"] = df["voertuig"].apply(clean_text)
-
-    df["_jaar"] = df["Datum"].apply(parse_year)
-    df["_search"] = (
-        df["personeelsnr"].astype(str)
-        + " " + df["volledige naam"].astype(str)
-        + " " + df["teamcoach"].astype(str)
-        + " " + df["voertuig"].astype(str)
-    ).str.lower()
-
-    return df
 
 
 @st.cache_data(show_spinner=False)
