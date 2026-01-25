@@ -12,10 +12,8 @@ from urllib3.util.retry import Retry
 
 import pandas as pd
 import streamlit as st
-import openpyxl
 import bcrypt
 import requests
-import time
 
 from pathlib import Path
 
@@ -875,7 +873,6 @@ with load_ph.container():
 
         bar.progress(100)
         text_ph.success("🚀 Alle data succesvol geladen!")
-        time.sleep(2)
         load_ph.empty()
 
     except Exception as e:
