@@ -22,7 +22,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).parent
 CSS_PATH = APP_DIR / "styles.css"
 LOGO_PATH = APP_DIR / "logo.png"
-PERSONEEL_JSON_PATH = APP_DIR / "personeelsficheGB.json"
+PERSONEEL_JSON_NAME = "personeelsficheGB.json"
 
 # ----------------------------
 # Remote data config (Excel files)
@@ -699,15 +699,24 @@ def load_coaching_tab_df() -> pd.DataFrame:
     ).str.lower()
     return df
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_personeelsfiche_df() -> pd.DataFrame:
-    if not PERSONEEL_JSON_PATH.exists():
-        return pd.DataFrame(columns=["_search"])
+    """
+    Personeelsfiche (JSON) van shared hosting
+    """
+    url = data_url(PERSONEEL_JSON_NAME)
+    content = fetch_bytes(url)
+
+    # JSON decode (robust)
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1", errors="replace")
 
     try:
-        data = json.loads(PERSONEEL_JSON_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        data = json.loads(PERSONEEL_JSON_PATH.read_text())
+        data = json.loads(text)
+    except Exception as e:
+        raise ValueError(f"Kan JSON niet parsen uit {PERSONEEL_JSON_NAME}: {e}")
 
     records = _flatten_json_to_records(data)
     if not records:
@@ -753,7 +762,9 @@ def load_personeelsfiche_df() -> pd.DataFrame:
     for s in parts[1:]:
         df["_search"] = df["_search"].astype(str) + " " + s.astype(str)
     df["_search"] = df["_search"].str.lower()
+
     return df
+
 
 # ----------------------------
 # Streamlit setup
