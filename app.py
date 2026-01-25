@@ -428,13 +428,130 @@ def set_page(page_id: str) -> None:
 # ----------------------------
 # Remote Excel Loaders
 # ----------------------------
-# ----------------------------
-# Remote Excel Loaders
-# ----------------------------
 @st.cache_data(show_spinner=False)
-def load_schade_df():
-    ...
+def load_schade_df() -> pd.DataFrame:
+    url = data_url(XLSM_NAME)
+    content = fetch_bytes(url)
+    bio = BytesIO(content)
 
+    def n(x: str) -> str:
+        return str(x).strip().lower()
+
+    # Canonical kolommen die de rest van je app verwacht:
+    canonical_cols = list(SCHADE_COLS)
+
+    # Varianten per canonical kolom (pas gerust aan als je echte headers kent)
+    variants = {
+        "personeelsnr": [
+            "personeelsnr", "personeelsnummer", "persnr", "nr", "nummer",
+            "p-nr", "p nr", "p_nr", "p-nr."
+        ],
+        "volledige naam": [
+            "volledige naam", "volledige naam.", "volledige naam ",
+            "naam", "chauffeurnaam", "chauffeur naam", "chauffeur"
+        ],
+        "teamcoach": [
+            "teamcoach", "team coach", "team_coach", "coach", "teamcoach "
+        ],
+        "Datum": [
+            "datum", "date", "datum schade", "schadedatum"
+        ],
+        "Link": [
+            "link", "eaf", "open eaf", "url"
+        ],
+        "Locatie": [
+            "locatie", "plaats", "standplaats"
+        ],
+        "voertuig": [
+            "voertuig", "voertuignr", "voertuig nr", "voertuig nummer",
+            "vehicle"
+        ],
+        "bus/tram": [
+            "bus/tram", "bus/ tram", "bus / tram", "bus - tram", "bus-tram",
+            "bus tram", "bus of tram"
+        ],
+        "type": [
+            "type", "soort", "categorie", "type schade", "schadetype"
+        ],
+    }
+
+    # Set met alle mogelijke headers die we willen binnenhalen (genormaliseerd)
+    allowed_norms = set()
+    for canon in canonical_cols:
+        allowed_norms.add(n(canon))
+        for alt in variants.get(canon, []):
+            allowed_norms.add(n(alt))
+
+    # 1) Lees enkel relevante kolommen in 1x (snel)
+    #    usecols callable: wordt per kolomnaam aangeroepen door pandas
+    bio.seek(0)
+    df = pd.read_excel(
+        bio,
+        sheet_name=SCHADESHEET,
+        engine="openpyxl",
+        dtype=str,
+        usecols=lambda c: (n(c) in allowed_norms) or ("voertuig" in n(c).replace(" ", "")),
+    ).fillna("")
+
+    # 2) Rename headers naar canonical namen
+    #    We kiezen per canonical kolom de "beste" match (eerste gevonden).
+    rename_map = {}
+    taken_canon = set()
+
+    # Precompute normed variants per canon (sneller)
+    variants_norm = {canon: {n(canon)} | {n(a) for a in alts} for canon, alts in variants.items()}
+    for canon in canonical_cols:
+        # zorg dat canon altijd in dict zit
+        variants_norm.setdefault(canon, {n(canon)})
+
+    def canonical_for(colname: str) -> str | None:
+        coln = n(colname)
+
+        # 1) exacte/variant match
+        for canon in canonical_cols:
+            if coln in variants_norm.get(canon, {n(canon)}):
+                return canon
+
+        # 2) fuzzy voertuig
+        if "voertuig" in coln.replace(" ", ""):
+            return "voertuig"
+
+        return None
+
+    for col in df.columns:
+        canon = canonical_for(col)
+        if canon and canon not in taken_canon:
+            rename_map[col] = canon
+            taken_canon.add(canon)
+
+    df = df.rename(columns=rename_map)
+
+    # 3) Zorg dat alle canonical_cols bestaan (anders lege kolom)
+    for c in canonical_cols:
+        if c not in df.columns:
+            df[c] = ""
+
+    # 4) Opschonen zoals je oude loader
+    df["personeelsnr"] = df["personeelsnr"].apply(clean_id)
+    df["volledige naam"] = df["volledige naam"].apply(clean_text)
+    df["teamcoach"] = df["teamcoach"].apply(clean_text)
+    df["voertuig"] = df["voertuig"].apply(clean_text)
+
+    # Datum blijft string (dtype=str), parse_year kan dit aan
+    df["_jaar"] = df["Datum"].apply(parse_year)
+
+    # _search (zoals je had)
+    df["_search"] = (
+        df["personeelsnr"].fillna("").astype(str)
+        + " "
+        + df["volledige naam"].fillna("").astype(str)
+        + " "
+        + df["teamcoach"].fillna("").astype(str)
+        + " "
+        + df["voertuig"].fillna("").astype(str)
+    ).str.lower()
+
+    return df
 
 
 @st.cache_data(show_spinner=False)
