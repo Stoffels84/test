@@ -126,6 +126,15 @@ def set_progress(bar, text_ph, current, total, label):
     bar.progress(pct)
     text_ph.info(f"⏳ Bezig met laden: {label} ({current}/{total})")
 
+def read_excel_str(bio: BytesIO, **kwargs) -> pd.DataFrame:
+    """
+    Lees Excel altijd als strings en vervang NaN door "".
+    Zorgt ook dat we opnieuw vanaf het begin van de BytesIO lezen.
+    """
+    bio.seek(0)
+    df = pd.read_excel(bio, dtype=str, **kwargs)
+    return df.fillna("")
+
 
 
 
@@ -522,14 +531,13 @@ def load_schade_df() -> pd.DataFrame:
 
     # 1) Lees enkel relevante kolommen in 1x (snel)
     #    usecols callable: wordt per kolomnaam aangeroepen door pandas
-    bio.seek(0)
-    df = pd.read_excel(
-        bio,
+    df = read_excel_str(
+    bio,
         sheet_name=SCHADESHEET,
         engine="openpyxl",
-        dtype=str,
         usecols=lambda c: (n(c) in allowed_norms) or ("voertuig" in n(c).replace(" ", "")),
-    ).fillna("")
+)
+
 
     # 2) Rename headers naar canonical namen
     #    We kiezen per canonical kolom de "beste" match (eerste gevonden).
@@ -605,9 +613,7 @@ def load_gesprekken_df() -> pd.DataFrame:
             f"Gevonden tabs: {xls.sheet_names}"
         )
     
-    bio.seek(0)  # <- belangrijk: terug naar het begin van de bytes
-    df = pd.read_excel(bio, sheet_name=GESPREKKEN_SHEET_NAME, dtype=str)
-
+    df = read_excel_str(bio, sheet_name=GESPREKKEN_SHEET_NAME)
 
     num_col = _find_col(df, "nummer")
     date_col = _find_col(df, "Datum")
@@ -661,8 +667,8 @@ def load_coaching_voltooid_df() -> pd.DataFrame:
             f"Gevonden tabs: {xls.sheet_names}"
         )
 
-    bio.seek(0)
-    df = pd.read_excel(bio, sheet_name=COACHINGS_SHEET_VOLTOOID, dtype=str)
+    df = read_excel_str(bio, sheet_name=COACHINGS_SHEET_VOLTOOID)
+
 
     num_col = _find_col(df, "nummer") or _find_col(df, "personeelsnr")
     name_col = _find_col(df, "Chauffeurnaam") or _find_col(df, "naam") or _find_col(df, "volledige naam")
