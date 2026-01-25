@@ -6,6 +6,9 @@ import html
 import datetime as dt
 from io import BytesIO
 from urllib.parse import quote
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 
 import pandas as pd
 import streamlit as st
@@ -35,14 +38,20 @@ def data_url(filename: str) -> str:
     # encode filename safely (spaces, parentheses, etc.)
     return f"{DATA_BASE_URL}/{quote(filename)}"
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)  # cache 1 uur
 def fetch_bytes(url: str) -> bytes:
     if not HOST_USER or not HOST_PASS:
         raise ValueError("HOST_USER/HOST_PASS ontbreken in Streamlit secrets.")
 
-    r = requests.get(url, auth=(HOST_USER, HOST_PASS), timeout=30)
-    r.raise_for_status()
-    return r.content
+    s = get_session()
+
+    try:
+        r = s.get(url, auth=(HOST_USER, HOST_PASS), timeout=30)
+        r.raise_for_status()
+        return r.content
+    except requests.RequestException as e:
+        raise RuntimeError(f"Download mislukt: {url}") from e
+
 
 # Remote filenames
 TOEGESTAAN_XLSX_NAME = "toegestaan_gebruik.xlsx"
