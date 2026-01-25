@@ -1012,7 +1012,7 @@ if current_page == "dashboard":
     # Tijdlijn (onderaan dashboard)
     # ----------------------------
     st.divider()
-    st.markdown("## 🧾 Tijdlijn (samenvatting van bovenstaande")
+    st.markdown("## 🧾 Tijdlijn (samenvatting van bovenstaande)")
 
     def _to_dt(v):
         return pd.to_datetime(v, dayfirst=True, errors="coerce")
