@@ -1,0 +1,135 @@
+/* =========================
+   App background & layout
+   ========================= */
+
+.stApp {
+  background: radial-gradient(1200px 700px at 15% 5%, rgba(74,163,255,.10), transparent 60%),
+              radial-gradient(900px 600px at 90% 20%, rgba(120,80,255,.10), transparent 55%),
+              #0b0f14;
+}
+
+section[data-testid="stSidebar"] {
+  display: none;
+}
+
+
+/* =========================
+   Topbar
+   ========================= */
+
+.ot-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 999;
+  background: rgba(15, 22, 33, .86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  padding: 14px 16px;
+  border-radius: 16px;
+  margin-bottom: 14px;
+}
+
+.ot-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ot-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+  padding: 8px;
+}
+
+.ot-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #e6edf3;
+  line-height: 1.15;
+}
+
+.ot-sub {
+  font-size: 14px;
+  color: #9aa4b2;
+  margin-top: 4px;
+}
+
+
+/* =========================
+   Tab buttons
+   ========================= */
+
+div[data-testid="stHorizontalBlock"] .ot-tab-btn button {
+  border-radius: 999px !important;
+  padding: 10px 14px !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  background: rgba(255,255,255,.02) !important;
+  color: #cbd5e1 !important;
+  font-weight: 700 !important;
+  transition: all .15s ease !important;
+  white-space: nowrap !important;
+}
+
+div[data-testid="stHorizontalBlock"] .ot-tab-btn button:hover {
+  background: rgba(255,255,255,.05) !important;
+  border-color: rgba(255,255,255,.18) !important;
+  transform: translateY(-1px) !important;
+}
+
+div[data-testid="stHorizontalBlock"] .ot-tab-btn.active button {
+  color: #e6edf3 !important;
+  background: rgba(74,163,255,.14) !important;
+  border-color: rgba(74,163,255,.35) !important;
+  box-shadow:
+    0 0 0 1px rgba(74,163,255,.18) inset,
+    0 10px 30px rgba(74,163,255,.10);
+}
+
+
+/* =========================
+   HTML tables (custom)
+   ========================= */
+
+.ot-table-wrap {
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,.02);
+}
+
+table.ot-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+table.ot-table thead th {
+  position: sticky;
+  top: 0;
+  background: rgba(15, 22, 33, .92);
+  color: #cbd5e1;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+table.ot-table td {
+  color: #e6edf3;
+  font-size: 13px;
+  padding: 10px 10px;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+table.ot-table tr:last-child td {
+  border-bottom: none;
+}
