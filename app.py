@@ -8,8 +8,7 @@ from io import BytesIO
 from urllib.parse import quote
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
-
+import hashlib
 import pandas as pd
 import streamlit as st
 import bcrypt
@@ -31,6 +30,13 @@ PERSONEEL_JSON_NAME = "personeelsficheGB.json"
 DATA_BASE_URL = st.secrets.get("DATA_BASE_URL", "https://otgent.borolo.be/data").rstrip("/")
 HOST_USER = st.secrets.get("HOST_USER", "")
 HOST_PASS = st.secrets.get("HOST_PASS", "")
+
+
+
+def _env_sig() -> str:
+    raw = f"{DATA_BASE_URL}|{HOST_USER}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
+
 
 def data_url(filename: str) -> str:
     # encode filename safely (spaces, parentheses, etc.)
@@ -55,7 +61,7 @@ def get_session() -> requests.Session:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)  # cache 1 uur
-def fetch_bytes(url: str) -> bytes:
+def fetch_bytes(url: str, env_sig: str) -> bytes:
     if not HOST_USER or not HOST_PASS:
         raise ValueError("HOST_USER/HOST_PASS ontbreken in Streamlit secrets.")
 
@@ -67,6 +73,7 @@ def fetch_bytes(url: str) -> bytes:
         return r.content
     except requests.RequestException as e:
         raise RuntimeError(f"Download mislukt: {url}") from e
+
 
 
 # Remote filenames
@@ -333,7 +340,7 @@ def render_html_table(
 @st.cache_data(show_spinner=False)
 def load_users_df() -> pd.DataFrame:
     url = data_url(TOEGESTAAN_XLSX_NAME)
-    content = fetch_bytes(url)
+    content = fetch_bytes(url, _env_sig())
 
     df = pd.read_excel(BytesIO(content), dtype=str).fillna("")
     df.columns = [c.strip().lower() for c in df.columns]
@@ -456,7 +463,7 @@ def set_page(page_id: str) -> None:
 @st.cache_data(show_spinner=False)
 def load_schade_df() -> pd.DataFrame:
     url = data_url(XLSM_NAME)
-    content = fetch_bytes(url)
+    content = fetch_bytes(url, _env_sig())
     bio = BytesIO(content)
 
     def n(x: str) -> str:
@@ -582,7 +589,7 @@ def load_schade_df() -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def load_gesprekken_df() -> pd.DataFrame:
     url = data_url(GESPREKKEN_XLSX_NAME)
-    content = fetch_bytes(url)
+    content = fetch_bytes(url, _env_sig())
     bio = BytesIO(content)
 
     xls = pd.ExcelFile(bio)
@@ -632,7 +639,7 @@ def load_gesprekken_df() -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def fetch_coachings_bytes() -> bytes:
-    return fetch_bytes(data_url(COACHINGS_XLSX_NAME))
+    return fetch_bytes(data_url(COACHINGS_XLSX_NAME), _env_sig())
 
 @st.cache_data(show_spinner=False)
 def load_coaching_voltooid_df() -> pd.DataFrame:
@@ -766,7 +773,7 @@ def load_personeelsfiche_df() -> pd.DataFrame:
     Personeelsfiche (JSON) van shared hosting
     """
     url = data_url(PERSONEEL_JSON_NAME)
-    content = fetch_bytes(url)
+    content = fetch_bytes(url, _env_sig())
 
     # JSON decode (robust)
     try:
