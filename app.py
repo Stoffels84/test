@@ -429,76 +429,21 @@ def set_page(page_id: str) -> None:
 # Remote Excel Loaders
 # ----------------------------
 @st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False)
 def load_schade_df() -> pd.DataFrame:
-    url = data_url(XLSM_NAME)
-    content = fetch_bytes(url)
+    content = fetch_bytes(data_url(XLSM_NAME))
+    bio = BytesIO(content)
 
-    wb = openpyxl.load_workbook(BytesIO(content), data_only=True, keep_vba=True)
-    if SCHADESHEET not in wb.sheetnames:
-        raise ValueError(f"Tabblad '{SCHADESHEET}' niet gevonden in {XLSM_NAME}")
+    # Lees alleen wat je nodig hebt
+    df = pd.read_excel(
+        bio,
+        sheet_name=SCHADESHEET,
+        engine="openpyxl",
+        dtype=str,
+        usecols=SCHADE_COLS,   # als kolomnamen exact matchen
+    ).fillna("")
 
-    ws = wb[SCHADESHEET]
-
-    header = [c.value for c in ws[1]]
-    header_map = {}
-    for idx, h in enumerate(header):
-        if h is None:
-            continue
-        key = norm(h)
-        if key and key not in header_map:
-            header_map[key] = idx
-
-    def find_idx(col: str) -> int | None:
-        key = norm(col)
-        if key in header_map:
-            return header_map[key]
-
-        if col == "bus/tram":
-            for alt in ["bus/ tram", "bus / tram", "bus - tram"]:
-                if alt in header_map:
-                    return header_map[alt]
-        if col == "volledige naam":
-            for alt in ["naam", "volledige naam.", "volledige naam "]:
-                if alt in header_map:
-                    return header_map[alt]
-        if col == "teamcoach":
-            for alt in ["team coach", "team_coach", "coach", "teamcoach "]:
-                if alt in header_map:
-                    return header_map[alt]
-
-        if col == "voertuig":
-            for c in header_map:
-                if "voertuig" in c.replace(" ", ""):
-                    return header_map[c]
-
-        return None
-
-    idx_map = {c: find_idx(c) for c in SCHADE_COLS}
-
-    rows = []
-    for r in ws.iter_rows(min_row=2, values_only=True):
-        obj = {}
-        any_val = False
-
-        for col in SCHADE_COLS:
-            i = idx_map.get(col)
-            val = r[i] if (i is not None and i < len(r)) else None
-
-            if val is not None and str(val).strip() != "":
-                any_val = True
-
-            if col == "Datum" and isinstance(val, (dt.date, dt.datetime)):
-                val = val.isoformat()
-
-            obj[col] = val
-
-        if any_val:
-            rows.append(obj)
-
-    df = pd.DataFrame(rows)
-    for c in SCHADE_COLS:
-        if c not in df.columns:
-            df[c] = None
+    # Als kolomnamen soms variëren (bus/ tram etc.), dan kan je na read_excel nog renamen.
 
     df["personeelsnr"] = df["personeelsnr"].apply(clean_id)
     df["volledige naam"] = df["volledige naam"].apply(clean_text)
@@ -507,16 +452,14 @@ def load_schade_df() -> pd.DataFrame:
 
     df["_jaar"] = df["Datum"].apply(parse_year)
     df["_search"] = (
-        df["personeelsnr"].fillna("").astype(str)
-        + " "
-        + df["volledige naam"].fillna("").astype(str)
-        + " "
-        + df["teamcoach"].fillna("").astype(str)
-        + " "
-        + df["voertuig"].fillna("").astype(str)
+        df["personeelsnr"].astype(str)
+        + " " + df["volledige naam"].astype(str)
+        + " " + df["teamcoach"].astype(str)
+        + " " + df["voertuig"].astype(str)
     ).str.lower()
 
     return df
+
 
 @st.cache_data(show_spinner=False)
 def load_gesprekken_df() -> pd.DataFrame:
