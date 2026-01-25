@@ -428,6 +428,12 @@ def set_page(page_id: str) -> None:
 # ----------------------------
 # Remote Excel Loaders
 # ----------------------------
+# ----------------------------
+# Remote Excel Loaders
+# ----------------------------
+@st.cache_data(show_spinner=False)
+def load_schade_df():
+    ...
 
 
 
