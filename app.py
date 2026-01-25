@@ -604,8 +604,10 @@ def load_gesprekken_df() -> pd.DataFrame:
             f"Tabblad '{GESPREKKEN_SHEET_NAME}' niet gevonden in {GESPREKKEN_XLSX_NAME}. "
             f"Gevonden tabs: {xls.sheet_names}"
         )
+    
+    bio.seek(0)  # <- belangrijk: terug naar het begin van de bytes
+    df = pd.read_excel(bio, sheet_name=GESPREKKEN_SHEET_NAME, dtype=str)
 
-    df = pd.read_excel(BytesIO(content), sheet_name=GESPREKKEN_SHEET_NAME, dtype=str)
 
     num_col = _find_col(df, "nummer")
     date_col = _find_col(df, "Datum")
@@ -650,15 +652,17 @@ def fetch_coachings_bytes() -> bytes:
 @st.cache_data(show_spinner=False)
 def load_coaching_voltooid_df() -> pd.DataFrame:
     content = fetch_coachings_bytes()
-    xls = pd.ExcelFile(BytesIO(content))
+    bio = BytesIO(content)
 
+    xls = pd.ExcelFile(bio)
     if COACHINGS_SHEET_VOLTOOID not in xls.sheet_names:
         raise ValueError(
             f"Tabblad '{COACHINGS_SHEET_VOLTOOID}' niet gevonden in {COACHINGS_XLSX_NAME}. "
             f"Gevonden tabs: {xls.sheet_names}"
         )
 
-    df = pd.read_excel(BytesIO(content), sheet_name=COACHINGS_SHEET_VOLTOOID, dtype=str)
+    bio.seek(0)
+    df = pd.read_excel(bio, sheet_name=COACHINGS_SHEET_VOLTOOID, dtype=str)
 
     num_col = _find_col(df, "nummer") or _find_col(df, "personeelsnr")
     name_col = _find_col(df, "Chauffeurnaam") or _find_col(df, "naam") or _find_col(df, "volledige naam")
@@ -706,6 +710,7 @@ def load_coaching_voltooid_df() -> pd.DataFrame:
         if info_col != "Info":
             df = df.rename(columns={info_col: "Info"})
 
+    df = df.fillna("")
     df["nummer"] = df["nummer"].apply(clean_id)
     df["Chauffeurnaam"] = df["Chauffeurnaam"].apply(clean_text)
     df["Datum"] = df["Datum"].apply(clean_text)
@@ -721,6 +726,7 @@ def load_coaching_voltooid_df() -> pd.DataFrame:
     df["_jaar"] = df["Datum"].apply(parse_year)
     return df
 
+
 @st.cache_data(show_spinner=False)
 def load_coaching_tab_df() -> pd.DataFrame:
     """
@@ -728,15 +734,17 @@ def load_coaching_tab_df() -> pd.DataFrame:
     Kolommen: P-nr, Volledige naam, Opmerkingen
     """
     content = fetch_coachings_bytes()
-    xls = pd.ExcelFile(BytesIO(content))
+    bio = BytesIO(content)
 
+    xls = pd.ExcelFile(bio)
     if COACHINGS_SHEET_COACHING not in xls.sheet_names:
         raise ValueError(
             f"Tabblad '{COACHINGS_SHEET_COACHING}' niet gevonden in {COACHINGS_XLSX_NAME}. "
             f"Gevonden tabs: {xls.sheet_names}"
         )
 
-    df = pd.read_excel(BytesIO(content), sheet_name=COACHINGS_SHEET_COACHING, dtype=str)
+    bio.seek(0)
+    df = pd.read_excel(bio, sheet_name=COACHINGS_SHEET_COACHING, dtype=str)
 
     pnr_col = _find_col(df, "P-nr") or _find_col(df, "nummer") or _find_col(df, "personeelsnr")
     name_col = _find_col(df, "Volledige naam") or _find_col(df, "naam") or _find_col(df, "chauffeurnaam")
@@ -760,6 +768,7 @@ def load_coaching_tab_df() -> pd.DataFrame:
         if opm_col != "Info":
             df = df.rename(columns={opm_col: "Info"})
 
+    df = df.fillna("")
     df["nummer"] = df["nummer"].apply(clean_id)
     df["Chauffeurnaam"] = df["Chauffeurnaam"].apply(clean_text)
     df["Info"] = df["Info"].apply(clean_text)
@@ -772,6 +781,7 @@ def load_coaching_tab_df() -> pd.DataFrame:
         + df["Info"].fillna("").astype(str)
     ).str.lower()
     return df
+
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_personeelsfiche_df() -> pd.DataFrame:
