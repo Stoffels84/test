@@ -72,11 +72,11 @@ def fetch_bytes(url: str, env_sig: str) -> bytes:
         r.raise_for_status()
         return r.content
     except requests.RequestException as e:
-    status = getattr(getattr(e, "response", None), "status_code", None)
-    extra = f" (status {status})" if status else ""
-    msg = str(e).strip()
-    msg_part = f" — {msg}" if msg else ""
-    raise RuntimeError(f"Download mislukt{extra}: {url} — {type(e).__name__}{msg_part}") from e
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        extra = f" (status {status})" if status else ""
+        msg = str(e).strip()
+        msg_part = f" — {msg}" if msg else ""
+        raise RuntimeError(f"Download mislukt{extra}: {url} — {type(e).__name__}{msg_part}") from e
 
 
 
