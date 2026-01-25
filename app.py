@@ -38,6 +38,24 @@ def data_url(filename: str) -> str:
     # encode filename safely (spaces, parentheses, etc.)
     return f"{DATA_BASE_URL}/{quote(filename)}"
 
+
+@st.cache_resource
+def get_session() -> requests.Session:
+    s = requests.Session()
+
+    retries = Retry(
+        total=3,
+        backoff_factor=0.6,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+
+    adapter = HTTPAdapter(max_retries=retries)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    return s
+
+
 @st.cache_data(show_spinner=False, ttl=3600)  # cache 1 uur
 def fetch_bytes(url: str) -> bytes:
     if not HOST_USER or not HOST_PASS:
