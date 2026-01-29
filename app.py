@@ -897,7 +897,7 @@ with load_ph.container():
         df_coach_tab = load_coaching_tab_df()
 
         step += 1
-        set_progress(bar, text_ph, step, total, "Personeelsfiche (JSON lokaal)")
+        set_progress(bar, text_ph, step, total, "Personeelsfiche (JSON remote)")
         df_personeel = load_personeelsfiche_df()
 
         bar.progress(100)
