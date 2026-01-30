@@ -1059,10 +1059,6 @@ if current_page == "dashboard":
     # --- Dashboard: zoekveld + suggesties ---
 # --- Dashboard: zoekveld + suggesties (autocomplete) ---
 
-# 1) callback (mag ook hoger in je bestand bij helpers staan)
-def pick_suggestion(value: str):
-    st.session_state["q_input"] = value
-
 # 2) init
 # --- Dashboard: zoekveld + suggesties (autocomplete) ---
 
