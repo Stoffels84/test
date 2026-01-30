@@ -121,6 +121,53 @@ PAGES = [
 # ----------------------------
 # Helpers
 # ----------------------------
+@st.cache_data(show_spinner=False)
+def build_suggest_index(df_schade: pd.DataFrame, df_personeel: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+
+    # Uit schade: personeelsnr + naam
+    if not df_schade.empty:
+        tmp = df_schade[["personeelsnr", "volledige naam"]].copy()
+        tmp = tmp.rename(columns={"volledige naam": "naam"})
+        tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
+        tmp["naam"] = tmp["naam"].astype(str).str.strip()
+        rows.append(tmp)
+
+    # Uit personeelsfiche: personeelsnr + naam
+    if not df_personeel.empty:
+        cols = []
+        if "personeelsnr" in df_personeel.columns: cols.append("personeelsnr")
+        if "naam" in df_personeel.columns: cols.append("naam")
+        if cols:
+            tmp = df_personeel[cols].copy()
+            if "personeelsnr" in tmp.columns:
+                tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
+            if "naam" in tmp.columns:
+                tmp["naam"] = tmp["naam"].astype(str).str.strip()
+            # zorg dat beide bestaan
+            if "personeelsnr" not in tmp.columns: tmp["personeelsnr"] = ""
+            if "naam" not in tmp.columns: tmp["naam"] = ""
+            rows.append(tmp[["personeelsnr", "naam"]])
+
+    if not rows:
+        return pd.DataFrame(columns=["personeelsnr", "naam", "_key", "_search"])
+
+    idx = pd.concat(rows, ignore_index=True).fillna("")
+    idx["personeelsnr"] = idx["personeelsnr"].astype(str).apply(clean_id)
+    idx["naam"] = idx["naam"].astype(str).str.strip()
+
+    # unieke combinaties
+    idx = idx[(idx["personeelsnr"] != "") | (idx["naam"] != "")]
+    idx = idx.drop_duplicates(subset=["personeelsnr", "naam"], keep="first")
+
+    # key die we kunnen gebruiken in UI
+    idx["_key"] = (idx["personeelsnr"] + " — " + idx["naam"]).str.strip(" —")
+
+    # zoeken op beide
+    idx["_search"] = (idx["personeelsnr"] + " " + idx["naam"]).str.lower()
+
+    return idx
+
 def set_progress(bar, text_ph, current, total, label):
     pct = int(current / total * 100)
     bar.progress(pct)
@@ -983,6 +1030,31 @@ df_coach_voltooid_view = (
 # ----------------------------
 if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
+    # --- Suggestie index ---
+suggest_idx = build_suggest_index(df_schade_view, df_personeel)
+
+# --- Zoek input (met session_state zodat we hem kunnen vullen) ---
+q = st.text_input(
+    "Zoek op personeelsnr of naam.",
+    placeholder="Typ om te zoeken…",
+    key="dash_search"
+).strip().lower()
+
+# Suggesties tonen zodra je 2+ tekens hebt
+if q and len(q) >= 2 and not suggest_idx.empty:
+    sug = suggest_idx[suggest_idx["_search"].str.contains(re.escape(q), na=False)].head(8)
+
+    if not sug.empty:
+        st.caption("Suggesties:")
+        cols = st.columns(2)
+        for i, (_, r) in enumerate(sug.iterrows()):
+            label = r["_key"] or r["personeelsnr"] or r["naam"]
+            with cols[i % 2]:
+                if st.button(f"🔎 {label}", key=f"sug_{i}", use_container_width=True):
+                    # vul zoekveld met personeelsnr (meest precies), anders naam
+                    st.session_state["dash_search"] = r["personeelsnr"] if r["personeelsnr"] else r["naam"]
+                    st.rerun()
+
 
     q = st.text_input(
         "Zoek op personeelsnr of naam.",
