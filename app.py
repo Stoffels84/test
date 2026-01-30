@@ -121,53 +121,6 @@ PAGES = [
 # ----------------------------
 # Helpers
 # ----------------------------
-@st.cache_data(show_spinner=False)
-def build_suggest_index(df_schade: pd.DataFrame, df_personeel: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-
-    # Uit schade: personeelsnr + naam
-    if not df_schade.empty:
-        tmp = df_schade[["personeelsnr", "volledige naam"]].copy()
-        tmp = tmp.rename(columns={"volledige naam": "naam"})
-        tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
-        tmp["naam"] = tmp["naam"].astype(str).str.strip()
-        rows.append(tmp)
-
-    # Uit personeelsfiche: personeelsnr + naam
-    if not df_personeel.empty:
-        cols = []
-        if "personeelsnr" in df_personeel.columns: cols.append("personeelsnr")
-        if "naam" in df_personeel.columns: cols.append("naam")
-        if cols:
-            tmp = df_personeel[cols].copy()
-            if "personeelsnr" in tmp.columns:
-                tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
-            if "naam" in tmp.columns:
-                tmp["naam"] = tmp["naam"].astype(str).str.strip()
-            # zorg dat beide bestaan
-            if "personeelsnr" not in tmp.columns: tmp["personeelsnr"] = ""
-            if "naam" not in tmp.columns: tmp["naam"] = ""
-            rows.append(tmp[["personeelsnr", "naam"]])
-
-    if not rows:
-        return pd.DataFrame(columns=["personeelsnr", "naam", "_key", "_search"])
-
-    idx = pd.concat(rows, ignore_index=True).fillna("")
-    idx["personeelsnr"] = idx["personeelsnr"].astype(str).apply(clean_id)
-    idx["naam"] = idx["naam"].astype(str).str.strip()
-
-    # unieke combinaties
-    idx = idx[(idx["personeelsnr"] != "") | (idx["naam"] != "")]
-    idx = idx.drop_duplicates(subset=["personeelsnr", "naam"], keep="first")
-
-    # key die we kunnen gebruiken in UI
-    idx["_key"] = (idx["personeelsnr"] + " — " + idx["naam"]).str.strip(" —")
-
-    # zoeken op beide
-    idx["_search"] = (idx["personeelsnr"] + " " + idx["naam"]).str.lower()
-
-    return idx
-
 def set_progress(bar, text_ph, current, total, label):
     pct = int(current / total * 100)
     bar.progress(pct)
@@ -338,48 +291,6 @@ def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
                     return c
 
     return None
-    @st.cache_data(show_spinner=False)
-def build_suggest_index(df_schade: pd.DataFrame, df_personeel: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-
-    # Uit schade: personeelsnr + naam
-    if df_schade is not None and not df_schade.empty:
-        tmp = df_schade[["personeelsnr", "volledige naam"]].copy()
-        tmp = tmp.rename(columns={"volledige naam": "naam"})
-        tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
-        tmp["naam"] = tmp["naam"].astype(str).str.strip()
-        rows.append(tmp[["personeelsnr", "naam"]])
-
-    # Uit personeelsfiche: personeelsnr + naam
-    if df_personeel is not None and not df_personeel.empty:
-        cols = []
-        if "personeelsnr" in df_personeel.columns: cols.append("personeelsnr")
-        if "naam" in df_personeel.columns: cols.append("naam")
-        if cols:
-            tmp = df_personeel[cols].copy()
-            if "personeelsnr" in tmp.columns:
-                tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
-            if "naam" in tmp.columns:
-                tmp["naam"] = tmp["naam"].astype(str).str.strip()
-            if "personeelsnr" not in tmp.columns: tmp["personeelsnr"] = ""
-            if "naam" not in tmp.columns: tmp["naam"] = ""
-            rows.append(tmp[["personeelsnr", "naam"]])
-
-    if not rows:
-        return pd.DataFrame(columns=["personeelsnr", "naam", "_key", "_search"])
-
-    idx = pd.concat(rows, ignore_index=True).fillna("")
-    idx["personeelsnr"] = idx["personeelsnr"].astype(str).apply(clean_id)
-    idx["naam"] = idx["naam"].astype(str).str.strip()
-
-    idx = idx[(idx["personeelsnr"] != "") | (idx["naam"] != "")]
-    idx = idx.drop_duplicates(subset=["personeelsnr", "naam"], keep="first")
-
-    idx["_key"] = (idx["personeelsnr"] + " — " + idx["naam"]).str.strip(" —")
-    idx["_search"] = (idx["personeelsnr"] + " " + idx["naam"]).str.lower()
-
-    return idx
-
 
 def _flatten_json_to_records(data):
     if data is None:
@@ -437,48 +348,6 @@ def render_html_table(
         """,
         unsafe_allow_html=True,
     )
-
-    @st.cache_data(show_spinner=False)
-    def build_suggest_index(df_schade: pd.DataFrame, df_personeel: pd.DataFrame) -> pd.DataFrame:
-        rows = []
-    
-        # Uit schade: personeelsnr + naam
-        if df_schade is not None and not df_schade.empty:
-            tmp = df_schade[["personeelsnr", "volledige naam"]].copy()
-            tmp = tmp.rename(columns={"volledige naam": "naam"})
-            tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
-            tmp["naam"] = tmp["naam"].astype(str).str.strip()
-            rows.append(tmp[["personeelsnr", "naam"]])
-    
-        # Uit personeelsfiche: personeelsnr + naam
-        if df_personeel is not None and not df_personeel.empty:
-            cols = []
-            if "personeelsnr" in df_personeel.columns:
-                cols.append("personeelsnr")
-            if "naam" in df_personeel.columns:
-                cols.append("naam")
-    
-            if cols:
-                tmp = df_personeel[cols].copy()
-                tmp["personeelsnr"] = tmp.get("personeelsnr", "").astype(str).apply(clean_id)
-                tmp["naam"] = tmp.get("naam", "").astype(str).str.strip()
-                rows.append(tmp[["personeelsnr", "naam"]])
-    
-        if not rows:
-            return pd.DataFrame(columns=["personeelsnr", "naam", "_key", "_search"])
-    
-        idx = pd.concat(rows, ignore_index=True).fillna("")
-        idx["personeelsnr"] = idx["personeelsnr"].astype(str).apply(clean_id)
-        idx["naam"] = idx["naam"].astype(str).str.strip()
-    
-        idx = idx[(idx["personeelsnr"] != "") | (idx["naam"] != "")]
-        idx = idx.drop_duplicates(subset=["personeelsnr", "naam"], keep="first")
-    
-        idx["_key"] = (idx["personeelsnr"] + " — " + idx["naam"]).str.strip(" —")
-        idx["_search"] = (idx["personeelsnr"] + " " + idx["naam"]).str.lower()
-    
-        return idx
-
 
 # ----------------------------
 # Login / Users (REMOTE toegestaan_gebruik.xlsx)
@@ -1028,7 +897,7 @@ with load_ph.container():
         df_coach_tab = load_coaching_tab_df()
 
         step += 1
-        set_progress(bar, text_ph, step, total, "Personeelsfiche (JSON remote)")
+        set_progress(bar, text_ph, step, total, "Personeelsfiche (JSON lokaal)")
         df_personeel = load_personeelsfiche_df()
 
         bar.progress(100)
@@ -1045,8 +914,6 @@ years_schade = df_schade["_jaar"].dropna().unique().tolist() if "_jaar" in df_sc
 years_gespr = df_gesprekken["_jaar"].dropna().unique().tolist() if "_jaar" in df_gesprekken.columns else []
 years_volt = df_coach_voltooid["_jaar"].dropna().unique().tolist() if "_jaar" in df_coach_voltooid.columns else []
 years = sorted({int(y) for y in (years_schade + years_gespr + years_volt) if y is not None}, reverse=True)
-
-suggest_idx = build_suggest_index(df_schade_view, df_personeel)
 
 current_page = get_page("dashboard")
 
@@ -1117,47 +984,14 @@ df_coach_voltooid_view = (
 if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
 
-    # --- Zorg dat de key bestaat vóór de widget ---
-    if "dash_search" not in st.session_state:
-        st.session_state["dash_search"] = ""
-
-    def pick_suggestion(val: str):
-        st.session_state["dash_search"] = val
-
-    # --- Zoekveld ---
     q = st.text_input(
         "Zoek op personeelsnr of naam.",
         placeholder="Typ om te zoeken…",
-        key="dash_search",
     ).strip().lower()
 
-    # --- Suggesties ---
-    if q and len(q) >= 2 and not suggest_idx.empty:
-        sug = suggest_idx[
-            suggest_idx["_search"].str.contains(re.escape(q), na=False)
-        ].head(8)
-
-        if not sug.empty:
-            st.caption("Suggesties:")
-            cols = st.columns(2)
-            for i, (_, r) in enumerate(sug.iterrows()):
-                label = r["_key"] or r["personeelsnr"] or r["naam"]
-                value = r["personeelsnr"] if r["personeelsnr"] else r["naam"]
-
-                with cols[i % 2]:
-                    st.button(
-                        f"🔎 {label}",
-                        key=f"sug_{i}",
-                        use_container_width=True,
-                        on_click=pick_suggestion,
-                        args=(value,),
-                    )
-
-    # --- Bestaat al in jouw code ---
     if not q:
         st.caption("Typ iets in het zoekveld om resultaten te zien.")
         st.stop()
-
 
     schade_hits = df_schade_view[df_schade_view["_search"].str.contains(re.escape(q), na=False)].copy()
     gesprekken_hits = df_gesprekken_view[df_gesprekken_view["_search"].str.contains(re.escape(q), na=False)].copy()
