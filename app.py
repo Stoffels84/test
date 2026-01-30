@@ -972,39 +972,20 @@ with load_ph.container():
     step = 0
 
     try:
-        step += 1
-        set_progress(bar, text_ph, step, total, "Schade (schade met macro.xlsm)")
-        df_schade = load_schade_df()
+    df_schade = load_schade_df()
+    df_gesprekken = load_gesprekken_df()
+    df_coach_voltooid = load_coaching_voltooid_df()
+    df_coach_tab = load_coaching_tab_df()
+    df_personeel = load_personeelsfiche_df()
 
-        step += 1
-        set_progress(bar, text_ph, step, total, "Gesprekken (Overzicht gesprekken.xlsx)")
-        df_gesprekken = load_gesprekken_df()
+    suggest_index = build_suggest_index(
+        df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab
+    )
 
-        step += 1
-        set_progress(bar, text_ph, step, total, "Voltooide coachings (Coachingslijst.xlsx)")
-        df_coach_voltooid = load_coaching_voltooid_df()
-
-        step += 1
-        set_progress(bar, text_ph, step, total, "Geplande coachings (Coachingslijst.xlsx)")
-        df_coach_tab = load_coaching_tab_df()
-
-        step += 1
-        set_progress(bar, text_ph, step, total, "Personeelsfiche (JSON lokaal)")
-        df_personeel = load_personeelsfiche_df()
-
-        suggest_index = build_suggest_index(
-    df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab
-)
-
-
-        bar.progress(100)
-        text_ph.success("🚀 Alle data succesvol geladen!")
-        load_ph.empty()
-
-    except Exception as e:
-        text_ph.error("❌ Fout bij laden van data")
-        st.exception(e)
-        st.stop()
+except Exception as e:
+    st.error("❌ Fout bij laden van data")
+    st.exception(e)
+    st.stop()
 
 
 years_schade = df_schade["_jaar"].dropna().unique().tolist() if "_jaar" in df_schade.columns else []
