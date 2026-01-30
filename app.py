@@ -905,7 +905,7 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
         tmp = df_personeel[cols].copy()
         if "teamcoach" not in tmp.columns:
             tmp["teamcoach"] = ""
-        rows.append
+        
         rows.append(tmp)
 
     # 3) Gesprekken: nummer + Chauffeurnaam
