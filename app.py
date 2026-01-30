@@ -1052,22 +1052,26 @@ if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
 
     # --- Dashboard: zoekveld + suggesties ---
+# --- Dashboard: zoekveld + suggesties (veilig met session_state) ---
+if "q_input" not in st.session_state:
+    st.session_state["q_input"] = ""
 if "q" not in st.session_state:
     st.session_state["q"] = ""
 
 q_raw = st.text_input(
     "Zoek op personeelsnr of naam.",
     placeholder="Typ om te zoeken…",
-    key="q",
+    key="q_input",
 )
 
+# de effectieve query die je gebruikt om te filteren
 q = (q_raw or "").strip().lower()
+st.session_state["q"] = q
 
 # Suggesties vanaf 2 tekens
-if q and len(q) >= 2 and "suggest_index" in globals() and not suggest_index.empty:
+if q and len(q) >= 2 and not suggest_index.empty:
     hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
 
-    # Rangorde: begint met query is beter dan "bevat"
     def _score(s: str) -> int:
         s = s or ""
         if s.startswith(q):
@@ -1086,14 +1090,18 @@ if q and len(q) >= 2 and "suggest_index" in globals() and not suggest_index.empt
             label = f"{r['personeelsnr']} — {r['naam']}".strip(" —")
             with cols[i % 2]:
                 if st.button(label, key=f"sug_{i}", use_container_width=True):
-                    # vul het zoekveld en herlaad
-                    st.session_state["q"] = (r["personeelsnr"] or r["naam"] or "").strip()
+                    chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
+
+                    # zet de widget input (q_input), NIET de afgeleide q
+                    st.session_state["q_input"] = chosen
+                    st.session_state["q"] = chosen.strip().lower()
+
                     st.rerun()
 
-# Als niets ingevuld: stop zoals je al deed
 if not q:
     st.caption("Typ iets in het zoekveld om resultaten te zien.")
     st.stop()
+
 
 
     schade_hits = df_schade_view[df_schade_view["_search"].str.contains(re.escape(q), na=False)].copy()
