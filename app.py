@@ -926,7 +926,7 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
         return pd.DataFrame(columns=["personeelsnr", "naam", "teamcoach", "_s"])
 
     sug["_first"] = sug["naam"].apply(lambda x: split_name_parts(x)[0])
-sug["_last"]  = sug["naam"].apply(lambda x: split_name_parts(x)[1])
+    sug["_last"]  = sug["naam"].apply(lambda x: split_name_parts(x)[1])
 
 
     sug = pd.concat(rows, ignore_index=True).fillna("")
