@@ -121,6 +121,9 @@ PAGES = [
 # ----------------------------
 # Helpers
 # ----------------------------
+def pick_suggestion(value: str):
+    st.session_state["q_input"] = value
+
 def set_progress(bar, text_ph, current, total, label):
     pct = int(current / total * 100)
     bar.progress(pct)
@@ -1091,6 +1094,15 @@ if q and len(q) >= 2 and not suggest_index.empty:
             with cols[i % 2]:
                 if st.button(label, key=f"sug_{i}", use_container_width=True):
                     chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
+
+st.button(
+    label,
+    key=f"sug_{i}",
+    use_container_width=True,
+    on_click=pick_suggestion,
+    args=(chosen,),
+)
+
 
                     # zet de widget input (q_input), NIET de afgeleide q
                     st.session_state["q_input"] = chosen
