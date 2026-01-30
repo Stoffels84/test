@@ -972,6 +972,7 @@ with load_ph.container():
     step = 0
 
     try:
+try:
     df_schade = load_schade_df()
     df_gesprekken = load_gesprekken_df()
     df_coach_voltooid = load_coaching_voltooid_df()
@@ -986,6 +987,7 @@ except Exception as e:
     st.error("❌ Fout bij laden van data")
     st.exception(e)
     st.stop()
+
 
 
 years_schade = df_schade["_jaar"].dropna().unique().tolist() if "_jaar" in df_schade.columns else []
