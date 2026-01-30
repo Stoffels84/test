@@ -804,6 +804,23 @@ def load_coaching_tab_df() -> pd.DataFrame:
     ).str.lower()
     return df
 
+def split_name_parts(full_name: str) -> tuple[str, str]:
+    """
+    Probeert voornaam en achternaam te halen uit een string.
+    - "Avery Smets" -> ("avery", "smets")
+    - "Smets Avery" -> ("avery", "smets")  (we nemen gewoon ook de 'andere volgorde' mee)
+    """
+    s = (full_name or "").strip()
+    if not s:
+        return ("", "")
+    parts = [p for p in re.split(r"\s+", s) if p]
+    if len(parts) == 1:
+        return (parts[0].lower(), parts[0].lower())
+    first = parts[0].lower()
+    last = parts[-1].lower()
+    return (first, last)
+
+
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_personeelsfiche_df() -> pd.DataFrame:
@@ -907,6 +924,10 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
 
     if not rows:
         return pd.DataFrame(columns=["personeelsnr", "naam", "teamcoach", "_s"])
+
+    sug["_first"] = sug["naam"].apply(lambda x: split_name_parts(x)[0])
+sug["_last"]  = sug["naam"].apply(lambda x: split_name_parts(x)[1])
+
 
     sug = pd.concat(rows, ignore_index=True).fillna("")
 
