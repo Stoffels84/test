@@ -1064,8 +1064,12 @@ def pick_suggestion(value: str):
     st.session_state["q_input"] = value
 
 # 2) init
+# --- Dashboard: zoekveld + suggesties (autocomplete) ---
+
 if "q_input" not in st.session_state:
     st.session_state["q_input"] = ""
+if "picked" not in st.session_state:
+    st.session_state["picked"] = False
 
 q_raw = st.text_input(
     "Zoek op personeelsnr of naam.",
@@ -1075,11 +1079,11 @@ q_raw = st.text_input(
 
 q = (q_raw or "").strip().lower()
 
-# 3) hits altijd definiëren (voorkomt NameError)
+# Maak hits altijd beschikbaar
 hits = pd.DataFrame()
 
-# 4) suggestions opbouwen
-if q and len(q) >= 2 and (suggest_index is not None) and (not suggest_index.empty):
+# Suggesties: toon zodra er 2 tekens zijn én zolang je niet “gekozen” hebt
+if q and len(q) >= 2 and not suggest_index.empty and not st.session_state.get("picked", False):
     hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
 
     def _score(s: str) -> int:
@@ -1093,17 +1097,15 @@ if q and len(q) >= 2 and (suggest_index is not None) and (not suggest_index.empt
     hits["_score"] = hits["_s"].apply(_score)
     hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(8)
 
-# 5) suggestions tonen
 if not hits.empty:
     st.caption("Suggesties (klik om te kiezen):")
     cols = st.columns(2)
 
     for i, (_, r) in enumerate(hits.iterrows()):
         label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
+        chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
 
         with cols[i % 2]:
-            chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
-
             st.button(
                 label,
                 key=f"sug_{i}",
@@ -1112,10 +1114,17 @@ if not hits.empty:
                 args=(chosen,),
             )
 
-# 6) stop als er nog niets is ingevoerd
+# Als je gekozen hebt: reset vlag en ga door (toon resultaten)
+if st.session_state.get("picked", False):
+    st.session_state["picked"] = False
+    # q moet opnieuw berekend worden op basis van q_input
+    q = (st.session_state["q_input"] or "").strip().lower()
+
+# Stop enkel als er echt niets is
 if not q:
     st.caption("Typ iets in het zoekveld om resultaten te zien.")
     st.stop()
+
 
 
 
