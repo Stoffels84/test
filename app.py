@@ -1103,7 +1103,7 @@ if not hits.empty:
                 on_click=pick_suggestion,
                 args=(chosen,),
             )
-)
+
 
 
 
