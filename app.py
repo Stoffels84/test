@@ -124,6 +124,7 @@ PAGES = [
 def pick_suggestion(value: str):
     st.session_state["q_input"] = value
     st.session_state["picked"] = True
+    st.rerun()
 
 
 def set_progress(bar, text_ph, current, total, label):
@@ -1071,17 +1072,15 @@ if "picked" not in st.session_state:
 
 q_raw = st.text_input(
     "Zoek op personeelsnr of naam.",
-    placeholder="Typ om te zoeken…",
+    placeholder="Typ en druk Enter (Streamlit) …",
     key="q_input",
 )
 
 q = (q_raw or "").strip().lower()
 
-# Maak hits altijd beschikbaar
+# Suggesties tonen zolang je niet gekozen hebt
 hits = pd.DataFrame()
-
-# Suggesties: toon zodra er 2 tekens zijn én zolang je niet “gekozen” hebt
-if q and len(q) >= 2 and not suggest_index.empty and not st.session_state.get("picked", False):
+if q and len(q) >= 2 and not suggest_index.empty and not st.session_state["picked"]:
     hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
 
     def _score(s: str) -> int:
@@ -1102,7 +1101,6 @@ if not hits.empty:
     for i, (_, r) in enumerate(hits.iterrows()):
         label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
         chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
-
         with cols[i % 2]:
             st.button(
                 label,
@@ -1112,17 +1110,14 @@ if not hits.empty:
                 args=(chosen,),
             )
 
-# Als je gekozen hebt: reset vlag en ga door (toon resultaten)
-if st.session_state.get("picked", False):
+# als je gekozen hebt: reset picked zodat je later weer kan typen
+if st.session_state["picked"]:
     st.session_state["picked"] = False
-    # q moet opnieuw berekend worden op basis van q_input
     q = (st.session_state["q_input"] or "").strip().lower()
 
-# Stop enkel als er echt niets is
 if not q:
     st.caption("Typ iets in het zoekveld om resultaten te zien.")
     st.stop()
-
 
 
 
