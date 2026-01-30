@@ -338,6 +338,48 @@ def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
                     return c
 
     return None
+    @st.cache_data(show_spinner=False)
+def build_suggest_index(df_schade: pd.DataFrame, df_personeel: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+
+    # Uit schade: personeelsnr + naam
+    if df_schade is not None and not df_schade.empty:
+        tmp = df_schade[["personeelsnr", "volledige naam"]].copy()
+        tmp = tmp.rename(columns={"volledige naam": "naam"})
+        tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
+        tmp["naam"] = tmp["naam"].astype(str).str.strip()
+        rows.append(tmp[["personeelsnr", "naam"]])
+
+    # Uit personeelsfiche: personeelsnr + naam
+    if df_personeel is not None and not df_personeel.empty:
+        cols = []
+        if "personeelsnr" in df_personeel.columns: cols.append("personeelsnr")
+        if "naam" in df_personeel.columns: cols.append("naam")
+        if cols:
+            tmp = df_personeel[cols].copy()
+            if "personeelsnr" in tmp.columns:
+                tmp["personeelsnr"] = tmp["personeelsnr"].astype(str).apply(clean_id)
+            if "naam" in tmp.columns:
+                tmp["naam"] = tmp["naam"].astype(str).str.strip()
+            if "personeelsnr" not in tmp.columns: tmp["personeelsnr"] = ""
+            if "naam" not in tmp.columns: tmp["naam"] = ""
+            rows.append(tmp[["personeelsnr", "naam"]])
+
+    if not rows:
+        return pd.DataFrame(columns=["personeelsnr", "naam", "_key", "_search"])
+
+    idx = pd.concat(rows, ignore_index=True).fillna("")
+    idx["personeelsnr"] = idx["personeelsnr"].astype(str).apply(clean_id)
+    idx["naam"] = idx["naam"].astype(str).str.strip()
+
+    idx = idx[(idx["personeelsnr"] != "") | (idx["naam"] != "")]
+    idx = idx.drop_duplicates(subset=["personeelsnr", "naam"], keep="first")
+
+    idx["_key"] = (idx["personeelsnr"] + " — " + idx["naam"]).str.strip(" —")
+    idx["_search"] = (idx["personeelsnr"] + " " + idx["naam"]).str.lower()
+
+    return idx
+
 
 def _flatten_json_to_records(data):
     if data is None:
