@@ -1092,16 +1092,16 @@ if q and len(q) >= 2 and not suggest_index.empty:
         for i, (_, r) in enumerate(hits.iterrows()):
             label = f"{r['personeelsnr']} — {r['naam']}".strip(" —")
             with cols[i % 2]:
-                if st.button(label, key=f"sug_{i}", use_container_width=True):
-                    chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
+    chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
 
-st.button(
-    label,
-    key=f"sug_{i}",
-    use_container_width=True,
-    on_click=pick_suggestion,
-    args=(chosen,),
-)
+    st.button(
+        label,
+        key=f"sug_{i}",
+        use_container_width=True,
+        on_click=pick_suggestion,
+        args=(chosen,),
+    )
+
 
 
                     # zet de widget input (q_input), NIET de afgeleide q
