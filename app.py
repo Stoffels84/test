@@ -124,6 +124,18 @@ PAGES = [
 def pick_suggestion(value: str):
     st.session_state["q_input"] = value
     st.session_state["picked"] = True
+
+def on_q_change():
+    # Wordt uitgevoerd bij ELKE wijziging in het zoekveld
+    st.session_state["q"] = (st.session_state.get("q_input") or "").strip().lower()
+    st.session_state["picked"] = False  # als je weer typt, suggesties terug aan
+
+def pick_suggestion(value: str):
+    # Wordt uitgevoerd als je op een suggestie klikt
+    st.session_state["q_input"] = value
+    st.session_state["q"] = value.strip().lower()
+    st.session_state["picked"] = True
+
     
 
 
