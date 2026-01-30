@@ -1055,11 +1055,15 @@ if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
 
     # --- Dashboard: zoekveld + suggesties ---
-# --- Dashboard: zoekveld + suggesties (veilig met session_state) ---
+# --- Dashboard: zoekveld + suggesties (autocomplete) ---
+
+# 1) callback (mag ook hoger in je bestand bij helpers staan)
+def pick_suggestion(value: str):
+    st.session_state["q_input"] = value
+
+# 2) init
 if "q_input" not in st.session_state:
     st.session_state["q_input"] = ""
-if "q" not in st.session_state:
-    st.session_state["q"] = ""
 
 q_raw = st.text_input(
     "Zoek op personeelsnr of naam.",
@@ -1067,14 +1071,13 @@ q_raw = st.text_input(
     key="q_input",
 )
 
-# de effectieve query die je gebruikt om te filteren
 q = (q_raw or "").strip().lower()
-st.session_state["q"] = q
 
-# Suggesties vanaf 2 tekens
+# 3) hits altijd definiëren (voorkomt NameError)
 hits = pd.DataFrame()
 
-if q and len(q) >= 2 and not suggest_index.empty:
+# 4) suggestions opbouwen
+if q and len(q) >= 2 and (suggest_index is not None) and (not suggest_index.empty):
     hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
 
     def _score(s: str) -> int:
@@ -1088,12 +1091,13 @@ if q and len(q) >= 2 and not suggest_index.empty:
     hits["_score"] = hits["_s"].apply(_score)
     hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(8)
 
+# 5) suggestions tonen
 if not hits.empty:
     st.caption("Suggesties (klik om te kiezen):")
     cols = st.columns(2)
 
     for i, (_, r) in enumerate(hits.iterrows()):
-        label = f"{r['personeelsnr']} — {r['naam']}".strip(" —")
+        label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
 
         with cols[i % 2]:
             chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
@@ -1106,16 +1110,11 @@ if not hits.empty:
                 args=(chosen,),
             )
 
-
-
-
-
-
-
-
+# 6) stop als er nog niets is ingevoerd
 if not q:
     st.caption("Typ iets in het zoekveld om resultaten te zien.")
     st.stop()
+
 
 
 
