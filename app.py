@@ -979,28 +979,32 @@ logout_button()
 load_ph = st.empty()
 with load_ph.container():
     st.info("📦 Data wordt geladen...")
-
     bar = st.progress(0)
     text_ph = st.empty()
 
-    total = 5
-    step = 0
+total = 5
+step = 0
 
-    try:
-        df_schade = load_schade_df()
-        df_gesprekken = load_gesprekken_df()
-        df_coach_voltooid = load_coaching_voltooid_df()
-        df_coach_tab = load_coaching_tab_df()
-        df_personeel = load_personeelsfiche_df()
+try:
+    df_schade = load_schade_df()
+    df_gesprekken = load_gesprekken_df()
+    df_coach_voltooid = load_coaching_voltooid_df()
+    df_coach_tab = load_coaching_tab_df()
+    df_personeel = load_personeelsfiche_df()
 
-        suggest_index = build_suggest_index(
-            df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab
-        )
+    suggest_index = build_suggest_index(
+        df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab
+    )
 
-    except Exception as e:
-        st.error("❌ Fout bij laden van data")
-        st.exception(e)
-        st.stop()
+except Exception as e:
+    st.error("❌ Fout bij laden van data")
+    st.exception(e)
+    st.stop()
+
+finally:
+    # ✅ dit verwijdert wat je op de afbeelding ziet
+    load_ph.empty()
+
 
 
 
