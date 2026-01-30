@@ -855,6 +855,68 @@ def load_personeelsfiche_df() -> pd.DataFrame:
 
     return df
 
+    
+    @st.cache_data(show_spinner=False)
+def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab):
+    rows = []
+
+    # 1) Schade: personeelsnr + naam + teamcoach
+    if df_schade is not None and not df_schade.empty:
+        tmp = df_schade[["personeelsnr", "volledige naam", "teamcoach"]].copy()
+        tmp = tmp.rename(columns={"volledige naam": "naam"})
+        rows.append(tmp)
+
+    # 2) Personeelsfiche: personeelsnr + naam
+    if df_personeel is not None and not df_personeel.empty:
+        cols = [c for c in ["personeelsnr", "naam"] if c in df_personeel.columns]
+        tmp = df_personeel[cols].copy()
+        if "teamcoach" not in tmp.columns:
+            tmp["teamcoach"] = ""
+        rows.append(tmp)
+
+    # 3) Gesprekken: nummer + Chauffeurnaam
+    if df_gesprekken is not None and not df_gesprekken.empty:
+        tmp = df_gesprekken[["nummer", "Chauffeurnaam"]].copy()
+        tmp = tmp.rename(columns={"nummer": "personeelsnr", "Chauffeurnaam": "naam"})
+        tmp["teamcoach"] = ""
+        rows.append(tmp)
+
+    # 4) Coachings (voltooid/gepland): nummer + Chauffeurnaam
+    for dfc in [df_coach_voltooid, df_coach_tab]:
+        if dfc is not None and not dfc.empty:
+            tmp = dfc[["nummer", "Chauffeurnaam"]].copy()
+            tmp = tmp.rename(columns={"nummer": "personeelsnr", "Chauffeurnaam": "naam"})
+            tmp["teamcoach"] = ""
+            rows.append(tmp)
+
+    if not rows:
+        return pd.DataFrame(columns=["personeelsnr", "naam", "teamcoach", "_s"])
+
+    sug = pd.concat(rows, ignore_index=True).fillna("")
+
+    # opschonen
+    sug["personeelsnr"] = sug["personeelsnr"].apply(clean_id)
+    sug["naam"] = sug["naam"].apply(clean_text)
+    sug["teamcoach"] = sug.get("teamcoach", "").astype(str).fillna("").str.strip()
+
+    # leegtes eruit
+    sug = sug[(sug["personeelsnr"] != "") | (sug["naam"] != "")].copy()
+
+    # uniek maken (zodat je niet 20x dezelfde chauffeur ziet)
+    sug = sug.drop_duplicates(subset=["personeelsnr", "naam"], keep="last")
+
+    # zoekveld (lowercase)
+    sug["_s"] = (
+        sug["personeelsnr"].astype(str)
+        + " "
+        + sug["naam"].astype(str)
+        + " "
+        + sug["teamcoach"].astype(str)
+    ).str.lower()
+
+    return sug
+
+
 
 # ----------------------------
 # Streamlit setup
@@ -899,6 +961,11 @@ with load_ph.container():
         step += 1
         set_progress(bar, text_ph, step, total, "Personeelsfiche (JSON lokaal)")
         df_personeel = load_personeelsfiche_df()
+
+        suggest_index = build_suggest_index(
+    df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab
+)
+
 
         bar.progress(100)
         text_ph.success("🚀 Alle data succesvol geladen!")
@@ -984,14 +1051,50 @@ df_coach_voltooid_view = (
 if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
 
-    q = st.text_input(
-        "Zoek op personeelsnr of naam.",
-        placeholder="Typ om te zoeken…",
-    ).strip().lower()
+    # --- Dashboard: zoekveld + suggesties ---
+if "q" not in st.session_state:
+    st.session_state["q"] = ""
 
-    if not q:
-        st.caption("Typ iets in het zoekveld om resultaten te zien.")
-        st.stop()
+q_raw = st.text_input(
+    "Zoek op personeelsnr of naam.",
+    placeholder="Typ om te zoeken…",
+    key="q",
+)
+
+q = (q_raw or "").strip().lower()
+
+# Suggesties vanaf 2 tekens
+if q and len(q) >= 2 and "suggest_index" in globals() and not suggest_index.empty:
+    hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
+
+    # Rangorde: begint met query is beter dan "bevat"
+    def _score(s: str) -> int:
+        s = s or ""
+        if s.startswith(q):
+            return 0
+        if f" {q}" in s:
+            return 1
+        return 2
+
+    hits["_score"] = hits["_s"].apply(_score)
+    hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(8)
+
+    if not hits.empty:
+        st.caption("Suggesties (klik om te kiezen):")
+        cols = st.columns(2)
+        for i, (_, r) in enumerate(hits.iterrows()):
+            label = f"{r['personeelsnr']} — {r['naam']}".strip(" —")
+            with cols[i % 2]:
+                if st.button(label, key=f"sug_{i}", use_container_width=True):
+                    # vul het zoekveld en herlaad
+                    st.session_state["q"] = (r["personeelsnr"] or r["naam"] or "").strip()
+                    st.rerun()
+
+# Als niets ingevuld: stop zoals je al deed
+if not q:
+    st.caption("Typ iets in het zoekveld om resultaten te zien.")
+    st.stop()
+
 
     schade_hits = df_schade_view[df_schade_view["_search"].str.contains(re.escape(q), na=False)].copy()
     gesprekken_hits = df_gesprekken_view[df_gesprekken_view["_search"].str.contains(re.escape(q), na=False)].copy()
