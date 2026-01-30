@@ -1072,6 +1072,8 @@ q = (q_raw or "").strip().lower()
 st.session_state["q"] = q
 
 # Suggesties vanaf 2 tekens
+hits = pd.DataFrame()
+
 if q and len(q) >= 2 and not suggest_index.empty:
     hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
 
@@ -1103,6 +1105,7 @@ if not hits.empty:
                 on_click=pick_suggestion,
                 args=(chosen,),
             )
+
 
 
 
