@@ -905,6 +905,7 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
         tmp = df_personeel[cols].copy()
         if "teamcoach" not in tmp.columns:
             tmp["teamcoach"] = ""
+        rows.append
         rows.append(tmp)
 
     # 3) Gesprekken: nummer + Chauffeurnaam
@@ -922,13 +923,11 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
             tmp["teamcoach"] = ""
             rows.append(tmp)
 
+    # ⚠️ Belangrijk: als er geen data is, meteen stoppen
     if not rows:
         return pd.DataFrame(columns=["personeelsnr", "naam", "teamcoach", "_s"])
 
-    sug["_first"] = sug["naam"].apply(lambda x: split_name_parts(x)[0])
-    sug["_last"]  = sug["naam"].apply(lambda x: split_name_parts(x)[1])
-
-
+    # ✅ PAS HIER ontstaat sug
     sug = pd.concat(rows, ignore_index=True).fillna("")
 
     # opschonen
@@ -939,33 +938,28 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
     # leegtes eruit
     sug = sug[(sug["personeelsnr"] != "") | (sug["naam"] != "")].copy()
 
-    # uniek maken (zodat je niet 20x dezelfde chauffeur ziet)
-    # 1 rij per personeelsnr (dus geen 3 naam-varianten)
+    # 1 rij per personeelsnr (zodat je niet 3x dezelfde chauffeur ziet)
     sug = sug.sort_values(["naam"]).drop_duplicates(subset=["personeelsnr"], keep="first")
 
+    # ✅ voornaam + achternaam toevoegen
+    sug["_first"] = sug["naam"].apply(lambda x: split_name_parts(x)[0])
+    sug["_last"]  = sug["naam"].apply(lambda x: split_name_parts(x)[1])
 
     # zoekveld (lowercase)
-    # extra: ook omgekeerde naam toevoegen (voornaam <-> achternaam)
-    def make_reverse_name(name: str) -> str:
-        parts = str(name).strip().split()
-        if len(parts) >= 2:
-            return " ".join(parts[::-1])
-        return ""
-    
-    sug["_name_rev"] = sug["naam"].apply(make_reverse_name)
-    
     sug["_s"] = (
         sug["personeelsnr"].astype(str)
         + " "
         + sug["naam"].astype(str)
         + " "
-        + sug["_name_rev"].astype(str)   # 👈 NIEUW
+        + sug["_first"].astype(str)
+        + " "
+        + sug["_last"].astype(str)
         + " "
         + sug["teamcoach"].astype(str)
     ).str.lower()
 
-
     return sug
+
 
 
 
