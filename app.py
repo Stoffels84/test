@@ -962,6 +962,8 @@ years_gespr = df_gesprekken["_jaar"].dropna().unique().tolist() if "_jaar" in df
 years_volt = df_coach_voltooid["_jaar"].dropna().unique().tolist() if "_jaar" in df_coach_voltooid.columns else []
 years = sorted({int(y) for y in (years_schade + years_gespr + years_volt) if y is not None}, reverse=True)
 
+suggest_idx = build_suggest_index(df_schade_view, df_personeel)
+
 current_page = get_page("dashboard")
 
 # ----------------------------
@@ -1030,40 +1032,48 @@ df_coach_voltooid_view = (
 # ----------------------------
 if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
-    # --- Suggestie index ---
-suggest_idx = build_suggest_index(df_schade_view, df_personeel)
 
-# --- Zoek input (met session_state zodat we hem kunnen vullen) ---
-q = st.text_input(
-    "Zoek op personeelsnr of naam.",
-    placeholder="Typ om te zoeken…",
-    key="dash_search"
-).strip().lower()
+    # --- Zorg dat de key bestaat vóór de widget ---
+    if "dash_search" not in st.session_state:
+        st.session_state["dash_search"] = ""
 
-# Suggesties tonen zodra je 2+ tekens hebt
-if q and len(q) >= 2 and not suggest_idx.empty:
-    sug = suggest_idx[suggest_idx["_search"].str.contains(re.escape(q), na=False)].head(8)
+    def pick_suggestion(val: str):
+        st.session_state["dash_search"] = val
 
-    if not sug.empty:
-        st.caption("Suggesties:")
-        cols = st.columns(2)
-        for i, (_, r) in enumerate(sug.iterrows()):
-            label = r["_key"] or r["personeelsnr"] or r["naam"]
-            with cols[i % 2]:
-                if st.button(f"🔎 {label}", key=f"sug_{i}", use_container_width=True):
-                    # vul zoekveld met personeelsnr (meest precies), anders naam
-                    st.session_state["dash_search"] = r["personeelsnr"] if r["personeelsnr"] else r["naam"]
-                    st.rerun()
-
-
+    # --- Zoekveld ---
     q = st.text_input(
         "Zoek op personeelsnr of naam.",
         placeholder="Typ om te zoeken…",
+        key="dash_search",
     ).strip().lower()
 
+    # --- Suggesties ---
+    if q and len(q) >= 2 and not suggest_idx.empty:
+        sug = suggest_idx[
+            suggest_idx["_search"].str.contains(re.escape(q), na=False)
+        ].head(8)
+
+        if not sug.empty:
+            st.caption("Suggesties:")
+            cols = st.columns(2)
+            for i, (_, r) in enumerate(sug.iterrows()):
+                label = r["_key"] or r["personeelsnr"] or r["naam"]
+                value = r["personeelsnr"] if r["personeelsnr"] else r["naam"]
+
+                with cols[i % 2]:
+                    st.button(
+                        f"🔎 {label}",
+                        key=f"sug_{i}",
+                        use_container_width=True,
+                        on_click=pick_suggestion,
+                        args=(value,),
+                    )
+
+    # --- Bestaat al in jouw code ---
     if not q:
         st.caption("Typ iets in het zoekveld om resultaten te zien.")
         st.stop()
+
 
     schade_hits = df_schade_view[df_schade_view["_search"].str.contains(re.escape(q), na=False)].copy()
     gesprekken_hits = df_gesprekken_view[df_gesprekken_view["_search"].str.contains(re.escape(q), na=False)].copy()
