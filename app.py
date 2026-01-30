@@ -856,7 +856,7 @@ def load_personeelsfiche_df() -> pd.DataFrame:
     return df
 
     
-    @st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False)
 def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab):
     rows = []
 
