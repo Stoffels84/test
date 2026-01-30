@@ -124,7 +124,7 @@ PAGES = [
 def pick_suggestion(value: str):
     st.session_state["q_input"] = value
     st.session_state["picked"] = True
-    st.rerun()
+    
 
 
 def set_progress(bar, text_ph, current, total, label):
