@@ -13,6 +13,8 @@ import pandas as pd
 import streamlit as st
 import bcrypt
 import requests
+from streamlit_searchbox import st_searchbox
+
 
 from pathlib import Path
 
@@ -1067,29 +1069,15 @@ df_coach_voltooid_view = (
 if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
 
-    # init session_state
-    if "q_input" not in st.session_state:
-        st.session_state["q_input"] = ""
-    if "q" not in st.session_state:
-        st.session_state["q"] = ""
-    if "picked" not in st.session_state:
-        st.session_state["picked"] = False
+# --- Dashboard: zoekveld + suggesties ZONDER Enter ---
 
-    # input (live)
-    st.text_input(
-        "Zoek op personeelsnr of naam.",
-        placeholder="Typ om te zoeken…",
-        key="q_input",
-        on_change=on_q_change,
-    )
-
-    q = st.session_state["q"]
-
-    # suggesties (live vanaf 2 tekens)
-    hits = pd.DataFrame()
-    if q and len(q) >= 2 and not suggest_index.empty and not st.session_state.get("picked", False):
+    def search_people(searchterm: str):
+        q = (searchterm or "").strip().lower()
+        if len(q) < 2 or suggest_index.empty:
+            return []
+    
         hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
-
+    
         def _score(s: str) -> int:
             s = s or ""
             if s.startswith(q):
@@ -1097,31 +1085,33 @@ if current_page == "dashboard":
             if f" {q}" in s:
                 return 1
             return 2
-
+    
         hits["_score"] = hits["_s"].apply(_score)
         hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(8)
-
-    if not hits.empty:
-        st.caption("Suggesties (klik om te kiezen):")
-        cols = st.columns(2)
-
-        for i, (_, r) in enumerate(hits.iterrows()):
+    
+        # searchbox kan tuples teruggeven: (toon_tekst, echte_waarde)
+        out = []
+        for _, r in hits.iterrows():
             label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
             chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
-
-            with cols[i % 2]:
-                st.button(
-                    label,
-                    key=f"sug_{i}",
-                    use_container_width=True,
-                    on_click=pick_suggestion,
-                    args=(chosen,),
-                )
-
-    # results
+            out.append((label, chosen))
+        return out
+    
+    selected = st_searchbox(
+        search_people,
+        placeholder="Typ personeelsnr of naam…",
+        label="Zoek op personeelsnr of naam.",
+        key="dash_searchbox",
+        debounce=200,          # iets trager/sneller? 150–300 is meestal goed
+        clear_on_submit=False,
+    )
+    
+    q = (selected or "").strip().lower()
+    
     if not q:
-        st.caption("Typ iets in het zoekveld om resultaten te zien.")
+        st.caption("Typ om suggesties te zien en kies er één.")
         st.stop()
+
 
 
 
