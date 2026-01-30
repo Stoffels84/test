@@ -1104,11 +1104,7 @@ if q and len(q) >= 2 and not suggest_index.empty:
 
 
 
-                    # zet de widget input (q_input), NIET de afgeleide q
-                    st.session_state["q_input"] = chosen
-                    st.session_state["q"] = chosen.strip().lower()
 
-                    st.rerun()
 
 if not q:
     st.caption("Typ iets in het zoekveld om resultaten te zien.")
