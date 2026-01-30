@@ -1086,22 +1086,24 @@ if q and len(q) >= 2 and not suggest_index.empty:
     hits["_score"] = hits["_s"].apply(_score)
     hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(8)
 
-    if not hits.empty:
-        st.caption("Suggesties (klik om te kiezen):")
-        cols = st.columns(2)
-        for i, (_, r) in enumerate(hits.iterrows()):
-    label = f"{r['personeelsnr']} — {r['naam']}".strip(" —")
-    
-    with cols[i % 2]:
-        chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
-    
-        st.button(
-            label,
-            key=f"sug_{i}",
-            use_container_width=True,
-            on_click=pick_suggestion,
-            args=(chosen,),
-        )
+if not hits.empty:
+    st.caption("Suggesties (klik om te kiezen):")
+    cols = st.columns(2)
+
+    for i, (_, r) in enumerate(hits.iterrows()):
+        label = f"{r['personeelsnr']} — {r['naam']}".strip(" —")
+
+        with cols[i % 2]:
+            chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
+
+            st.button(
+                label,
+                key=f"sug_{i}",
+                use_container_width=True,
+                on_click=pick_suggestion,
+                args=(chosen,),
+            )
+)
 
 
 
