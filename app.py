@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 import bcrypt
 import requests
-from requests.adapters import HTTPAdapter
+from requests.adapters import HTTPAdapterparse
 from urllib3.util.retry import Retry
 from streamlit_searchbox import st_searchbox
 
@@ -190,6 +190,22 @@ def parse_year(v) -> int | None:
         return dt.datetime.fromisoformat(s).year
     except Exception:
         return None
+
+def format_ddmmyyyy(v) -> str:
+    """Toon altijd dd-mm-jjjj; tijd/uurnotatie verdwijnt."""
+    if v is None:
+        return ""
+    s = str(v).strip()
+    if not s:
+        return ""
+    try:
+        ts = pd.to_datetime(s, dayfirst=True, errors="coerce")
+        if pd.isna(ts):
+            return s
+        return ts.strftime("%d-%m-%Y")
+    except Exception:
+        return s
+
 
 
 def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
