@@ -924,13 +924,25 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
 
 
     # zoekveld (lowercase)
-    sug["_s"] = (
-        sug["personeelsnr"].astype(str)
-        + " "
-        + sug["naam"].astype(str)
-        + " "
-        + sug["teamcoach"].astype(str)
-    ).str.lower()
+    # extra: ook omgekeerde naam toevoegen (voornaam <-> achternaam)
+def make_reverse_name(name: str) -> str:
+    parts = str(name).strip().split()
+    if len(parts) >= 2:
+        return " ".join(parts[::-1])
+    return ""
+
+sug["_name_rev"] = sug["naam"].apply(make_reverse_name)
+
+sug["_s"] = (
+    sug["personeelsnr"].astype(str)
+    + " "
+    + sug["naam"].astype(str)
+    + " "
+    + sug["_name_rev"].astype(str)   # 👈 NIEUW
+    + " "
+    + sug["teamcoach"].astype(str)
+).str.lower()
+
 
     return sug
 
