@@ -121,10 +121,6 @@ PAGES = [
 # ----------------------------
 # Helpers
 # ----------------------------
-def pick_suggestion(value: str):
-    st.session_state["q_input"] = value
-    st.session_state["picked"] = True
-
 def on_q_change():
     # Wordt uitgevoerd bij ELKE wijziging in het zoekveld
     st.session_state["q"] = (st.session_state.get("q_input") or "").strip().lower()
@@ -1071,65 +1067,62 @@ df_coach_voltooid_view = (
 if current_page == "dashboard":
     st.subheader("Dashboard (update om 1u en 13u)")
 
-    # --- Dashboard: zoekveld + suggesties ---
-# --- Dashboard: zoekveld + suggesties (autocomplete) ---
+    # init session_state
+    if "q_input" not in st.session_state:
+        st.session_state["q_input"] = ""
+    if "q" not in st.session_state:
+        st.session_state["q"] = ""
+    if "picked" not in st.session_state:
+        st.session_state["picked"] = False
 
-# 2) init
-# --- Dashboard: zoekveld + suggesties (autocomplete) ---
+    # input (live)
+    st.text_input(
+        "Zoek op personeelsnr of naam.",
+        placeholder="Typ om te zoeken…",
+        key="q_input",
+        on_change=on_q_change,
+    )
 
-if "q_input" not in st.session_state:
-    st.session_state["q_input"] = ""
-if "picked" not in st.session_state:
-    st.session_state["picked"] = False
+    q = st.session_state["q"]
 
-q_raw = st.text_input(
-    "Zoek op personeelsnr of naam.",
-    placeholder="Typ en druk Enter (Streamlit) …",
-    key="q_input",
-)
+    # suggesties (live vanaf 2 tekens)
+    hits = pd.DataFrame()
+    if q and len(q) >= 2 and not suggest_index.empty and not st.session_state.get("picked", False):
+        hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
 
-q = (q_raw or "").strip().lower()
+        def _score(s: str) -> int:
+            s = s or ""
+            if s.startswith(q):
+                return 0
+            if f" {q}" in s:
+                return 1
+            return 2
 
-# Suggesties tonen zolang je niet gekozen hebt
-hits = pd.DataFrame()
-if q and len(q) >= 2 and not suggest_index.empty and not st.session_state["picked"]:
-    hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
+        hits["_score"] = hits["_s"].apply(_score)
+        hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(8)
 
-    def _score(s: str) -> int:
-        s = s or ""
-        if s.startswith(q):
-            return 0
-        if f" {q}" in s:
-            return 1
-        return 2
+    if not hits.empty:
+        st.caption("Suggesties (klik om te kiezen):")
+        cols = st.columns(2)
 
-    hits["_score"] = hits["_s"].apply(_score)
-    hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(8)
+        for i, (_, r) in enumerate(hits.iterrows()):
+            label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
+            chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
 
-if not hits.empty:
-    st.caption("Suggesties (klik om te kiezen):")
-    cols = st.columns(2)
+            with cols[i % 2]:
+                st.button(
+                    label,
+                    key=f"sug_{i}",
+                    use_container_width=True,
+                    on_click=pick_suggestion,
+                    args=(chosen,),
+                )
 
-    for i, (_, r) in enumerate(hits.iterrows()):
-        label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
-        chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
-        with cols[i % 2]:
-            st.button(
-                label,
-                key=f"sug_{i}",
-                use_container_width=True,
-                on_click=pick_suggestion,
-                args=(chosen,),
-            )
+    # results
+    if not q:
+        st.caption("Typ iets in het zoekveld om resultaten te zien.")
+        st.stop()
 
-# als je gekozen hebt: reset picked zodat je later weer kan typen
-if st.session_state["picked"]:
-    st.session_state["picked"] = False
-    q = (st.session_state["q_input"] or "").strip().lower()
-
-if not q:
-    st.caption("Typ iets in het zoekveld om resultaten te zien.")
-    st.stop()
 
 
 
