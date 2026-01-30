@@ -123,6 +123,8 @@ PAGES = [
 # ----------------------------
 def pick_suggestion(value: str):
     st.session_state["q_input"] = value
+    st.session_state["picked"] = True
+
 
 def set_progress(bar, text_ph, current, total, label):
     pct = int(current / total * 100)
