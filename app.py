@@ -17,17 +17,18 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from streamlit_searchbox import st_searchbox
 
-# ----------------------------
-# App local files (CSS/Logo/JSON remain local)
-# ----------------------------
+
+# =============================================================================
+# Local assets
+# =============================================================================
 APP_DIR = Path(__file__).parent
 CSS_PATH = APP_DIR / "styles.css"
 LOGO_PATH = APP_DIR / "logo.png"
 PERSONEEL_JSON_NAME = "personeelsficheGB.json"
 
-# ----------------------------
-# Remote data config (Excel files)
-# ----------------------------
+# =============================================================================
+# Remote data config (Excel/JSON)
+# =============================================================================
 DATA_BASE_URL = st.secrets.get("DATA_BASE_URL", "https://otgent.borolo.be/data").rstrip("/")
 HOST_USER = st.secrets.get("HOST_USER", "")
 HOST_PASS = st.secrets.get("HOST_PASS", "")
@@ -38,15 +39,13 @@ XLSM_NAME = "schade met macro.xlsm"
 GESPREKKEN_XLSX_NAME = "Overzicht gesprekken (aangepast).xlsx"
 COACHINGS_XLSX_NAME = "Coachingslijst.xlsx"
 
-# ----------------------------
-# Sheets / Config
-# ----------------------------
+# Sheets / config
 SCHADESHEET = "BRON"
 GESPREKKEN_SHEET_NAME = "gesprekken per thema"
 COACHINGS_SHEET_VOLTOOID = "Voltooide coachings"
 COACHINGS_SHEET_COACHING = "Coaching"
 
-# BRON columns to load (including teamcoach from BRON)
+# BRON columns expected in the app
 SCHADE_COLS = [
     "personeelsnr",
     "volledige naam",
@@ -68,15 +67,18 @@ PAGES = [
     ("analyse", "Analyse"),
 ]
 
-# ----------------------------
-# Remote helpers (session + download)
-# ----------------------------
+
+# =============================================================================
+# Low-level helpers
+# =============================================================================
 def _env_sig() -> str:
+    """Cache-buster signature if env/secrets change."""
     raw = f"{DATA_BASE_URL}|{HOST_USER}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
 
 
 def data_url(filename: str) -> str:
+    """Safe remote URL builder (handles spaces/parentheses)."""
     return f"{DATA_BASE_URL}/{quote(filename)}"
 
 
@@ -95,13 +97,13 @@ def get_session() -> requests.Session:
     return s
 
 
-@st.cache_data(show_spinner=False, ttl=3600)  # cache 1 uur
+@st.cache_data(show_spinner=False, ttl=3600)
 def fetch_bytes(url: str, env_sig: str) -> bytes:
+    """Download bytes with basic auth + retries (cached)."""
     if not HOST_USER or not HOST_PASS:
         raise ValueError("HOST_USER/HOST_PASS ontbreken in Streamlit secrets.")
 
     s = get_session()
-
     try:
         r = s.get(url, auth=(HOST_USER, HOST_PASS), timeout=30)
         r.raise_for_status()
@@ -115,23 +117,26 @@ def fetch_bytes(url: str, env_sig: str) -> bytes:
             f"Download mislukt{extra}: {url} — {type(e).__name__}{msg_part}"
         ) from e
 
-# ----------------------------
-# Generic helpers
-# ----------------------------
+
 def read_excel_str(bio: BytesIO, **kwargs) -> pd.DataFrame:
-    """Lees Excel altijd als strings en vervang NaN door ''."""
+    """Read Excel as strings and fill NaN with empty strings (resets buffer first)."""
     bio.seek(0)
     df = pd.read_excel(bio, dtype=str, **kwargs)
     return df.fillna("")
 
 
 def load_css(path: Path) -> None:
-    """Load CSS from external file and inject into Streamlit."""
     if not path.exists():
         st.warning(f"CSS-bestand niet gevonden: {path.name} (zet dit naast app.py)")
         return
-    css = path.read_text(encoding="utf-8")
-    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+
+
+def img_to_data_uri(path: Path) -> str:
+    b = path.read_bytes()
+    ext = path.suffix.lower().lstrip(".")
+    mime = "png" if ext == "png" else ext
+    return f"data:image/{mime};base64,{base64.b64encode(b).decode('utf-8')}"
 
 
 def norm(s) -> str:
@@ -144,7 +149,7 @@ def clean_id(v) -> str:
     s = str(v).strip()
     if not s:
         return ""
-    if re.fullmatch(r"\d+\.0", s):
+    if re.fullmatch(r"\d+\.0", s):  # excel 123.0 -> 123
         s = s[:-2]
     return s.strip()
 
@@ -157,7 +162,7 @@ def parse_year(v) -> int | None:
     if v is None:
         return None
 
-    # Excel serial date (soms als getal)
+    # Excel serial date
     if isinstance(v, (int, float)) and 30000 < float(v) < 60000:
         try:
             base = dt.datetime(1899, 12, 30)
@@ -187,30 +192,8 @@ def parse_year(v) -> int | None:
         return None
 
 
-def format_ddmmyyyy(v) -> str:
-    """Toon altijd dd-mm-jjjj; tijd/uurnotatie verdwijnt."""
-    if v is None:
-        return ""
-    s = str(v).strip()
-    if not s:
-        return ""
-    try:
-        ts = pd.to_datetime(s, dayfirst=True, errors="coerce")
-        if pd.isna(ts):
-            return s
-        return ts.strftime("%d-%m-%Y")
-    except Exception:
-        return s
-
-
-def img_to_data_uri(path: Path) -> str:
-    b = path.read_bytes()
-    ext = path.suffix.lower().lstrip(".")
-    mime = "png" if ext == "png" else ext
-    return f"data:image/{mime};base64,{base64.b64encode(b).decode('utf-8')}"
-
-
 def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
+    """Find a column with light alias support (keeps your existing behaviour)."""
     w = norm(wanted)
 
     for c in df.columns:
@@ -218,10 +201,8 @@ def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
             return c
 
     if w in ["nummer", "personeelsnr", "personeelsnummer", "p-nr", "p_nr", "p nr", "p-nr."]:
-        for alt in [
-            "nr", "id", "persnr", "personeelsnr", "personeelsnummer", "nummer",
-            "employeeid", "employee_id", "p-nr", "p nr", "p_nr", "p-nr.", "p-nr (p-nr)"
-        ]:
+        for alt in ["nr", "id", "persnr", "personeelsnr", "personeelsnummer", "nummer", "employeeid", "employee_id",
+                    "p-nr", "p nr", "p_nr", "p-nr.", "p-nr (p-nr)"]:
             for c in df.columns:
                 if norm(c) == norm(alt):
                     return c
@@ -233,20 +214,16 @@ def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
                     return c
 
     if w == "info":
-        for alt in [
-            "informatie", "opmerking", "opmerkingen", "beschrijving", "details", "thema",
-            "onderwerp", "samenvatting", "actiepunten", "resultaat", "notities", "commentaar",
-            "opmerkingen (coach)", "opmerkingen chauffeur",
-        ]:
+        for alt in ["informatie", "opmerking", "opmerkingen", "beschrijving", "details", "thema", "onderwerp",
+                    "samenvatting", "actiepunten", "resultaat", "notities", "commentaar",
+                    "opmerkingen (coach)", "opmerkingen chauffeur"]:
             for c in df.columns:
                 if norm(c) == norm(alt):
                     return c
 
     if w in ["volledige naam", "chauffeurnaam", "naam"]:
-        for alt in [
-            "chauffeurnaam", "chauffeur naam", "naam", "medewerker", "werknemer",
-            "chauffeur", "volledige naam", "full name", "fullname", "displayname", "display_name",
-        ]:
+        for alt in ["chauffeurnaam", "chauffeur naam", "naam", "medewerker", "werknemer", "chauffeur",
+                    "volledige naam", "full name", "fullname", "displayname", "display_name"]:
             for c in df.columns:
                 if norm(c) == norm(alt):
                     return c
@@ -274,47 +251,9 @@ def _flatten_json_to_records(data):
     return []
 
 
-def render_html_table(
-    df: pd.DataFrame,
-    col_order: list[str],
-    col_widths: dict[str, str],
-    max_height_px: int = 520,
-) -> None:
-    view = df[col_order].copy()
-    for c in col_order:
-        view[c] = view[c].fillna("").astype(str)
-
-    ths = []
-    for c in col_order:
-        w = col_widths.get(c, "auto")
-        ths.append(f'<th style="width:{w}">{html.escape(c)}</th>')
-    thead = "<tr>" + "".join(ths) + "</tr>"
-
-    trs = []
-    for _, row in view.iterrows():
-        tds = []
-        for c in col_order:
-            cell = row[c]
-            safe = html.escape(cell).replace("\n", "<br/>")
-            tds.append(f"<td>{safe}</td>")
-        trs.append("<tr>" + "".join(tds) + "</tr>")
-    tbody = "".join(trs)
-
-    st.markdown(
-        f"""
-        <div class="ot-table-wrap" style="max-height:{max_height_px}px;">
-          <table class="ot-table">
-            <thead>{thead}</thead>
-            <tbody>{tbody}</tbody>
-          </table>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# ----------------------------
-# Login / Users (REMOTE toegestaan_gebruik.xlsx)
-# ----------------------------
+# =============================================================================
+# Auth (REMOTE toegestaan_gebruik.xlsx)
+# =============================================================================
 @st.cache_data(show_spinner=False)
 def load_users_df() -> pd.DataFrame:
     url = data_url(TOEGESTAAN_XLSX_NAME)
@@ -331,14 +270,12 @@ def load_users_df() -> pd.DataFrame:
 
     df["naam"] = df["naam"].astype(str).str.strip()
     df["rol"] = df["rol"].astype(str).str.strip().str.lower()
-
     if "paswoord_hash" in df.columns:
         df["paswoord_hash"] = df["paswoord_hash"].astype(str).str.strip()
     if "paswoord" in df.columns:
         df["paswoord"] = df["paswoord"].astype(str).str.strip()
 
-    df = df[df["naam"] != ""].copy()
-    df = df.drop_duplicates(subset=["naam"], keep="last")
+    df = df[df["naam"] != ""].drop_duplicates(subset=["naam"], keep="last").copy()
     return df
 
 
@@ -377,14 +314,10 @@ def require_login() -> None:
     naam = st.text_input("Naam", placeholder="bv. janssens", key="login_naam")
     pw = st.text_input("Paswoord", type="password", key="login_pw")
 
-    c1, _ = st.columns([1, 2])
-    with c1:
-        do_login = st.button("Inloggen", use_container_width=True)
-
+    do_login = st.button("Inloggen", use_container_width=True)
     if do_login:
         naam_clean = (naam or "").strip()
         match = users[users["naam"] == naam_clean]
-
         if match.empty:
             st.error("Onbekende gebruiker.")
             st.stop()
@@ -413,9 +346,10 @@ def logout_button() -> None:
                 st.session_state.pop(k, None)
             st.rerun()
 
-# ----------------------------
-# Navigation state
-# ----------------------------
+
+# =============================================================================
+# Navigation
+# =============================================================================
 def get_page(default="dashboard") -> str:
     try:
         v = st.query_params.get("page", default)
@@ -433,9 +367,10 @@ def set_page(page_id: str) -> None:
     st.query_params["page"] = page_id
     st.rerun()
 
-# ----------------------------
-# Remote Excel Loaders
-# ----------------------------
+
+# =============================================================================
+# Loaders
+# =============================================================================
 @st.cache_data(show_spinner=False)
 def load_schade_df() -> pd.DataFrame:
     url = data_url(XLSM_NAME)
@@ -446,7 +381,6 @@ def load_schade_df() -> pd.DataFrame:
         return str(x).strip().lower()
 
     canonical_cols = list(SCHADE_COLS)
-
     variants = {
         "personeelsnr": ["personeelsnr", "personeelsnummer", "persnr", "nr", "nummer", "p-nr", "p nr", "p_nr", "p-nr."],
         "volledige naam": ["volledige naam", "volledige naam.", "volledige naam ", "naam", "chauffeurnaam", "chauffeur naam", "chauffeur"],
@@ -472,9 +406,6 @@ def load_schade_df() -> pd.DataFrame:
         usecols=lambda c: (n(c) in allowed_norms) or ("voertuig" in n(c).replace(" ", "")),
     )
 
-    rename_map = {}
-    taken_canon = set()
-
     variants_norm = {canon: {n(canon)} | {n(a) for a in alts} for canon, alts in variants.items()}
     for canon in canonical_cols:
         variants_norm.setdefault(canon, {n(canon)})
@@ -488,11 +419,13 @@ def load_schade_df() -> pd.DataFrame:
             return "voertuig"
         return None
 
+    rename_map = {}
+    taken = set()
     for col in df.columns:
         canon = canonical_for(col)
-        if canon and canon not in taken_canon:
+        if canon and canon not in taken:
             rename_map[col] = canon
-            taken_canon.add(canon)
+            taken.add(canon)
 
     df = df.rename(columns=rename_map)
 
@@ -506,15 +439,11 @@ def load_schade_df() -> pd.DataFrame:
     df["voertuig"] = df["voertuig"].apply(clean_text)
 
     df["_jaar"] = df["Datum"].apply(parse_year)
-
     df["_search"] = (
-        df["personeelsnr"].fillna("").astype(str)
-        + " "
-        + df["volledige naam"].fillna("").astype(str)
-        + " "
-        + df["teamcoach"].fillna("").astype(str)
-        + " "
-        + df["voertuig"].fillna("").astype(str)
+        df["personeelsnr"].astype(str)
+        + " " + df["volledige naam"].astype(str)
+        + " " + df["teamcoach"].astype(str)
+        + " " + df["voertuig"].astype(str)
     ).str.lower()
 
     return df
@@ -562,42 +491,274 @@ def load_gesprekken_df() -> pd.DataFrame:
     df["Chauffeurnaam"] = df["Chauffeurnaam"].apply(clean_text)
 
     df["_search"] = (
-        df["nummer"].fillna("").astype(str)
-        + " "
-        + df["Chauffeurnaam"].fillna("").astype(str)
-        + " "
-        + df["Info"].fillna("").astype(str)
+        df["nummer"].astype(str) + " "
+        + df["Chauffeurnaam"].astype(str) + " "
+        + df["Info"].astype(str)
     ).str.lower()
-
     df["_jaar"] = df["Datum"].apply(parse_year)
+
     return df
 
 
 @st.cache_data(show_spinner=False)
 def fetch_coachings_bytes() -> bytes:
+    """Shared download for Coachingslijst.xlsx."""
     return fetch_bytes(data_url(COACHINGS_XLSX_NAME), _env_sig())
 
-# -------------------------------------------------------
-# (Hierna komen je coaching-loaders, suggest-index, etc.)
-# -------------------------------------------------------
 
-# ----------------------------
-# Streamlit setup
-# ----------------------------
+@st.cache_data(show_spinner=False)
+def load_coaching_voltooid_df() -> pd.DataFrame:
+    content = fetch_coachings_bytes()
+    bio = BytesIO(content)
+
+    xls = pd.ExcelFile(bio)
+    if COACHINGS_SHEET_VOLTOOID not in xls.sheet_names:
+        raise ValueError(
+            f"Tabblad '{COACHINGS_SHEET_VOLTOOID}' niet gevonden in {COACHINGS_XLSX_NAME}. "
+            f"Gevonden tabs: {xls.sheet_names}"
+        )
+
+    df = read_excel_str(bio, sheet_name=COACHINGS_SHEET_VOLTOOID)
+
+    num_col = _find_col(df, "nummer") or _find_col(df, "personeelsnr")
+    name_col = _find_col(df, "Chauffeurnaam") or _find_col(df, "naam") or _find_col(df, "volledige naam")
+    date_col = _find_col(df, "Datum")
+    info_col = _find_col(df, "Info")
+
+    if num_col is None:
+        df["nummer"] = ""
+    elif num_col != "nummer":
+        df = df.rename(columns={num_col: "nummer"})
+
+    if name_col is None:
+        df["Chauffeurnaam"] = ""
+    elif name_col != "Chauffeurnaam":
+        df = df.rename(columns={name_col: "Chauffeurnaam"})
+
+    if date_col is None:
+        df["Datum"] = ""
+    elif date_col != "Datum":
+        df = df.rename(columns={date_col: "Datum"})
+
+    if info_col is None:
+        candidates = [c for c in df.columns if norm(c) in [
+            "thema", "onderwerp", "opmerking", "opmerkingen", "samenvatting",
+            "notities", "commentaar", "actiepunten", "resultaat"
+        ]]
+        if candidates:
+            df["Info"] = df[candidates].fillna("").astype(str).agg(" | ".join, axis=1)
+        else:
+            df["Info"] = ""
+    elif info_col != "Info":
+        df = df.rename(columns={info_col: "Info"})
+
+    df = df.fillna("")
+    df["nummer"] = df["nummer"].apply(clean_id)
+    df["Chauffeurnaam"] = df["Chauffeurnaam"].apply(clean_text)
+    df["Datum"] = df["Datum"].apply(clean_text)
+    df["Info"] = df["Info"].apply(clean_text)
+
+    df["_search"] = (
+        df["nummer"].astype(str) + " "
+        + df["Chauffeurnaam"].astype(str) + " "
+        + df["Info"].astype(str)
+    ).str.lower()
+    df["_jaar"] = df["Datum"].apply(parse_year)
+
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def load_coaching_tab_df() -> pd.DataFrame:
+    """Coachingslijst.xlsx -> tab 'Coaching'."""
+    content = fetch_coachings_bytes()
+    bio = BytesIO(content)
+
+    xls = pd.ExcelFile(bio)
+    if COACHINGS_SHEET_COACHING not in xls.sheet_names:
+        raise ValueError(
+            f"Tabblad '{COACHINGS_SHEET_COACHING}' niet gevonden in {COACHINGS_XLSX_NAME}. "
+            f"Gevonden tabs: {xls.sheet_names}"
+        )
+
+    df = read_excel_str(bio, sheet_name=COACHINGS_SHEET_COACHING)
+
+    pnr_col = _find_col(df, "P-nr") or _find_col(df, "nummer") or _find_col(df, "personeelsnr")
+    name_col = _find_col(df, "Volledige naam") or _find_col(df, "naam") or _find_col(df, "chauffeurnaam")
+    opm_col = _find_col(df, "Opmerkingen") or _find_col(df, "Info")
+
+    if pnr_col is None:
+        df["nummer"] = ""
+    elif pnr_col != "nummer":
+        df = df.rename(columns={pnr_col: "nummer"})
+
+    if name_col is None:
+        df["Chauffeurnaam"] = ""
+    elif name_col != "Chauffeurnaam":
+        df = df.rename(columns={name_col: "Chauffeurnaam"})
+
+    if opm_col is None:
+        df["Info"] = ""
+    elif opm_col != "Info":
+        df = df.rename(columns={opm_col: "Info"})
+
+    df = df.fillna("")
+    df["nummer"] = df["nummer"].apply(clean_id)
+    df["Chauffeurnaam"] = df["Chauffeurnaam"].apply(clean_text)
+    df["Info"] = df["Info"].apply(clean_text)
+
+    df["_search"] = (
+        df["nummer"].astype(str) + " "
+        + df["Chauffeurnaam"].astype(str) + " "
+        + df["Info"].astype(str)
+    ).str.lower()
+
+    return df
+
+
+def split_name_parts(full_name: str) -> tuple[str, str]:
+    s = (full_name or "").strip()
+    if not s:
+        return ("", "")
+    parts = [p for p in re.split(r"\s+", s) if p]
+    if len(parts) == 1:
+        return (parts[0].lower(), parts[0].lower())
+    return (parts[0].lower(), parts[-1].lower())
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_personeelsfiche_df() -> pd.DataFrame:
+    url = data_url(PERSONEEL_JSON_NAME)
+    content = fetch_bytes(url, _env_sig())
+
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1", errors="replace")
+
+    try:
+        data = json.loads(text)
+    except Exception as e:
+        raise ValueError(f"Kan JSON niet parsen uit {PERSONEEL_JSON_NAME}: {e}")
+
+    records = _flatten_json_to_records(data)
+    if not records:
+        return pd.DataFrame(columns=["_search"])
+
+    df = pd.DataFrame(records)
+
+    id_col = _find_col(df, "personeelsnr") or _find_col(df, "nummer") or _find_col(df, "personeelsnummer")
+    name_col = _find_col(df, "volledige naam") or _find_col(df, "naam") or _find_col(df, "chauffeurnaam")
+
+    if id_col is None and "_key" in df.columns:
+        id_col = "_key"
+
+    if id_col and id_col != "personeelsnr":
+        df = df.rename(columns={id_col: "personeelsnr"})
+        id_col = "personeelsnr"
+    if name_col and name_col != "naam":
+        df = df.rename(columns={name_col: "naam"})
+        name_col = "naam"
+
+    if id_col is None:
+        df["personeelsnr"] = ""
+        id_col = "personeelsnr"
+    if name_col is None:
+        df["naam"] = ""
+        name_col = "naam"
+
+    df[id_col] = df[id_col].apply(clean_id)
+    df[name_col] = df[name_col].apply(clean_text)
+
+    extra_cols = []
+    for c in df.columns:
+        if c in ["_search", id_col, name_col]:
+            continue
+        if norm(c) in ["dienst", "afdeling", "team", "functie", "rol", "standplaats", "locatie", "teamcoach"]:
+            extra_cols.append(c)
+
+    parts = [df[id_col].fillna("").astype(str), df[name_col].fillna("").astype(str)]
+    for c in extra_cols[:6]:
+        parts.append(df[c].fillna("").astype(str))
+
+    df["_search"] = parts[0]
+    for p in parts[1:]:
+        df["_search"] = df["_search"].astype(str) + " " + p.astype(str)
+    df["_search"] = df["_search"].str.lower()
+
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooid, df_coach_tab):
+    rows = []
+
+    if df_schade is not None and not df_schade.empty:
+        tmp = df_schade[["personeelsnr", "volledige naam", "teamcoach"]].copy()
+        tmp = tmp.rename(columns={"volledige naam": "naam"})
+        rows.append(tmp)
+
+    if df_personeel is not None and not df_personeel.empty:
+        cols = [c for c in ["personeelsnr", "naam"] if c in df_personeel.columns]
+        tmp = df_personeel[cols].copy()
+        if "teamcoach" not in tmp.columns:
+            tmp["teamcoach"] = ""
+        rows.append(tmp)
+
+    if df_gesprekken is not None and not df_gesprekken.empty:
+        tmp = df_gesprekken[["nummer", "Chauffeurnaam"]].copy()
+        tmp = tmp.rename(columns={"nummer": "personeelsnr", "Chauffeurnaam": "naam"})
+        tmp["teamcoach"] = ""
+        rows.append(tmp)
+
+    for dfc in [df_coach_voltooid, df_coach_tab]:
+        if dfc is not None and not dfc.empty:
+            tmp = dfc[["nummer", "Chauffeurnaam"]].copy()
+            tmp = tmp.rename(columns={"nummer": "personeelsnr", "Chauffeurnaam": "naam"})
+            tmp["teamcoach"] = ""
+            rows.append(tmp)
+
+    if not rows:
+        return pd.DataFrame(columns=["personeelsnr", "naam", "teamcoach", "_s"])
+
+    sug = pd.concat(rows, ignore_index=True).fillna("")
+
+    sug["personeelsnr"] = sug["personeelsnr"].apply(clean_id)
+    sug["naam"] = sug["naam"].apply(clean_text)
+    sug["teamcoach"] = sug.get("teamcoach", "").astype(str).fillna("").str.strip()
+
+    sug = sug[(sug["personeelsnr"] != "") | (sug["naam"] != "")].copy()
+    sug = sug.sort_values(["naam"]).drop_duplicates(subset=["personeelsnr"], keep="first")
+
+    sug["_first"] = sug["naam"].apply(lambda x: split_name_parts(x)[0])
+    sug["_last"] = sug["naam"].apply(lambda x: split_name_parts(x)[1])
+
+    sug["_s"] = (
+        sug["personeelsnr"].astype(str)
+        + " " + sug["naam"].astype(str)
+        + " " + sug["_first"].astype(str)
+        + " " + sug["_last"].astype(str)
+        + " " + sug["teamcoach"].astype(str)
+    ).str.lower()
+
+    return sug
+
+
+# =============================================================================
+# Streamlit setup + initial load
+# =============================================================================
 st.set_page_config(page_title="Analyse en rapportering OT Gent", layout="wide")
 load_css(CSS_PATH)
 
 require_login()
 logout_button()
 
-# ----------------------------
-# Load data (met placeholder die achteraf verdwijnt)
-# ----------------------------
+# --- Loading UI (and always remove it) ---
 load_ph = st.empty()
 with load_ph.container():
     st.info("📦 Data wordt geladen...")
-    st.progress(0)  # je kan dit later opnieuw activeren als je echt progress wil tonen
-    st.empty()
+    bar = st.progress(0)
+    text_ph = st.empty()
 
 try:
     df_schade = load_schade_df()
@@ -618,9 +779,10 @@ except Exception as e:
 finally:
     load_ph.empty()
 
-# ----------------------------
-# Years + page
-# ----------------------------
+
+# =============================================================================
+# Year list + page state
+# =============================================================================
 years_schade = df_schade["_jaar"].dropna().unique().tolist() if "_jaar" in df_schade.columns else []
 years_gespr = df_gesprekken["_jaar"].dropna().unique().tolist() if "_jaar" in df_gesprekken.columns else []
 years_volt = df_coach_voltooid["_jaar"].dropna().unique().tolist() if "_jaar" in df_coach_voltooid.columns else []
@@ -628,9 +790,10 @@ years = sorted({int(y) for y in (years_schade + years_gespr + years_volt) if y i
 
 current_page = get_page("dashboard")
 
-# ----------------------------
+
+# =============================================================================
 # Topbar
-# ----------------------------
+# =============================================================================
 st.markdown('<div class="ot-topbar">', unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns([2.3, 1.2, 3.5], vertical_alignment="center")
@@ -677,9 +840,10 @@ with c3:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ----------------------------
-# Year filter views
-# ----------------------------
+
+# =============================================================================
+# Year-filtered views (used by pages)
+# =============================================================================
 df_schade_view = df_schade[df_schade["_jaar"] == int(year_choice)].copy() if year_choice != "Alle" else df_schade.copy()
 df_gesprekken_view = df_gesprekken[df_gesprekken["_jaar"] == int(year_choice)].copy() if year_choice != "Alle" else df_gesprekken.copy()
 df_coach_voltooid_view = (
@@ -687,7 +851,13 @@ df_coach_voltooid_view = (
     if year_choice != "Alle"
     else df_coach_voltooid.copy()
 )
+
 # df_coach_tab heeft geen jaarfilter (geen datumkolom)
+
+# -------------------------------------------------------------------------
+# Vanaf hier komt je page logic (dashboard, chauffeur, voertuig, ...)
+# -------------------------------------------------------------------------
+
 
 
 # ----------------------------
