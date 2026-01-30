@@ -908,7 +908,9 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
     sug = sug[(sug["personeelsnr"] != "") | (sug["naam"] != "")].copy()
 
     # uniek maken (zodat je niet 20x dezelfde chauffeur ziet)
-    sug = sug.drop_duplicates(subset=["personeelsnr", "naam"], keep="last")
+    # 1 rij per personeelsnr (dus geen 3 naam-varianten)
+    sug = sug.sort_values(["naam"]).drop_duplicates(subset=["personeelsnr"], keep="first")
+
 
     # zoekveld (lowercase)
     sug["_s"] = (
