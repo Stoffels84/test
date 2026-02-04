@@ -890,23 +890,38 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
     if df_schade is not None and not df_schade.empty:
         tmp = df_schade[["personeelsnr", "volledige naam", "teamcoach"]].copy()
         tmp = tmp.rename(columns={"volledige naam": "naam"})
+        tmp["voertuig"] = ""
+        tmp["_kind"] = "persoon"
         rows.append(tmp)
+
+        # ✅ EXTRA: voertuigen uit schade (BRON)
+        if "voertuig" in df_schade.columns:
+            v = df_schade[["voertuig"]].copy()
+            v["voertuig"] = v["voertuig"].apply(clean_text)
+            v = v[v["voertuig"] != ""].drop_duplicates(subset=["voertuig"])
+            v["personeelsnr"] = ""
+            v["naam"] = ""
+            v["teamcoach"] = ""
+            v["_kind"] = "voertuig"
+            rows.append(v[["personeelsnr", "naam", "teamcoach", "voertuig", "_kind"]])
 
     # 2) Personeelsfiche: personeelsnr + naam
     if df_personeel is not None and not df_personeel.empty:
         cols = [c for c in ["personeelsnr", "naam"] if c in df_personeel.columns]
         tmp = df_personeel[cols].copy()
-        if "teamcoach" not in tmp.columns:
-            tmp["teamcoach"] = ""
-        
-        rows.append(tmp)
+        tmp["teamcoach"] = tmp.get("teamcoach", "")
+        tmp["voertuig"] = ""
+        tmp["_kind"] = "persoon"
+        rows.append(tmp[["personeelsnr", "naam", "teamcoach", "voertuig", "_kind"]])
 
     # 3) Gesprekken: nummer + Chauffeurnaam
     if df_gesprekken is not None and not df_gesprekken.empty:
         tmp = df_gesprekken[["nummer", "Chauffeurnaam"]].copy()
         tmp = tmp.rename(columns={"nummer": "personeelsnr", "Chauffeurnaam": "naam"})
         tmp["teamcoach"] = ""
-        rows.append(tmp)
+        tmp["voertuig"] = ""
+        tmp["_kind"] = "persoon"
+        rows.append(tmp[["personeelsnr", "naam", "teamcoach", "voertuig", "_kind"]])
 
     # 4) Coachings (voltooid/gepland): nummer + Chauffeurnaam
     for dfc in [df_coach_voltooid, df_coach_tab]:
@@ -914,31 +929,40 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
             tmp = dfc[["nummer", "Chauffeurnaam"]].copy()
             tmp = tmp.rename(columns={"nummer": "personeelsnr", "Chauffeurnaam": "naam"})
             tmp["teamcoach"] = ""
-            rows.append(tmp)
+            tmp["voertuig"] = ""
+            tmp["_kind"] = "persoon"
+            rows.append(tmp[["personeelsnr", "naam", "teamcoach", "voertuig", "_kind"]])
 
-    # ⚠️ Belangrijk: als er geen data is, meteen stoppen
     if not rows:
-        return pd.DataFrame(columns=["personeelsnr", "naam", "teamcoach", "_s"])
+        return pd.DataFrame(columns=["personeelsnr", "naam", "teamcoach", "voertuig", "_kind", "_s"])
 
-    # ✅ PAS HIER ontstaat sug
     sug = pd.concat(rows, ignore_index=True).fillna("")
 
-    # opschonen
     sug["personeelsnr"] = sug["personeelsnr"].apply(clean_id)
     sug["naam"] = sug["naam"].apply(clean_text)
     sug["teamcoach"] = sug.get("teamcoach", "").astype(str).fillna("").str.strip()
+    sug["voertuig"] = sug.get("voertuig", "").astype(str).fillna("").str.strip()
+    sug["_kind"] = sug.get("_kind", "persoon")
 
-    # leegtes eruit
-    sug = sug[(sug["personeelsnr"] != "") | (sug["naam"] != "")].copy()
+    sug = sug[(sug["personeelsnr"] != "") | (sug["naam"] != "") | (sug["voertuig"] != "")].copy()
 
-    # 1 rij per personeelsnr (zodat je niet 3x dezelfde chauffeur ziet)
-    sug = sug.sort_values(["naam"]).drop_duplicates(subset=["personeelsnr"], keep="first")
+    # personen dedupe op personeelsnr, voertuigen dedupe op voertuig
+    persons = sug[sug["_kind"] == "persoon"].copy()
+    vehs = sug[sug["_kind"] == "voertuig"].copy()
 
-    # ✅ voornaam + achternaam toevoegen
-    sug["_first"] = sug["naam"].apply(lambda x: split_name_parts(x)[0])
-    sug["_last"]  = sug["naam"].apply(lambda x: split_name_parts(x)[1])
+    # let op: lege personeelsnr’s niet alles weggooien
+    with_id = persons[persons["personeelsnr"] != ""].sort_values("naam").drop_duplicates("personeelsnr", keep="first")
+    no_id = persons[persons["personeelsnr"] == ""].sort_values("naam").drop_duplicates("naam", keep="first")
+    persons = pd.concat([with_id, no_id], ignore_index=True)
 
-    # zoekveld (lowercase)
+    vehs = vehs[vehs["voertuig"] != ""].sort_values("voertuig").drop_duplicates("voertuig", keep="first")
+
+    sug = pd.concat([persons, vehs], ignore_index=True)
+
+    # voornaam/achternaam alleen voor personen
+    sug["_first"] = sug["naam"].apply(lambda x: split_name_parts(x)[0]) if "naam" in sug.columns else ""
+    sug["_last"]  = sug["naam"].apply(lambda x: split_name_parts(x)[1]) if "naam" in sug.columns else ""
+
     sug["_s"] = (
         sug["personeelsnr"].astype(str)
         + " "
@@ -949,9 +973,12 @@ def build_suggest_index(df_schade, df_personeel, df_gesprekken, df_coach_voltooi
         + sug["_last"].astype(str)
         + " "
         + sug["teamcoach"].astype(str)
+        + " "
+        + sug["voertuig"].astype(str)
     ).str.lower()
 
     return sug
+
 
 
 
@@ -1085,15 +1112,20 @@ if current_page == "dashboard":
         # searchbox kan tuples teruggeven: (toon_tekst, echte_waarde)
         out = []
         for _, r in hits.iterrows():
-            label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
-            chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
+            if r.get("_kind") == "voertuig":
+                label = f"🚍 Voertuig — {r.get('voertuig','')}".strip()
+                chosen = (r.get("voertuig") or "").strip()
+            else:
+                label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
+                chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
+
             out.append((label, chosen))
         return out
     
     selected = st_searchbox(
         search_people,
-        placeholder="Typ personeelsnr of naam…",
-        label="Zoek op personeelsnr of naam.",
+        placeholder="Typ personeelsnr, voertuig of naam…",
+        label="Zoek op personeelsnr, voertuig of naam.",
         key="dash_searchbox",
         debounce=200,          # iets trager/sneller? 150–300 is meestal goed
         clear_on_submit=False,
