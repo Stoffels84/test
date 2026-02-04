@@ -206,19 +206,17 @@ def parse_year(v) -> int | None:
         return None
 
 def format_ddmmyyyy(v) -> str:
-    """Toon altijd dd-mm-jjjj; tijd/uurnotatie verdwijnt."""
-    if v is None:
-        return ""
-    s = str(v).strip()
-    if not s:
+    """Toon altijd dd-mm-jjjj; werkt voor Excel-datums, Timestamps én strings."""
+    if v is None or v == "":
         return ""
     try:
-        ts = pd.to_datetime(s, dayfirst=True, errors="coerce")
+        ts = pd.to_datetime(v, dayfirst=True, errors="coerce")
         if pd.isna(ts):
-            return s
+            return str(v).strip()
         return ts.strftime("%d-%m-%Y")
     except Exception:
-        return s
+        return str(v).strip()
+
 
 def img_to_data_uri(path: Path) -> str:
     b = path.read_bytes()
@@ -493,10 +491,8 @@ def load_schade_df() -> pd.DataFrame:
     def n(x: str) -> str:
         return str(x).strip().lower()
 
-    # Canonical kolommen die de rest van je app verwacht:
     canonical_cols = list(SCHADE_COLS)
 
-    # Varianten per canonical kolom (pas gerust aan als je echte headers kent)
     variants = {
         "personeelsnr": [
             "personeelsnr", "personeelsnummer", "persnr", "nr", "nummer",
@@ -531,43 +527,38 @@ def load_schade_df() -> pd.DataFrame:
         ],
     }
 
-    # Set met alle mogelijke headers die we willen binnenhalen (genormaliseerd)
     allowed_norms = set()
     for canon in canonical_cols:
         allowed_norms.add(n(canon))
         for alt in variants.get(canon, []):
             allowed_norms.add(n(alt))
 
-    # 1) Lees enkel relevante kolommen in 1x (snel)
-    #    usecols callable: wordt per kolomnaam aangeroepen door pandas
-    df = read_excel_str(
-    bio,
+    # ✅ Belangrijk: NIET dtype=str gebruiken, zodat Excel-datums echte datums blijven
+    df = pd.read_excel(
+        bio,
         sheet_name=SCHADESHEET,
         engine="openpyxl",
         usecols=lambda c: (n(c) in allowed_norms) or ("voertuig" in n(c).replace(" ", "")),
-)
+    )
 
+    # Maak NaN leeg (maar laat datums datums)
+    df = df.copy()
 
-    # 2) Rename headers naar canonical namen
-    #    We kiezen per canonical kolom de "beste" match (eerste gevonden).
+    # --- Rename headers naar canonical namen ---
     rename_map = {}
     taken_canon = set()
 
-    # Precompute normed variants per canon (sneller)
     variants_norm = {canon: {n(canon)} | {n(a) for a in alts} for canon, alts in variants.items()}
     for canon in canonical_cols:
-        # zorg dat canon altijd in dict zit
         variants_norm.setdefault(canon, {n(canon)})
 
     def canonical_for(colname: str) -> str | None:
         coln = n(colname)
 
-        # 1) exacte/variant match
         for canon in canonical_cols:
             if coln in variants_norm.get(canon, {n(canon)}):
                 return canon
 
-        # 2) fuzzy voertuig
         if "voertuig" in coln.replace(" ", ""):
             return "voertuig"
 
@@ -581,21 +572,31 @@ def load_schade_df() -> pd.DataFrame:
 
     df = df.rename(columns=rename_map)
 
-    # 3) Zorg dat alle canonical_cols bestaan (anders lege kolom)
+    # Zorg dat alle canonical_cols bestaan
     for c in canonical_cols:
         if c not in df.columns:
             df[c] = ""
 
-    # 4) Opschonen zoals je oude loader
+    # ✅ Datum correct maken (Excel date -> Timestamp)
+    # - als Datum al Timestamp is: ok
+    # - als Datum string is: dayfirst=True
+    df["Datum"] = pd.to_datetime(df["Datum"], dayfirst=True, errors="coerce")
+
+    # Opschonen
+    # (alles naar string behalve Datum — die houden we als datetime voor correcte logica)
     df["personeelsnr"] = df["personeelsnr"].apply(clean_id)
     df["volledige naam"] = df["volledige naam"].apply(clean_text)
     df["teamcoach"] = df["teamcoach"].apply(clean_text)
     df["voertuig"] = df["voertuig"].apply(clean_text)
+    df["Locatie"] = df["Locatie"].fillna("").astype(str).str.strip()
+    df["bus/tram"] = df["bus/tram"].fillna("").astype(str).str.strip()
+    df["type"] = df["type"].fillna("").astype(str).str.strip()
+    df["Link"] = df["Link"].fillna("").astype(str).str.strip()
 
-    # Datum blijft string (dtype=str), parse_year kan dit aan
-    df["_jaar"] = df["Datum"].apply(parse_year)
+    # Jaar uit Datum (nu betrouwbaar)
+    df["_jaar"] = df["Datum"].dt.year
 
-    # _search (zoals je had)
+    # _search: zet Datum niet mee, maar wel personeelsnr/naam/teamcoach/voertuig
     df["_search"] = (
         df["personeelsnr"].fillna("").astype(str)
         + " "
@@ -607,6 +608,7 @@ def load_schade_df() -> pd.DataFrame:
     ).str.lower()
 
     return df
+
 
 
 @st.cache_data(show_spinner=False)
