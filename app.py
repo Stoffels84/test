@@ -134,13 +134,6 @@ def pick_suggestion(value: str):
     st.session_state["q"] = value.strip().lower()
     st.session_state["picked"] = True
 
-    
-
-
-def set_progress(bar, text_ph, current, total, label):
-    pct = int(current / total * 100)
-    bar.progress(pct)
-    text_ph.info(f"⏳ Bezig met laden: {label} ({current}/{total})")
 
 def read_excel_str(bio: BytesIO, **kwargs) -> pd.DataFrame:
     """
@@ -976,16 +969,7 @@ logout_button()
 # Load data
 # -------------
 
-load_ph = st.empty()
-with load_ph.container():
-    st.info("📦 Data wordt geladen...")
-
-    bar = st.progress(0)
-    text_ph = st.empty()
-
-    total = 5
-    step = 0
-
+with st.spinner("📦 Data wordt geladen..."):
     try:
         df_schade = load_schade_df()
         df_gesprekken = load_gesprekken_df()
@@ -1001,7 +985,6 @@ with load_ph.container():
         st.error("❌ Fout bij laden van data")
         st.exception(e)
         st.stop()
-
 
 
 
