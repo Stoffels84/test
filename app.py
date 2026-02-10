@@ -497,6 +497,16 @@ def load_steekkaart_today_df() -> tuple[pd.DataFrame, str | None]:
     df.columns = [str(c).strip() for c in df.columns]
     return df, file_path.name
 
+    if st.checkbox("Debug: toon eerste 30 bestanden in FTP-map", value=False):
+        ftp = ftp_connect()
+        try:
+            ftp.cwd(st.secrets.get("FTP_STEKAART_DIR", "/data/steekkaart"))
+            st.write(ftp.nlst()[:30])
+        finally:
+            try: ftp.quit()
+            except Exception: pass
+
+
 def _make_steekkaart_search(df: pd.DataFrame) -> pd.DataFrame:
     """
     Maakt een _search kolom in steekkaart-df, zodat we kunnen filteren op p-nr/naam.
