@@ -1626,17 +1626,17 @@ else:
         st.caption("Geen items voor tijdlijn gevonden bij deze zoekterm.")
     else:
         tl = pd.DataFrame(timeline_rows)
-
+    
         # sorteer: meest recent eerst, NaT onderaan
         tl = tl.sort_values(by="_dt", ascending=False, na_position="last").drop(columns=["_dt"])
-
+    
         # Datum formateren (dd-mm-jjjj)
         tl["Datum"] = tl["Datum"].apply(format_ddmmyyyy)
         tl["Link"] = tl["Link"].replace({"": None})
-
+    
         # Beperk aantal rijen (veilig voor performance)
         tl = tl.head(300)
-
+    
         column_config = {
             "Datum": st.column_config.TextColumn("Datum", width="small"),
             "Bron": st.column_config.TextColumn("Bron", width="small"),
@@ -1644,20 +1644,20 @@ else:
             "Naam": st.column_config.TextColumn("Naam", width="medium"),
             "Samenvatting": st.column_config.TextColumn("Samenvatting", width="large"),
         }
-        
+    
         if "Link" in tl.columns:
             column_config["Link"] = st.column_config.LinkColumn(
                 "Open EAF", display_text="Open EAF", width="small"
             )
-
-
-
-
-
-
-
-
-
+    
+        st.dataframe(
+            tl,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config,
+        )
+    
+        st.caption("Tip: gebruik de zoekbalk bovenaan om de tijdlijn per chauffeur/personeelsnr te bekijken.")
 
 
 
