@@ -150,17 +150,63 @@ def read_excel_str(bio: BytesIO, **kwargs) -> pd.DataFrame:
 
 
 
+from ftplib import FTP
+
 def ftp_connect():
     ftp = FTP()
-    ftp.connect(
-        st.secrets["FTP_HOST"],
-        int(st.secrets.get("FTP_PORT", 21))
-    )
-    ftp.login(
-        st.secrets["FTP_USER"],
-        st.secrets["FTP_PASS"]
-    )
+    ftp.connect(st.secrets["FTP_HOST"], int(st.secrets.get("FTP_PORT", 21)))
+    ftp.login(st.secrets["FTP_USER"], st.secrets["FTP_PASS"])
     return ftp
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def list_steekkaart_filenames_today() -> list[str]:
+    prefix = dt.date.today().strftime("%Y%d%m")  # yyyyddmm
+
+    try:
+        ftp = ftp_connect()
+        ftp.cwd("/data/steekkaart")
+
+        files = ftp.nlst()
+        ftp.quit()
+
+        files = [
+            f for f in files
+            if f.lower().endswith((".xlsx", ".xlsm", ".xls"))
+            and f.startswith(prefix)
+        ]
+        return sorted(files)
+
+    except Exception:
+        return []
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def load_steekkaart_today_dienstlijst_df() -> tuple[pd.DataFrame, str | None]:
+    files = list_steekkaart_filenames_today()
+    if not files:
+        return pd.DataFrame(), None
+
+    filename = files[-1]  # laatste (meestal nieuwste)
+
+    try:
+        ftp = ftp_connect()
+        ftp.cwd("/data/steekkaart")
+
+        bio = BytesIO()
+        ftp.retrbinary(f"RETR {filename}", bio.write)
+        ftp.quit()
+
+        bio.seek(0)
+
+        df = pd.read_excel(bio, sheet_name="dienstlijst", dtype=str).fillna("")
+        df.columns = [str(c).strip() for c in df.columns]
+
+        return df, filename
+
+    except Exception:
+        return pd.DataFrame(), None
+
 
 
 def load_css(path: Path) -> None:
