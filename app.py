@@ -1399,30 +1399,30 @@ if current_page == "dashboard":
     # ----------------------------
     # Steekkaart (vandaag) — remote + dienstlijst
     # ----------------------------
-st.markdown("#### Steekkaart (vandaag)")
-
-steek_raw, steek_file = load_steekkaart_today_dienstlijst_df()
-
-if steek_file is None:
-    st.caption(f"Geen steekkaartbestand gevonden voor vandaag ({_today_prefix_yyyyddmm()}).")
-else:
-    steek_view = prepare_steekkaart_view(steek_raw)
-    st.caption(f"Bestand: **{steek_file}** | Tab: **dienstlijst**")
-
-    q_clean = (q or "").strip().lower()
-    is_pnr = bool(re.fullmatch(r"\d+", q_clean))
-
-    if is_pnr:
-        hits = steek_view[steek_view["_search_pnr"].str.contains(re.escape(q_clean), na=False)].copy()
+    st.markdown("#### Steekkaart (vandaag)")
+    
+    steek_raw, steek_file = load_steekkaart_today_dienstlijst_df()
+    
+    if steek_file is None:
+        st.caption(f"Geen steekkaartbestand gevonden voor vandaag ({_today_prefix_yyyyddmm()}).")
     else:
-        hits = steek_view[steek_view["_search_all"].str.contains(re.escape(q_clean), na=False)].copy()
-
-    if hits.empty:
-        st.caption("Geen steekkaart-records gevonden voor deze zoekterm.")
-    else:
-        show_cols = ["Dienstadres", "Uur", "Plaats", "richting", "Loop", "Lijn",
-                     "personeelsnummer", "naam", "voertuig", "wissel"]
-        st.dataframe(hits[show_cols].head(300), use_container_width=True, hide_index=True)
+        steek_view = prepare_steekkaart_view(steek_raw)
+        st.caption(f"Bestand: **{steek_file}** | Tab: **dienstlijst**")
+    
+        q_clean = (q or "").strip().lower()
+        is_pnr = bool(re.fullmatch(r"\d+", q_clean))
+    
+        if is_pnr:
+            hits = steek_view[steek_view["_search_pnr"].str.contains(re.escape(q_clean), na=False)].copy()
+        else:
+            hits = steek_view[steek_view["_search_all"].str.contains(re.escape(q_clean), na=False)].copy()
+    
+        if hits.empty:
+            st.caption("Geen steekkaart-records gevonden voor deze zoekterm.")
+        else:
+            show_cols = ["Dienstadres", "Uur", "Plaats", "richting", "Loop", "Lijn",
+                         "personeelsnummer", "naam", "voertuig", "wissel"]
+            st.dataframe(hits[show_cols].head(300), use_container_width=True, hide_index=True)
 
 
 
