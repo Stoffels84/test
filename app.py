@@ -1644,17 +1644,12 @@ else:
             "Naam": st.column_config.TextColumn("Naam", width="medium"),
             "Samenvatting": st.column_config.TextColumn("Samenvatting", width="large"),
         }
+        
         if "Link" in tl.columns:
-            column_config["Link"] = st.column_config.LinkColumn("Open EAF", display_text="Open EAF", width="small")
+            column_config["Link"] = st.column_config.LinkColumn(
+                "Open EAF", display_text="Open EAF", width="small"
+            )
 
-        st.dataframe(
-            tl,
-            use_container_width=True,
-            hide_index=True,
-            column_config=column_config,
-        )
-
-        st.caption("Tip: gebruik de zoekbalk bovenaan om de tijdlijn per chauffeur/personeelsnr te bekijken.")
 
 
 
