@@ -163,24 +163,29 @@ def ftp_connect() -> FTP:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def list_steekkaart_filenames_today() -> list[str]:
-    prefix = _today_prefix_yyyyddmm()
+    prefix = _today_prefix_yyyymmdd()
     ftp_dir = st.secrets.get("FTP_STEKAART_DIR", "/data/steekkaart")
 
+    ftp = ftp_connect()
     try:
-        ftp = ftp_connect()
         ftp.cwd(ftp_dir)
         files = ftp.nlst()
-        ftp.quit()
+    finally:
+        try:
+            ftp.quit()
+        except Exception:
+            pass
 
-        files = [
-            f for f in files
-            if f.lower().endswith((".xlsx", ".xlsm", ".xls"))
-            and f.split("/")[-1].startswith(prefix)
-        ]
-        return sorted(files)
+    hits = []
+    for f in files:
+        base = f.split("/")[-1]  # sommige FTP’s geven toch paden terug
+        if not base.lower().endswith((".xlsx", ".xlsm", ".xls")):
+            continue
+        if base.startswith(prefix):  # ✅ datumprefix yyyymmdd, tekst erna genegeerd
+            hits.append(base)
 
-    except Exception:
-        return []
+    return sorted(hits)
+[]
 
 
 @st.cache_data(show_spinner=False, ttl=300)
