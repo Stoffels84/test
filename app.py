@@ -1215,28 +1215,28 @@ if current_page == "dashboard":
 
 
 
-# ----------------------------
-# Steekkaart (bestand van vandaag)
-# ----------------------------
-st.markdown("#### Steekkaart (vandaag)")
-
-steek_df_raw, steek_filename = load_steekkaart_today_df()
-steek_df = _make_steekkaart_search(steek_df_raw) if not steek_df_raw.empty else steek_df_raw
-
-if steek_filename is None:
-    st.caption(f"Geen steekkaartbestand gevonden voor vandaag ({_today_prefix_yyyyddmm()}) in {STEKAART_DIR}.")
-else:
-    steek_hits = steek_df[steek_df["_search"].str.contains(re.escape(q), na=False)].copy() if "_search" in steek_df.columns else pd.DataFrame()
-
-    st.caption(f"Bestand: **{steek_filename}**")
-
-    if steek_hits.empty:
-        st.caption("Geen steekkaart-records gevonden voor deze zoekterm.")
+    # ----------------------------
+    # Steekkaart (bestand van vandaag)
+    # ----------------------------
+    st.markdown("#### Steekkaart (vandaag)")
+    
+    steek_df_raw, steek_filename = load_steekkaart_today_df()
+    steek_df = _make_steekkaart_search(steek_df_raw) if not steek_df_raw.empty else steek_df_raw
+    
+    if steek_filename is None:
+        st.caption(f"Geen steekkaartbestand gevonden voor vandaag ({_today_prefix_yyyyddmm()}) in {STEKAART_DIR}.")
     else:
-        # Toon maximaal 200 rijen, alle kolommen (of kies zelf subset)
-        st.dataframe(steek_hits.drop(columns=["_search"], errors="ignore").head(200),
-                     use_container_width=True,
-                     hide_index=True)
+        steek_hits = steek_df[steek_df["_search"].str.contains(re.escape(q), na=False)].copy() if "_search" in steek_df.columns else pd.DataFrame()
+    
+        st.caption(f"Bestand: **{steek_filename}**")
+    
+        if steek_hits.empty:
+            st.caption("Geen steekkaart-records gevonden voor deze zoekterm.")
+        else:
+            # Toon maximaal 200 rijen, alle kolommen (of kies zelf subset)
+            st.dataframe(steek_hits.drop(columns=["_search"], errors="ignore").head(200),
+                         use_container_width=True,
+                         hide_index=True)
 
 
 
