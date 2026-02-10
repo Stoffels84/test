@@ -434,37 +434,10 @@ def _make_steekkaart_search(df: pd.DataFrame) -> pd.DataFrame:
 
     df["_search"] = (df["nummer"].astype(str) + " " + df["naam"].astype(str)).str.lower()
     return df
+
+
 @st.cache_data(show_spinner=False, ttl=300)
-def list_steekkaart_filenames_today() -> list[str]:
-    """
-    Leest de directory listing van /data/steekkaart/ en geeft alle Excel-bestanden
-    terug die starten met de datum van vandaag (yyyyddmm).
-    """
-    prefix = _today_prefix_yyyyddmm()
 
-    # Let op: directory-URL eindigt best op /
-    url = STEKAART_DIR_URL + "/"
-    html_bytes = fetch_bytes(url, _env_sig())
-
-    try:
-        page = html_bytes.decode("utf-8", errors="ignore")
-    except Exception:
-        page = str(html_bytes)
-
-    # Zoek alle href="....xlsx/xlsm/xls"
-    # en filter op bestandsnaam die begint met prefix
-    matches = re.findall(r'href="([^"]+\.(?:xlsx|xlsm|xls))"', page, flags=re.IGNORECASE)
-
-    out = []
-    for href in matches:
-        name = href.split("/")[-1]
-        if name.startswith(prefix):
-            out.append(name)
-
-    # uniek + sorteer
-    out = sorted(set(out))
-    return out
-@st.cache_data(show_spinner=False, ttl=300)
 def load_steekkaart_today_dienstlijst_df():
 
     files = list_steekkaart_filenames_today()
