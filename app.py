@@ -119,6 +119,9 @@ PAGES = [
     ("coaching", "Coaching"),
     ("analyse", "Analyse"),
 ]
+STEKAART_DIR_URL = f"{DATA_BASE_URL}/steekkaart".rstrip("/")
+STEKAART_SHEET = "dienstlijst"
+
 
 # ----------------------------
 # Helpers
@@ -356,7 +359,9 @@ def render_html_table(
         unsafe_allow_html=True,
     )
 
-STEKAART_DIR = Path("/data/steekkaart")
+def _today_prefix_yyyyddmm() -> str:
+    return dt.date.today().strftime("%Y%d%m")
+
 
 def _today_prefix_yyyyddmm() -> str:
     # jij zei: yyyyddmm (jaar + dag + maand)
@@ -417,6 +422,101 @@ def _make_steekkaart_search(df: pd.DataFrame) -> pd.DataFrame:
 
     df["_search"] = (df["nummer"].astype(str) + " " + df["naam"].astype(str)).str.lower()
     return df
+@st.cache_data(show_spinner=False, ttl=300)
+def list_steekkaart_filenames_today() -> list[str]:
+    """
+    Leest de directory listing van /data/steekkaart/ en geeft alle Excel-bestanden
+    terug die starten met de datum van vandaag (yyyyddmm).
+    """
+    prefix = _today_prefix_yyyyddmm()
+
+    # Let op: directory-URL eindigt best op /
+    url = STEKAART_DIR_URL + "/"
+    html_bytes = fetch_bytes(url, _env_sig())
+
+    try:
+        page = html_bytes.decode("utf-8", errors="ignore")
+    except Exception:
+        page = str(html_bytes)
+
+    # Zoek alle href="....xlsx/xlsm/xls"
+    # en filter op bestandsnaam die begint met prefix
+    matches = re.findall(r'href="([^"]+\.(?:xlsx|xlsm|xls))"', page, flags=re.IGNORECASE)
+
+    out = []
+    for href in matches:
+        name = href.split("/")[-1]
+        if name.startswith(prefix):
+            out.append(name)
+
+    # uniek + sorteer
+    out = sorted(set(out))
+    return out
+@st.cache_data(show_spinner=False, ttl=300)
+def load_steekkaart_today_dienstlijst_df() -> tuple[pd.DataFrame, str | None]:
+    """
+    Laadt de steekkaart-excel van vandaag via https://.../data/steekkaart/
+    en leest tabblad 'dienstlijst'.
+    """
+    files = list_steekkaart_filenames_today()
+    if not files:
+        return pd.DataFrame(), None
+
+    # Als er meerdere zijn vandaag: pak de "laatste" op basis van sortering
+    # (meestal ok als er extra tekst of tijd in de naam zit)
+    filename = files[-1]
+
+    url = f"{STEKAART_DIR_URL}/{quote(filename)}"
+    content = fetch_bytes(url, _env_sig())
+
+    bio = BytesIO(content)
+
+    # Lees specifiek tabblad "dienstlijst"
+    df = pd.read_excel(bio, sheet_name=STEKAART_SHEET, dtype=str).fillna("")
+    df.columns = [str(c).strip() for c in df.columns]
+
+    return df, filename
+def prepare_steekkaart_view(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    # Map kolommen robuust via _find_col (case/varianten)
+    colmap = {
+        "Dienstadres": _find_col(df, "Dienstadres") or _find_col(df, "dienstadres"),
+        "Uur": _find_col(df, "Uur") or _find_col(df, "uur"),
+        "Plaats": _find_col(df, "Plaats") or _find_col(df, "plaats"),
+        "richting": _find_col(df, "richting"),
+        "Loop": _find_col(df, "Loop") or _find_col(df, "loop"),
+        "Lijn": _find_col(df, "Lijn") or _find_col(df, "lijn") or _find_col(df, "line"),
+        "personeelsnummer": _find_col(df, "personeelsnummer") or _find_col(df, "personeelsnr") or _find_col(df, "nummer"),
+        "naam": _find_col(df, "naam") or _find_col(df, "volledige naam") or _find_col(df, "chauffeurnaam"),
+        "voertuig": _find_col(df, "voertuig"),
+        "wissel": _find_col(df, "wissel"),
+    }
+
+    # Zorg dat elke gewenste kolom bestaat (ook als hij niet gevonden werd)
+    out = pd.DataFrame()
+    for wanted, actual in colmap.items():
+        if actual and actual in df.columns:
+            out[wanted] = df[actual].astype(str).fillna("").str.strip()
+        else:
+            out[wanted] = ""
+
+    # Opschonen personeelsnummer
+    out["personeelsnummer"] = out["personeelsnummer"].apply(clean_id)
+    out["naam"] = out["naam"].apply(clean_text)
+
+    # Zoekkolom: verplicht personeelsnummer meenemen
+    out["_search_pnr"] = out["personeelsnummer"].fillna("").astype(str).str.lower()
+    out["_search_all"] = (
+        out["personeelsnummer"].fillna("").astype(str)
+        + " "
+        + out["naam"].fillna("").astype(str)
+        + " "
+        + out["voertuig"].fillna("").astype(str)
+    ).str.lower()
+
+    return out
 
 
 # ----------------------------
@@ -1216,30 +1316,46 @@ if current_page == "dashboard":
 
 
     # ----------------------------
-    # Steekkaart (bestand van vandaag)
+    # Steekkaart (vandaag) — remote + dienstlijst
     # ----------------------------
     st.markdown("#### Steekkaart (vandaag)")
     
-    steek_df_raw, steek_filename = load_steekkaart_today_df()
-    steek_df = _make_steekkaart_search(steek_df_raw) if not steek_df_raw.empty else steek_df_raw
+    steek_raw, steek_file = load_steekkaart_today_dienstlijst_df()
     
-    if steek_filename is None:
-        st.caption(f"Geen steekkaartbestand gevonden voor vandaag ({_today_prefix_yyyyddmm()}) in {STEKAART_DIR}.")
+    if steek_file is None:
+        st.caption(f"Geen steekkaartbestand gevonden voor vandaag ({_today_prefix_yyyyddmm()}) in {STEKAART_DIR_URL}/")
     else:
-        steek_hits = steek_df[steek_df["_search"].str.contains(re.escape(q), na=False)].copy() if "_search" in steek_df.columns else pd.DataFrame()
+        steek_view = prepare_steekkaart_view(steek_raw)
     
-        st.caption(f"Bestand: **{steek_filename}**")
+        st.caption(f"Bestand: **{steek_file}**  | Tab: **{STEKAART_SHEET}**")
     
-        if steek_hits.empty:
+        # jouw dashboard-q
+        # q = (st.session_state.get("q") or "").strip().lower()  (zoals je al doet)
+    
+        # Als q numeriek is (personeelsnummer), zoek dan primair in personeelsnummer-kolom
+        q_clean = (q or "").strip().lower()
+        is_pnr = bool(re.fullmatch(r"\d+", q_clean))  # enkel cijfers
+    
+        if is_pnr:
+            hits = steek_view[steek_view["_search_pnr"].str.contains(re.escape(q_clean), na=False)].copy()
+        else:
+            hits = steek_view[steek_view["_search_all"].str.contains(re.escape(q_clean), na=False)].copy()
+    
+        if hits.empty:
             st.caption("Geen steekkaart-records gevonden voor deze zoekterm.")
         else:
-            # Toon maximaal 200 rijen, alle kolommen (of kies zelf subset)
-            st.dataframe(steek_hits.drop(columns=["_search"], errors="ignore").head(200),
-                         use_container_width=True,
-                         hide_index=True)
+            show_cols = ["Dienstadres", "Uur", "Plaats", "richting", "Loop", "Lijn", "personeelsnummer", "naam", "voertuig", "wissel"]
+            st.dataframe(
+                hits[show_cols].head(300),
+                use_container_width=True,
+                hide_index=True
+            )
 
 
 
+
+
+    
 
     
 
