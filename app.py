@@ -1124,20 +1124,89 @@ if current_page == "dashboard":
             out.append((label, chosen))
         return out
     
-    selected = st_searchbox(
-        search_people,
-        placeholder="Typ personeelsnr, voertuig of naam…",
-        label="Zoek op personeelsnr, voertuig of naam.",
-        key="dash_searchbox",
-        debounce=200,          # iets trager/sneller? 150–300 is meestal goed
-        clear_on_submit=False,
-    )
+    # --- Dashboard: zoekveld ZONDER dropdown-suggesties zodra er gezocht is ---
     
-    q = (selected or "").strip().lower()
+    # init state
+    if "q_input" not in st.session_state:
+        st.session_state["q_input"] = ""
+    if "q" not in st.session_state:
+        st.session_state["q"] = ""
+    if "picked" not in st.session_state:
+        st.session_state["picked"] = False
+    
+    def _get_suggestions(q_raw: str, limit: int = 8):
+        q = (q_raw or "").strip().lower()
+        if len(q) < 2 or suggest_index.empty:
+            return []
+    
+        hits = suggest_index[suggest_index["_s"].str.contains(re.escape(q), na=False)].copy()
+    
+        def _score(s: str) -> int:
+            s = s or ""
+            if s.startswith(q):
+                return 0
+            if f" {q}" in s:
+                return 1
+            return 2
+    
+        hits["_score"] = hits["_s"].apply(_score)
+        hits = hits.sort_values(["_score", "naam", "personeelsnr"]).head(limit)
+    
+        out = []
+        for _, r in hits.iterrows():
+            if r.get("_kind") == "voertuig":
+                label = f"🚍 Voertuig — {r.get('voertuig','')}".strip()
+                chosen = (r.get("voertuig") or "").strip()
+            else:
+                label = f"{r.get('personeelsnr','')} — {r.get('naam','')}".strip(" —")
+                chosen = (r.get("personeelsnr") or r.get("naam") or "").strip()
+            out.append((label, chosen))
+        return out
+    
+    def on_q_change():
+        st.session_state["q"] = (st.session_state.get("q_input") or "").strip().lower()
+        # zodra je typt, mag je opnieuw suggesties zien
+        st.session_state["picked"] = False
+    
+    def pick_suggestion(value: str):
+        st.session_state["q_input"] = value
+        st.session_state["q"] = value.strip().lower()
+        # na kiezen: suggesties weg
+        st.session_state["picked"] = True
+    
+    cA, cB = st.columns([5, 1])
+    with cA:
+        st.text_input(
+            "Zoek op personeelsnr, voertuig of naam.",
+            placeholder="Typ personeelsnr, voertuig of naam…",
+            key="q_input",
+            on_change=on_q_change,
+            label_visibility="visible",
+        )
+    
+    with cB:
+        if st.button("Zoek", use_container_width=True):
+            st.session_state["q"] = (st.session_state.get("q_input") or "").strip().lower()
+            st.session_state["picked"] = True  # na zoeken: suggesties weg
+    
+    # Suggesties alleen tonen als je NOG NIET gezocht/gekozen hebt
+    q_live = (st.session_state.get("q_input") or "").strip()
+    if q_live and not st.session_state.get("picked", False):
+        sugg = _get_suggestions(q_live, limit=8)
+        if sugg:
+            st.caption("Suggesties:")
+            cols = st.columns(2)
+            for i, (label, chosen) in enumerate(sugg):
+                with cols[i % 2]:
+                    if st.button(label, key=f"sugg_{i}", use_container_width=True):
+                        pick_suggestion(chosen)
+    
+    q = (st.session_state.get("q") or "").strip().lower()
     
     if not q:
-        st.caption("Typ om suggesties te zien en kies er één.")
+        st.caption("Typ een zoekterm en klik op **Zoek**.")
         st.stop()
+
 
 
 
