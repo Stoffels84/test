@@ -14,6 +14,7 @@ import streamlit as st
 import bcrypt
 import requests
 from streamlit_searchbox import st_searchbox
+from ftplib import FTP
 
 
 from pathlib import Path
@@ -149,6 +150,17 @@ def read_excel_str(bio: BytesIO, **kwargs) -> pd.DataFrame:
 
 
 
+def ftp_connect():
+    ftp = FTP()
+    ftp.connect(
+        st.secrets["FTP_HOST"],
+        int(st.secrets.get("FTP_PORT", 21))
+    )
+    ftp.login(
+        st.secrets["FTP_USER"],
+        st.secrets["FTP_PASS"]
+    )
+    return ftp
 
 
 def load_css(path: Path) -> None:
@@ -453,32 +465,44 @@ def list_steekkaart_filenames_today() -> list[str]:
     out = sorted(set(out))
     return out
 @st.cache_data(show_spinner=False, ttl=300)
-def load_steekkaart_today_dienstlijst_df() -> tuple[pd.DataFrame, str | None]:
-    """
-    Laadt de steekkaart-excel van vandaag via https://.../data/steekkaart/
-    en leest tabblad 'dienstlijst'.
-    """
+def load_steekkaart_today_dienstlijst_df():
+
     files = list_steekkaart_filenames_today()
+
     if not files:
         return pd.DataFrame(), None
 
-    # Als er meerdere zijn vandaag: pak de "laatste" op basis van sortering
-    # (meestal ok als er extra tekst of tijd in de naam zit)
     filename = files[-1]
 
-    url = f"{STEKAART_DIR_URL}/{quote(filename)}"
-    content = fetch_bytes(url, _env_sig())
+    try:
+        ftp = ftp_connect()
+        ftp.cwd("/data/steekkaart")
 
-    bio = BytesIO(content)
+        bio = BytesIO()
 
-    # Lees specifiek tabblad "dienstlijst"
-    df = pd.read_excel(bio, sheet_name=STEKAART_SHEET, dtype=str).fillna("")
-    df.columns = [str(c).strip() for c in df.columns]
+        ftp.retrbinary(
+            f"RETR {filename}",
+            bio.write
+        )
 
-    return df, filename
-def prepare_steekkaart_view(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
+        ftp.quit()
+
+        bio.seek(0)
+
+        df = pd.read_excel(
+            bio,
+            sheet_name="dienstlijst",
+            dtype=str
+        ).fillna("")
+
+        df.columns = [str(c).strip() for c in df.columns]
+
+        return df, filename
+
+    except Exception:
+        return pd.DataFrame(), None
+
+
 
     # Map kolommen robuust via _find_col (case/varianten)
     colmap = {
