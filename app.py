@@ -149,14 +149,12 @@ def read_excel_str(bio: BytesIO, **kwargs) -> pd.DataFrame:
     return df.fillna("")
 
 
-
-from ftplib import FTP
-
-def ftp_connect():
+def ftp_connect() -> FTP:
     ftp = FTP()
-    ftp.connect(st.secrets["FTP_HOST"], int(st.secrets.get("FTP_PORT", 21)))
+    ftp.connect(st.secrets["FTP_HOST"], int(st.secrets.get("FTP_PORT", 21)), timeout=20)
     ftp.login(st.secrets["FTP_USER"], st.secrets["FTP_PASS"])
     return ftp
+
 
 
 @st.cache_data(show_spinner=False, ttl=300)
