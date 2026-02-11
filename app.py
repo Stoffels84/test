@@ -557,57 +557,6 @@ def load_dienst_df():
     df = pd.read_excel(xls, sheet_name="Dienstlijst", dtype=str).fillna("")
     df.columns = [str(c).strip() for c in df.columns]  # origineel bewaren voor mapping
 
-    wanted = [
-        "Dienstadres", "Plaats", "Uur", "Richting", "Loop", "Lijn",
-        "personeelsnummer", "naam", "voertuig", "wissel", "door appel", "chauffeur appel",
-    ]
-
-    existing = {_normcol(c): c for c in df.columns}
-
-    aliases = {
-        "personeelsnummer": ["personeelsnummer", "personeelsnr", "personeelsnr.", "p-nr", "p nr", "p_nr", "nummer"],
-        "door appel": ["door appel", "doorappel", "door_appel"],
-        "chauffeur appel": ["chauffeur appel", "chauffeurappel", "chauffeur_appel"],
-    }
-
-    # rename naar gewenste kolomnamen waar mogelijk
-    colmap = {}
-    for w in wanted:
-        w_norm = _normcol(w)
-
-        # exact match
-        if w_norm in existing:
-            colmap[existing[w_norm]] = w
-            continue
-
-        # alias match
-        if w_norm in aliases:
-            for a in aliases[w_norm]:
-                a_norm = _normcol(a)
-                if a_norm in existing:
-                    colmap[existing[a_norm]] = w
-                    break
-
-    df = df.rename(columns=colmap)
-
-    # zorg dat alle wanted bestaan
-    for w in wanted:
-        if w not in df.columns:
-            df[w] = ""
-
-    # opschonen
-    df["personeelsnummer"] = df["personeelsnummer"].apply(clean_id)
-    df["naam"] = df["naam"].apply(clean_text)
-
-    df["_search"] = (
-        df["personeelsnummer"].fillna("").astype(str)
-        + " " + df["naam"].fillna("").astype(str)
-        + " " + df["Lijn"].fillna("").astype(str)
-        + " " + df["Loop"].fillna("").astype(str)
-        + " " + df["voertuig"].fillna("").astype(str)
-    ).str.lower()
-
-    return fname, df[wanted + ["_search"]].copy()
 
 
 
