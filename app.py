@@ -1358,10 +1358,11 @@ if current_page == "dashboard":
             st.session_state["q"] = (st.session_state.get("q_input") or "").strip().lower()
     
     q = (st.session_state.get("q") or "").strip().lower()
-
-        if not q:
+    
+    if not q:
         st.caption("Typ een zoekterm en klik op **Zoek**.")
         st.stop()
+
 
     # ----------------------------
     # Dienst van de chauffeur (vandaag) via FTP
