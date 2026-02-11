@@ -1321,44 +1321,7 @@ if current_page == "dashboard":
     
     q = (st.session_state.get("q") or "").strip().lower()
 
-    # ----------------------------
-# Dienst van chauffeur (Dienstlijst)
-# ----------------------------
-
-st.markdown("#### Dienst van de chauffeur (vandaag)")
-
-try:
-    dienst_file, df_dienst = load_dienst_df()
-except Exception as e:
-    st.caption("Dienstbestand kon niet geladen worden.")
-    st.exception(e)
-    df_dienst = pd.DataFrame()
-
-if df_dienst.empty:
-    st.caption("Geen dienstgegevens beschikbaar.")
-else:
-
-    if q.isdigit():
-        # exact zoeken op personeelsnummer
-        dienst_hits = df_dienst[
-            df_dienst["personeelsnummer"] == q
-        ].copy()
-    else:
-        dienst_hits = pd.DataFrame()
-
-    if dienst_hits.empty:
-        st.caption("Geen dienst gevonden voor deze chauffeur.")
-    else:
-        st.dataframe(
-            dienst_hits,
-            use_container_width=True,
-            hide_index=True,
-        )
-
     
-    if not q:
-        st.caption("Typ een zoekterm en klik op **Zoek**.")
-        st.stop()
 
 
 
