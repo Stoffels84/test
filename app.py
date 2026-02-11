@@ -14,6 +14,8 @@ import streamlit as st
 import bcrypt
 import requests
 from streamlit_searchbox import st_searchbox
+import ftplib
+from zoneinfo import ZoneInfo
 
 
 from pathlib import Path
@@ -460,6 +462,151 @@ def logout_button() -> None:
             for k in ["auth_ok", "user_naam", "user_rol"]:
                 st.session_state.pop(k, None)
             st.rerun()
+
+
+FTP_HOST = st.secrets.get("FTP_HOST", "").strip()
+FTP_USER = st.secrets.get("FTP_USER", "").strip()
+FTP_PASS = st.secrets.get("FTP_PASS", "").strip()
+FTP_DIR  = st.secrets.get("FTP_DIR", "/")
+FTP_USE_TLS = bool(st.secrets.get("FTP_USE_TLS", False))
+
+
+def _today_yyyymmdd_brussels() -> str:
+    now = dt.datetime.now(ZoneInfo("Europe/Brussels"))
+    return now.strftime("%Y%m%d")
+
+
+def _ftp_connect():
+    if not FTP_HOST or not FTP_USER or not FTP_PASS:
+        raise ValueError("FTP_HOST/FTP_USER/FTP_PASS ontbreken in Streamlit secrets.")
+
+    if FTP_USE_TLS:
+        ftp = ftplib.FTP_TLS(FTP_HOST, timeout=30)
+        ftp.login(FTP_USER, FTP_PASS)
+        ftp.prot_p()  # data-connection encrypten
+    else:
+        ftp = ftplib.FTP(FTP_HOST, timeout=30)
+        ftp.login(FTP_USER, FTP_PASS)
+
+    if FTP_DIR:
+        try:
+            ftp.cwd(FTP_DIR)
+        except Exception:
+            # als cwd faalt, blijf in root
+            pass
+
+    return ftp
+
+
+@st.cache_data(show_spinner=False, ttl=300)  # cache 5 min
+def fetch_ftp_excel_for_today_bytes(env_sig: str) -> tuple[str, bytes]:
+    """
+    Haalt via FTP het Excel-bestand op dat start met yyyymmdd (vandaag).
+    Retourneert (filename, bytes).
+    """
+    today_prefix = _today_yyyymmdd_brussels()
+
+    ftp = _ftp_connect()
+    try:
+        files = ftp.nlst()  # lijst bestandsnamen
+        # filter: start met vandaag en is excel
+        candidates = [
+            f for f in files
+            if str(f).startswith(today_prefix) and str(f).lower().endswith((".xlsx", ".xlsm", ".xls"))
+        ]
+
+        if not candidates:
+            raise FileNotFoundError(
+                f"Geen Excel gevonden op FTP die start met {today_prefix} (map: {FTP_DIR})."
+            )
+
+        # Als er meerdere zijn: neem de 'laatste' alfabetisch (meestal “meest specifieke”)
+        candidates.sort()
+        chosen = candidates[-1]
+
+        bio = BytesIO()
+        ftp.retrbinary(f"RETR {chosen}", bio.write)
+        return chosen, bio.getvalue()
+    finally:
+        try:
+            ftp.quit()
+        except Exception:
+            pass
+
+
+def _normcol(x: str) -> str:
+    return re.sub(r"\s+", " ", str(x or "").strip().lower())
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def load_dienst_df() -> tuple[str, pd.DataFrame]:
+    """
+    Leest het 'dienst' excel van vandaag via FTP en normaliseert kolommen.
+    """
+    fname, content = fetch_ftp_excel_for_today_bytes(_env_sig())
+    df = pd.read_excel(BytesIO(content), dtype=str).fillna("")
+
+    # gewenste kolommen (exact zoals je vroeg)
+    wanted = [
+        "Dienstadres", "Plaats", "Uur", "Richting", "Loop", "Lijn",
+        "personeelsnummer", "naam", "voertuig", "wissel", "door appel", "chauffeur appel",
+    ]
+
+    # maak mapping: case/space-insensitive
+    colmap = {}
+    existing = { _normcol(c): c for c in df.columns }
+
+    # simpele varianten voor personeelsnummer
+    aliases = {
+        "personeelsnummer": ["personeelsnummer", "personeelsnr", "personeelsnr.", "p-nr", "p nr", "p_nr", "nummer"],
+        "door appel": ["door appel", "doorappel", "door_appel"],
+        "chauffeur appel": ["chauffeur appel", "chauffeurappel", "chauffeur_appel"],
+    }
+
+    for w in wanted:
+        w_norm = _normcol(w)
+        # 1) exact match
+        if w_norm in existing:
+            colmap[existing[w_norm]] = w
+            continue
+        # 2) alias match
+        if w_norm in aliases:
+            found = None
+            for a in aliases[w_norm]:
+                a_norm = _normcol(a)
+                if a_norm in existing:
+                    found = existing[a_norm]
+                    break
+            if found:
+                colmap[found] = w
+                continue
+
+    df = df.rename(columns=colmap)
+
+    # zorg dat alle wanted bestaan
+    for w in wanted:
+        if w not in df.columns:
+            df[w] = ""
+
+    # opschonen personeelsnummer (zoals bij je andere loaders)
+    df["personeelsnummer"] = df["personeelsnummer"].apply(clean_id)
+    df["naam"] = df["naam"].apply(clean_text)
+
+    # zoekveld
+    df["_search"] = (
+        df["personeelsnummer"].fillna("").astype(str)
+        + " "
+        + df["naam"].fillna("").astype(str)
+        + " "
+        + df["Lijn"].fillna("").astype(str)
+        + " "
+        + df["Loop"].fillna("").astype(str)
+        + " "
+        + df["voertuig"].fillna("").astype(str)
+    ).str.lower()
+
+    return fname, df[wanted + ["_search"]].copy()
+
 
 # ----------------------------
 # Navigation state
@@ -1089,7 +1236,7 @@ df_coach_voltooid_view = (
 # Pages
 # ----------------------------
 if current_page == "dashboard":
-    st.subheader("Dashboard (update om 1u en 13u)")
+    st.subheader("Dashboard (*-*)")
 
 # --- Dashboard: zoekveld + suggesties ZONDER Enter ---
 
@@ -1150,6 +1297,47 @@ if current_page == "dashboard":
         st.caption("Typ een zoekterm en klik op **Zoek**.")
         st.stop()
 
+
+
+
+        # ----------------------------
+    # Dienst van de chauffeur (vandaag) via FTP
+    # ----------------------------
+    st.markdown("#### Dienst van de chauffeur (vandaag)")
+
+    try:
+        dienst_file, df_dienst = load_dienst_df()
+        st.caption(f"Bronbestand: {dienst_file}")
+    except Exception as e:
+        st.caption("Dienstbestand kon niet geladen worden.")
+        st.exception(e)
+        df_dienst = pd.DataFrame()
+
+    if df_dienst.empty:
+        st.caption("Geen dienstgegevens gevonden.")
+    else:
+        # match op q: als q een personeelsnummer is -> exact; anders via _search
+        q_raw = (st.session_state.get("q") or "").strip().lower()
+
+        if q_raw.isdigit():
+            dienst_hits = df_dienst[df_dienst["personeelsnummer"] == q_raw].copy()
+        else:
+            dienst_hits = df_dienst[df_dienst["_search"].str.contains(re.escape(q_raw), na=False)].copy()
+
+        if dienst_hits.empty:
+            st.caption("Geen dienst gevonden voor deze zoekterm.")
+        else:
+            show_cols = [
+                "Dienstadres", "Plaats", "Uur", "Richting", "Loop", "Lijn",
+                "personeelsnummer", "naam", "voertuig", "wissel", "door appel", "chauffeur appel",
+            ]
+
+            # netjes tonen (je kan ook render_html_table gebruiken)
+            st.dataframe(
+                dienst_hits[show_cols].head(300),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 
