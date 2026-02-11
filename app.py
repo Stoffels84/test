@@ -489,11 +489,16 @@ def _ftp_connect():
         ftp.login(FTP_USER, FTP_PASS)
 
     if FTP_DIR:
-        try:
-            ftp.cwd(FTP_DIR)
-        except Exception:
-            # als cwd faalt, blijf in root
-            pass
+        if FTP_DIR:
+            try:
+                ftp.cwd(FTP_DIR)
+            except Exception as e:
+                try:
+                    here = ftp.pwd()
+                except Exception:
+                    here = "(onbekend)"
+                raise RuntimeError(f"Kan niet naar FTP_DIR='{FTP_DIR}' (huidig: {here})") from e
+
 
     return ftp
 
@@ -539,16 +544,33 @@ def _normcol(x: str) -> str:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def load_dienst_df() -> tuple[str, pd.DataFrame]:
-    """
-    Leest het 'dienst' excel van vandaag via FTP en normaliseert kolommen.
-    """
+def load_dienst_df():
+
     fname, content = fetch_ftp_excel_for_today_bytes(_env_sig())
+
+    # 👉 lees specifiek tabblad
+    xls = pd.ExcelFile(BytesIO(content))
+
+    if "Dienstlijst" not in xls.sheet_names:
+        raise ValueError(
+            f"Tabblad 'Dienstlijst' niet gevonden. Beschikbare tabs: {xls.sheet_names}"
+        )
+
     df = pd.read_excel(
-        BytesIO(content),
+        xls,
         sheet_name="Dienstlijst",
         dtype=str
     ).fillna("")
+
+    # kolommen opschonen
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    # personeelsnummer opschonen zoals rest app
+    if "personeelsnummer" in df.columns:
+        df["personeelsnummer"] = df["personeelsnummer"].apply(clean_id)
+
+    return fname, df
+
 
 
 
