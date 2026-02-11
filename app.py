@@ -14,7 +14,6 @@ import streamlit as st
 import bcrypt
 import requests
 from streamlit_searchbox import st_searchbox
-from ftplib import FTP
 
 
 from pathlib import Path
@@ -120,9 +119,6 @@ PAGES = [
     ("coaching", "Coaching"),
     ("analyse", "Analyse"),
 ]
-STEKAART_DIR_URL = f"{DATA_BASE_URL}/steekkaart".rstrip("/")
-STEKAART_SHEET = "dienstlijst"
-
 
 # ----------------------------
 # Helpers
@@ -148,106 +144,6 @@ def read_excel_str(bio: BytesIO, **kwargs) -> pd.DataFrame:
     df = pd.read_excel(bio, dtype=str, **kwargs)
     return df.fillna("")
 
-
-def _today_prefix_yyyyddmm() -> str:
-    # yyyyddmm (jaar + dag + maand)
-    return dt.date.today().strftime("%Y%d%m")
-
-
-def ftp_connect() -> FTP:
-    ftp = FTP()
-    ftp.connect(st.secrets["FTP_HOST"], int(st.secrets.get("FTP_PORT", 21)), timeout=20)
-    ftp.login(st.secrets["FTP_USER"], st.secrets["FTP_PASS"])
-    return ftp
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def list_steekkaart_filenames_today() -> list[str]:
-    prefix = _today_prefix_yyyymmdd()
-    ftp_dir = st.secrets.get("FTP_STEKAART_DIR", "/data/steekkaart")
-
-    ftp = ftp_connect()
-    try:
-        ftp.cwd(ftp_dir)
-        files = ftp.nlst()
-    finally:
-        try:
-            ftp.quit()
-        except Exception:
-            pass
-
-    hits = []
-    for f in files:
-        base = f.split("/")[-1]  # sommige FTP’s geven toch paden terug
-        if not base.lower().endswith((".xlsx", ".xlsm", ".xls")):
-            continue
-        if base.startswith(prefix):  # ✅ datumprefix yyyymmdd, tekst erna genegeerd
-            hits.append(base)
-
-    return sorted(hits)
-[]
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def load_steekkaart_today_dienstlijst_df() -> tuple[pd.DataFrame, str | None]:
-    files = list_steekkaart_filenames_today()
-    if not files:
-        return pd.DataFrame(), None
-
-    ftp_dir = st.secrets.get("FTP_STEKAART_DIR", "/data/steekkaart")
-    filename = files[-1]
-    base_name = filename.split("/")[-1]
-
-    try:
-        ftp = ftp_connect()
-        ftp.cwd(ftp_dir)
-
-        bio = BytesIO()
-        ftp.retrbinary(f"RETR {base_name}", bio.write)
-        ftp.quit()
-
-        bio.seek(0)
-        df = pd.read_excel(bio, sheet_name="dienstlijst", dtype=str).fillna("")
-        df.columns = [str(c).strip() for c in df.columns]
-        return df, base_name
-
-    except Exception:
-        return pd.DataFrame(), None
-
-
-def prepare_steekkaart_view(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
-
-    def pick(name: str) -> str | None:
-        return _find_col(df, name)
-
-    colmap = {
-        "Dienstadres": pick("Dienstadres"),
-        "Uur": pick("Uur"),
-        "Plaats": pick("Plaats"),
-        "richting": pick("richting"),
-        "Loop": pick("Loop"),
-        "Lijn": pick("Lijn"),
-        "personeelsnummer": pick("personeelsnummer") or pick("personeelsnr") or pick("nummer"),
-        "naam": pick("naam") or pick("volledige naam") or pick("chauffeurnaam"),
-        "voertuig": pick("voertuig"),
-        "wissel": pick("wissel"),
-    }
-
-    out = pd.DataFrame()
-    for wanted, actual in colmap.items():
-        out[wanted] = df[actual].astype(str).fillna("").str.strip() if actual else ""
-
-    out["personeelsnummer"] = out["personeelsnummer"].apply(clean_id)
-    out["naam"] = out["naam"].apply(clean_text)
-
-    out["_search_pnr"] = out["personeelsnummer"].str.lower()
-    out["_search_all"] = (
-        out["personeelsnummer"] + " " + out["naam"] + " " + out["voertuig"]
-    ).str.lower()
-
-    return out
 
 
 
@@ -459,161 +355,6 @@ def render_html_table(
         """,
         unsafe_allow_html=True,
     )
-
-def _today_prefix_yyyyddmm() -> str:
-    return dt.date.today().strftime("%Y%d%m")
-
-
-def _today_prefix_yyyyddmm() -> str:
-    # jij zei: yyyyddmm (jaar + dag + maand)
-    return dt.date.today().strftime("%Y%d%m")
-
-@st.cache_data(show_spinner=False, ttl=300)  # elke 5 min herladen
-def load_steekkaart_today_df() -> tuple[pd.DataFrame, str | None]:
-    """
-    Laadt de steekkaart-excel van vandaag uit /data/steekkaart.
-    Bestandsnaam start met yyyyddmm + optionele tekst.
-    Returns: (df, filename_of_None)
-    """
-    if not STEKAART_DIR.exists():
-        return pd.DataFrame(), None
-
-    prefix = _today_prefix_yyyyddmm()
-
-    candidates = []
-    for ext in ("*.xlsx", "*.xlsm", "*.xls"):
-        candidates += list(STEKAART_DIR.glob(ext))
-
-    # enkel bestanden die starten met today's prefix
-    candidates = [p for p in candidates if p.name.startswith(prefix)]
-
-    if not candidates:
-        return pd.DataFrame(), None
-
-    # als er meerdere zijn: neem de nieuwste (mtime)
-    file_path = max(candidates, key=lambda p: p.stat().st_mtime)
-
-    df = pd.read_excel(file_path, dtype=str).fillna("")
-    df.columns = [str(c).strip() for c in df.columns]
-    return df, file_path.name
-
-    if st.checkbox("Debug: toon eerste 30 bestanden in FTP-map", value=False):
-        ftp = ftp_connect()
-        try:
-            ftp.cwd(st.secrets.get("FTP_STEKAART_DIR", "/data/steekkaart"))
-            st.write(ftp.nlst()[:30])
-        finally:
-            try: ftp.quit()
-            except Exception: pass
-
-
-def _make_steekkaart_search(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Maakt een _search kolom in steekkaart-df, zodat we kunnen filteren op p-nr/naam.
-    Probeert je bestaande _find_col helper te gebruiken.
-    """
-    if df is None or df.empty:
-        return df
-
-    num_col = _find_col(df, "nummer") or _find_col(df, "personeelsnr") or _find_col(df, "personeelsnummer")
-    name_col = _find_col(df, "volledige naam") or _find_col(df, "naam") or _find_col(df, "chauffeurnaam")
-
-    if num_col and num_col != "nummer":
-        df = df.rename(columns={num_col: "nummer"})
-    if name_col and name_col != "naam":
-        df = df.rename(columns={name_col: "naam"})
-
-    if "nummer" not in df.columns:
-        df["nummer"] = ""
-    if "naam" not in df.columns:
-        df["naam"] = ""
-
-    df["nummer"] = df["nummer"].apply(clean_id)
-    df["naam"] = df["naam"].apply(clean_text)
-
-    df["_search"] = (df["nummer"].astype(str) + " " + df["naam"].astype(str)).str.lower()
-    return df
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-
-def load_steekkaart_today_dienstlijst_df():
-
-    files = list_steekkaart_filenames_today()
-
-    if not files:
-        return pd.DataFrame(), None
-
-    filename = files[-1]
-
-    try:
-        ftp = ftp_connect()
-        ftp.cwd("/data/steekkaart")
-
-        bio = BytesIO()
-
-        ftp.retrbinary(
-            f"RETR {filename}",
-            bio.write
-        )
-
-        ftp.quit()
-
-        bio.seek(0)
-
-        df = pd.read_excel(
-            bio,
-            sheet_name="dienstlijst",
-            dtype=str
-        ).fillna("")
-
-        df.columns = [str(c).strip() for c in df.columns]
-
-        return df, filename
-
-    except Exception:
-        return pd.DataFrame(), None
-
-
-
-    # Map kolommen robuust via _find_col (case/varianten)
-    colmap = {
-        "Dienstadres": _find_col(df, "Dienstadres") or _find_col(df, "dienstadres"),
-        "Uur": _find_col(df, "Uur") or _find_col(df, "uur"),
-        "Plaats": _find_col(df, "Plaats") or _find_col(df, "plaats"),
-        "richting": _find_col(df, "richting"),
-        "Loop": _find_col(df, "Loop") or _find_col(df, "loop"),
-        "Lijn": _find_col(df, "Lijn") or _find_col(df, "lijn") or _find_col(df, "line"),
-        "personeelsnummer": _find_col(df, "personeelsnummer") or _find_col(df, "personeelsnr") or _find_col(df, "nummer"),
-        "naam": _find_col(df, "naam") or _find_col(df, "volledige naam") or _find_col(df, "chauffeurnaam"),
-        "voertuig": _find_col(df, "voertuig"),
-        "wissel": _find_col(df, "wissel"),
-    }
-
-    # Zorg dat elke gewenste kolom bestaat (ook als hij niet gevonden werd)
-    out = pd.DataFrame()
-    for wanted, actual in colmap.items():
-        if actual and actual in df.columns:
-            out[wanted] = df[actual].astype(str).fillna("").str.strip()
-        else:
-            out[wanted] = ""
-
-    # Opschonen personeelsnummer
-    out["personeelsnummer"] = out["personeelsnummer"].apply(clean_id)
-    out["naam"] = out["naam"].apply(clean_text)
-
-    # Zoekkolom: verplicht personeelsnummer meenemen
-    out["_search_pnr"] = out["personeelsnummer"].fillna("").astype(str).str.lower()
-    out["_search_all"] = (
-        out["personeelsnummer"].fillna("").astype(str)
-        + " "
-        + out["naam"].fillna("").astype(str)
-        + " "
-        + out["voertuig"].fillna("").astype(str)
-    ).str.lower()
-
-    return out
-
 
 # ----------------------------
 # Login / Users (REMOTE toegestaan_gebruik.xlsx)
@@ -1348,7 +1089,7 @@ df_coach_voltooid_view = (
 # Pages
 # ----------------------------
 if current_page == "dashboard":
-    st.subheader("Dashboard (*-*)")
+    st.subheader("Dashboard (update om 1u en 13u)")
 
 # --- Dashboard: zoekveld + suggesties ZONDER Enter ---
 
@@ -1411,41 +1152,7 @@ if current_page == "dashboard":
 
 
 
-    # ----------------------------
-    # Steekkaart (vandaag) — remote + dienstlijst
-    # ----------------------------
-    st.markdown("#### Steekkaart (vandaag)")
-    
-    steek_raw, steek_file = load_steekkaart_today_dienstlijst_df()
-    
-    if steek_file is None:
-        st.caption(f"Geen steekkaartbestand gevonden voor vandaag ({_today_prefix_yyyyddmm()}).")
-    else:
-        steek_view = prepare_steekkaart_view(steek_raw)
-        st.caption(f"Bestand: **{steek_file}** | Tab: **dienstlijst**")
-    
-        q_clean = (q or "").strip().lower()
-        is_pnr = bool(re.fullmatch(r"\d+", q_clean))
-    
-        if is_pnr:
-            hits = steek_view[steek_view["_search_pnr"].str.contains(re.escape(q_clean), na=False)].copy()
-        else:
-            hits = steek_view[steek_view["_search_all"].str.contains(re.escape(q_clean), na=False)].copy()
-    
-        if hits.empty:
-            st.caption("Geen steekkaart-records gevonden voor deze zoekterm.")
-        else:
-            show_cols = ["Dienstadres", "Uur", "Plaats", "richting", "Loop", "Lijn",
-                         "personeelsnummer", "naam", "voertuig", "wissel"]
-            st.dataframe(hits[show_cols].head(300), use_container_width=True, hide_index=True)
 
-
-
-
-
-    
-
-    
 
 
 
@@ -1641,17 +1348,17 @@ if current_page == "dashboard":
         st.caption("Geen items voor tijdlijn gevonden bij deze zoekterm.")
     else:
         tl = pd.DataFrame(timeline_rows)
-    
+
         # sorteer: meest recent eerst, NaT onderaan
         tl = tl.sort_values(by="_dt", ascending=False, na_position="last").drop(columns=["_dt"])
-    
+
         # Datum formateren (dd-mm-jjjj)
         tl["Datum"] = tl["Datum"].apply(format_ddmmyyyy)
         tl["Link"] = tl["Link"].replace({"": None})
-    
+
         # Beperk aantal rijen (veilig voor performance)
         tl = tl.head(300)
-    
+
         column_config = {
             "Datum": st.column_config.TextColumn("Datum", width="small"),
             "Bron": st.column_config.TextColumn("Bron", width="small"),
@@ -1659,20 +1366,25 @@ if current_page == "dashboard":
             "Naam": st.column_config.TextColumn("Naam", width="medium"),
             "Samenvatting": st.column_config.TextColumn("Samenvatting", width="large"),
         }
-    
         if "Link" in tl.columns:
-            column_config["Link"] = st.column_config.LinkColumn(
-                "Open EAF", display_text="Open EAF", width="small"
-            )
-    
+            column_config["Link"] = st.column_config.LinkColumn("Open EAF", display_text="Open EAF", width="small")
+
         st.dataframe(
             tl,
             use_container_width=True,
             hide_index=True,
             column_config=column_config,
         )
-    
+
         st.caption("Tip: gebruik de zoekbalk bovenaan om de tijdlijn per chauffeur/personeelsnr te bekijken.")
+
+
+
+
+
+
+
+
 
 
 
