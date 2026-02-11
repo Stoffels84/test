@@ -1380,41 +1380,6 @@ if current_page == "dashboard":
     if df_dienst.empty:
         st.caption("Geen dienstgegevens gevonden.")
     else:
-        if q.isdigit():
-            dienst_hits = df_dienst[df_dienst["personeelsnummer"] == q].copy()
-        else:
-            dienst_hits = df_dienst[df_dienst["_search"].str.contains(re.escape(q), na=False)].copy()
-
-        if dienst_hits.empty:
-            st.caption("Geen dienst gevonden voor deze zoekterm.")
-        else:
-            show_cols = [
-                "Dienstadres", "Plaats", "Uur", "Richting", "Loop", "Lijn",
-                "personeelsnummer", "naam", "voertuig", "wissel", "door appel", "chauffeur appel",
-            ]
-            st.dataframe(dienst_hits[show_cols].head(300), use_container_width=True, hide_index=True)
-
-    
-
-
-
-
-        # ----------------------------
-    # Dienst van de chauffeur (vandaag) via FTP
-    # ----------------------------
-    st.markdown("#### Dienst van de chauffeur (vandaag)")
-
-    try:
-        dienst_file, df_dienst = load_dienst_df()
-        st.caption(f"Bronbestand: {dienst_file}")
-    except Exception as e:
-        st.caption("Dienstbestand kon niet geladen worden.")
-        st.exception(e)
-        df_dienst = pd.DataFrame()
-
-    if df_dienst.empty:
-        st.caption("Geen dienstgegevens gevonden.")
-    else:
         # match op q: als q een personeelsnummer is -> exact; anders via _search
         q_raw = (st.session_state.get("q") or "").strip().lower()
 
