@@ -544,11 +544,12 @@ def load_dienst_df() -> tuple[str, pd.DataFrame]:
     Leest het 'dienst' excel van vandaag via FTP en normaliseert kolommen.
     """
     fname, content = fetch_ftp_excel_for_today_bytes(_env_sig())
-        df = pd.read_excel(
-        BytesIO(content),
-        sheet_name="Dienstlijst",
-        dtype=str
-    ).fillna("")
+df = pd.read_excel(
+    BytesIO(content),
+    sheet_name="Dienstlijst",
+    dtype=str
+).fillna("")
+
 
 
     # gewenste kolommen (exact zoals je vroeg)
