@@ -401,52 +401,39 @@ except Exception as e:
 # 7) UI: GESPREKKEN
 # ============================================================
 # ============================================================
-# 7) UI: GESPREKKEN  (met TEKSTERUGLOOP via HTML/CSS)
-#   - Bestand: Overzicht gesprekken (aangepast).xlsx  (via FTP, zelfde map als JSON)
-#   - Tabblad: "gesprekken per thema"
-#   - Kolommen: nummer, Chauffeurnaam, Onderwerp, Datum, Info
-#   - Filtering: zoekwaarde (pnr) matcht op kolom "nummer"
-#   - Weergave: tabel met teksterugloop (wrap) voor Info
+# 7) UI: GESPREKKEN (met teksterugloop)
 # ============================================================
 
 st.header("Gesprekken")
 
 @st.cache_data(ttl=300)
-def load_gesprekken_df() -> pd.DataFrame:
+def load_gesprekken_df():
     ftp = get_ftp_manager()
+
     remote_path = ftp.join("Overzicht gesprekken (aangepast).xlsx")
+
     b = ftp.download_bytes(remote_path)
 
     df = pd.read_excel(
         BytesIO(b),
         sheet_name="gesprekken per thema",
-        engine="openpyxl",
+        engine="openpyxl"
     )
 
     df.columns = [str(c).strip() for c in df.columns]
 
     wanted = ["nummer", "Chauffeurnaam", "Onderwerp", "Datum", "Info"]
 
-    # case-insensitive selectie
     col_map = {c.lower(): c for c in df.columns}
-    selected, missing = [], []
-    for w in wanted:
-        k = w.lower()
-        if k in col_map:
-            selected.append(col_map[k])
-        else:
-            missing.append(w)
 
-    if not selected:
-        raise KeyError(
-            "Geen verwachte kolommen gevonden in tabblad 'gesprekken per thema'. "
-            f"Gevonden kolommen: {list(df.columns)}"
-        )
+    selected = []
+
+    for w in wanted:
+        if w.lower() in col_map:
+            selected.append(col_map[w.lower()])
 
     out = df[selected].copy()
-    out.attrs["missing_columns"] = missing
 
-    # Datum zonder uur
     if "Datum" in out.columns:
         out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce").dt.date
 
@@ -456,105 +443,78 @@ def load_gesprekken_df() -> pd.DataFrame:
 try:
     gesprekken_df = load_gesprekken_df()
 
-    missing = gesprekken_df.attrs.get("missing_columns", [])
-    if missing:
-        st.warning(f"Ontbrekende kolommen in Gesprekken (niet getoond): {', '.join(missing)}")
-
-    if "nummer" not in gesprekken_df.columns:
-        st.error(
-            f"Kolom 'nummer' ontbreekt in Gesprekken. Gevonden kolommen: {list(gesprekken_df.columns)}"
-        )
-        st.stop()
-
-    # Filter op nummer == pnr (zoekvenster)
     gesprekken_df["nummer"] = gesprekken_df["nummer"].astype(str).map(normalize_pnr)
+
     rows = gesprekken_df[gesprekken_df["nummer"] == pnr].copy()
 
-    # Nieuwste eerst
     if "Datum" in rows.columns:
         rows = rows.sort_values("Datum", ascending=False)
 
     if rows.empty:
-        st.info("Geen gesprekken gevonden voor dit personeelsnummer.")
+        st.info("Geen gesprekken gevonden.")
     else:
-        # ---------- CSS voor teksterugloop ----------
-        st.markdown(
+
+        # CSS voor teksterugloop
+        st.markdown("""
+        <style>
+        table.wrap-table {
+            width:100%;
+            border-collapse:collapse;
+        }
+        table.wrap-table th, table.wrap-table td {
+            padding:10px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            vertical-align:top;
+        }
+        table.wrap-table th {
+            text-align:left;
+            font-weight:600;
+        }
+        td.wrap-info {
+            white-space: normal;
+            word-break: break-word;
+            max-width:800px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        import html
+
+        html_rows = ""
+
+        for _, r in rows.iterrows():
+
+            nummer = html.escape(str(r["nummer"]))
+            naam = html.escape(str(r["Chauffeurnaam"]))
+            onderwerp = html.escape(str(r["Onderwerp"]))
+            datum = html.escape(str(r["Datum"]))
+            info = html.escape(str(r["Info"]))
+
+            html_rows += f"""
+            <tr>
+                <td>{nummer}</td>
+                <td>{naam}</td>
+                <td>{onderwerp}</td>
+                <td>{datum}</td>
+                <td class="wrap-info">{info}</td>
+            </tr>
             """
-            <style>
-            .wrap-table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            .wrap-table th, .wrap-table td {
-                border-bottom: 1px solid rgba(255,255,255,0.08);
-                padding: 10px 12px;
-                vertical-align: top;
-                font-size: 0.95rem;
-            }
-            .wrap-table th {
-                text-align: left;
-                font-weight: 600;
-                position: sticky;
-                top: 0;
-                background: rgba(22,27,34,0.95);
-                backdrop-filter: blur(6px);
-                z-index: 1;
-            }
-            .wrap-small { white-space: nowrap; }
-            .wrap-info {
-                white-space: normal;      /* <-- TEKSTERUGLOOP */
-                word-break: break-word;   /* <-- lange woorden/URLs breken */
-                line-height: 1.35;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # ---------- Data voorbereiden ----------
-        show = rows[["nummer", "Chauffeurnaam", "Onderwerp", "Datum", "Info"]].copy()
-
-        for c in ["nummer", "Chauffeurnaam", "Onderwerp", "Info"]:
-            show[c] = show[c].fillna("").astype(str)
-        show["Datum"] = show["Datum"].fillna("").astype(str)
-
-        # ---------- HTML tabel bouwen (veilig escapen) ----------
-        import html as _html
-
-        def esc(x: str) -> str:
-            return _html.escape(x)
-
-        body_rows = []
-        for _, r in show.iterrows():
-            body_rows.append(
-                f"""
-                <tr>
-                  <td class="wrap-small">{esc(r['nummer'])}</td>
-                  <td class="wrap-small">{esc(r['Chauffeurnaam'])}</td>
-                  <td>{esc(r['Onderwerp'])}</td>
-                  <td class="wrap-small">{esc(r['Datum'])}</td>
-                  <td class="wrap-info">{esc(r['Info'])}</td>
-                </tr>
-                """
-            )
 
         html_table = f"""
-        <div style="max-height:650px; overflow:auto; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
-          <table class="wrap-table">
+        <table class="wrap-table">
             <thead>
-              <tr>
-                <th style="width:120px;">nummer</th>
-                <th style="width:220px;">Chauffeurnaam</th>
-                <th style="width:240px;">Onderwerp</th>
-                <th style="width:140px;">Datum</th>
-                <th>Info</th>
-              </tr>
+                <tr>
+                    <th>nummer</th>
+                    <th>Chauffeurnaam</th>
+                    <th>Onderwerp</th>
+                    <th>Datum</th>
+                    <th>Info</th>
+                </tr>
             </thead>
             <tbody>
-              {''.join(body_rows)}
+                {html_rows}
             </tbody>
-          </table>
-        </div>
+        </table>
         """
 
         st.markdown(html_table, unsafe_allow_html=True)
