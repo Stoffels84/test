@@ -189,7 +189,11 @@ def load_schade_bron_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="BRON", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    wanted = ["personeelsnr", "Datum", "Link", "Locatie", "voertuig", "Bus/tram", "Type"]
+    # In BRON heet de kolom 'personeelsnr' -> hernoem naar 'personeelsnummer' voor consistent gebruik
+    if "personeelsnr" in df.columns and "personeelsnummer" not in df.columns:
+        df = df.rename(columns={"personeelsnr": "personeelsnummer"})
+
+    wanted = ["personeelsnummer", "Datum", "Link", "Locatie", "voertuig", "Bus/tram", "Type"]
 
     # case-insensitive selectie
     col_map = {c.lower(): c for c in df.columns}
