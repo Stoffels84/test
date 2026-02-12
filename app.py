@@ -1,14 +1,18 @@
 # app.py
 # ============================================================
-# CHAUFFEUR DASHBOARD (FTP)
+# CHAUFFEUR DASHBOARD (Enterprise structuur)
 # ------------------------------------------------------------
-# SECTIES IN DE APP (van boven naar beneden):
-#   0) Config + helpers + FTP config
-#   1) Data loaders (JSON + Excel via FTP)
-#   2) UI: Titel + zoekbalk (personeelsnummer)
-#   3) UI: Persoonlijke gegevens (uit personeelsficheGB.json)
-#   4) UI: Dienst van vandaag (steekkaart/yyyymmdd*.xlsx, sheet: Dienstlijst)
-#   5) UI: Schade (schade met macro.xlsm, sheet: BRON)  <-- ONDERAAN
+# SECTIES (van boven naar beneden):
+#   0) CONFIG + HELPERS
+#   1) FTP CONFIG + FTP MANAGER (één plek voor alle FTP)
+#   2) DATA LOADERS
+#      2A) JSON: personeelsficheGB.json
+#      2B) Dienst vandaag: steekkaart/yyyymmdd*.xlsx (sheet Dienstlijst)
+#      2C) Schade: schade met macro.xlsm (sheet BRON)
+#   3) UI: Titel + zoekbalk
+#   4) UI: Persoonlijke gegevens
+#   5) UI: Dienst van vandaag
+#   6) UI: Schade (onderaan)
 # ============================================================
 
 from __future__ import annotations
@@ -20,21 +24,17 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-from ftp_storage import (
-    ftp_download_bytes,
-    ftp_download_text,
-    ftp_list_files,
-)
+from ftp_client import FTPConfig, FTPManager
 
 # ============================================================
-# 0) CONFIG + HELPERS + FTP CONFIG
+# 0) CONFIG + HELPERS
 # ============================================================
 
 st.set_page_config(page_title="Chauffeur Dashboard", layout="wide")
 
 
 def normalize_pnr(x) -> str:
-    """Normaliseer nummers (bv. 123.0 -> 123) en strip spaties."""
+    """Normaliseer personeelsnummer: strip, en 123.0 -> 123."""
     if x is None:
         return ""
     s = str(x).strip()
@@ -43,51 +43,63 @@ def normalize_pnr(x) -> str:
     return s
 
 
-def get_ftp_cfg():
+def require_ftp_secrets() -> dict:
     """
-    Verwacht Streamlit secrets:
+    Zorgt dat secrets correct staan.
+    Verwacht in Streamlit secrets:
+
     [FTP]
     host="..."
     port=21
     username="..."
     password="..."
-    base_dir="/pad/naar/map"  (optioneel)
+    base_dir="/pad/naar/map"   # optioneel
     """
     cfg = st.secrets.get("FTP")
-
     if cfg is None:
-        st.error("FTP configuratie ontbreekt in Streamlit secrets.")
+        st.error("FTP configuratie ontbreekt. Voeg een [FTP]-sectie toe in Streamlit secrets.")
         st.write("Beschikbare secret keys:", list(st.secrets.keys()))
         st.stop()
-
-    host = cfg["host"]
-    port = int(cfg.get("port", 21))
-    username = cfg["username"]
-    password = cfg["password"]
-    base_dir = str(cfg.get("base_dir", "")).strip()
-    return host, port, username, password, base_dir
-
-
-def join_remote(base_dir: str, *parts: str) -> str:
-    """Maak een remote pad dat werkt met/zonder base_dir."""
-    base_dir = str(base_dir or "").strip().strip("/")
-    clean_parts = [p.strip().strip("/") for p in parts if str(p).strip() != ""]
-    if base_dir == "":
-        return "/".join(clean_parts) if clean_parts else ""
-    return "/".join([base_dir] + clean_parts)
+    # minimale keys check
+    for k in ["host", "username", "password"]:
+        if k not in cfg:
+            st.error(f"FTP secret mist key: '{k}'. Verwacht keys: host, port (opt), username, password, base_dir (opt).")
+            st.write("Gevonden FTP keys:", list(cfg.keys()))
+            st.stop()
+    return cfg
 
 
 # ============================================================
-# 1) DATA LOADERS (FTP)
+# 1) FTP CONFIG + FTP MANAGER
 # ============================================================
 
-# ---------- 1A) JSON: personeelsficheGB.json ----------
+@st.cache_resource
+def get_ftp_manager() -> FTPManager:
+    cfg = require_ftp_secrets()
+
+    ftp_cfg = FTPConfig(
+        host=cfg["host"],
+        port=int(cfg.get("port", 21)),
+        username=cfg["username"],
+        password=cfg["password"],
+        base_dir=str(cfg.get("base_dir", "")).strip(),
+    )
+    return FTPManager(ftp_cfg, timeout=30, passive=True)
+
+
+# ============================================================
+# 2) DATA LOADERS
+# ============================================================
+
+# -------------------------
+# 2A) JSON: personeelsficheGB.json
+# -------------------------
 
 @st.cache_data(ttl=300)
 def load_personeelsfiche_json():
-    host, port, username, password, base_dir = get_ftp_cfg()
-    remote_path = join_remote(base_dir, "personeelsficheGB.json")
-    txt = ftp_download_text(host, port, username, password, remote_path)
+    ftp = get_ftp_manager()
+    remote_path = ftp.join("personeelsficheGB.json")
+    txt = ftp.download_text(remote_path)
     return json.loads(txt)
 
 
@@ -107,11 +119,8 @@ def find_person_record(data, personeelnummer: str):
         return None
 
     if isinstance(data, dict):
-        # dict keyed by nummer
-        if target in data and isinstance(data[target], (dict, list, str, int, float)):
-            return data[target] if isinstance(data[target], dict) else {"waarde": data[target]}
-
-        # scan nested
+        if target in data and isinstance(data[target], dict):
+            return data[target]
         for v in data.values():
             rec = find_person_record(v, target)
             if rec:
@@ -121,33 +130,33 @@ def find_person_record(data, personeelnummer: str):
     return None
 
 
-# ---------- 1B) Dienst van vandaag: steekkaart/yyyymmdd*.xlsx (sheet Dienstlijst) ----------
+# -------------------------
+# 2B) Dienst van vandaag: steekkaart/yyyymmdd*.xlsx (sheet Dienstlijst)
+# -------------------------
 
 @st.cache_data(ttl=120)
 def load_dienst_vandaag_df() -> pd.DataFrame:
-    host, port, username, password, base_dir = get_ftp_cfg()
+    ftp = get_ftp_manager()
 
-    # map steekkaart onder base_dir
-    steekkaart_dir = join_remote(base_dir, "steekkaart")
+    steekkaart_dir = ftp.join("steekkaart")
+    today_prefix = date.today().strftime("%Y%m%d")
 
-    today_prefix = date.today().strftime("%Y%m%d")  # yyyymmdd
-    files = ftp_list_files(host, port, username, password, steekkaart_dir)
+    files = ftp.list_files(steekkaart_dir)
 
-    # kies excel die start met yyyymmdd
     matches = [f for f in files if f.startswith(today_prefix) and f.lower().endswith((".xlsx", ".xls"))]
     if not matches:
         raise FileNotFoundError(f"Geen dienstbestand gevonden in '{steekkaart_dir}' dat start met {today_prefix}")
 
     matches.sort()
     filename = matches[0]
-    remote_path = f"{steekkaart_dir.rstrip('/')}/{filename}"
 
-    b = ftp_download_bytes(host, port, username, password, remote_path)
+    remote_path = f"{steekkaart_dir.rstrip('/')}/{filename}"
+    b = ftp.download_bytes(remote_path)
 
     df = pd.read_excel(BytesIO(b), sheet_name="Dienstlijst", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    # We filteren in deze excel op 'personeelnummer' (zonder s)
+    # deze excel filteren op 'personeelnummer' (zonder s)
     wanted = [
         "personeelnummer",
         "naam",
@@ -163,10 +172,8 @@ def load_dienst_vandaag_df() -> pd.DataFrame:
         "chauffeur appel",
     ]
 
-    # case-insensitive selectie
     col_map = {c.lower(): c for c in df.columns}
-    selected = []
-    missing = []
+    selected, missing = [], []
     for w in wanted:
         k = w.lower()
         if k in col_map:
@@ -177,34 +184,34 @@ def load_dienst_vandaag_df() -> pd.DataFrame:
     if not selected:
         raise KeyError(f"Geen verwachte kolommen gevonden in Dienstlijst. Kolommen: {list(df.columns)}")
 
-    df = df[selected].copy()
-    df.attrs["missing_columns"] = missing
-    df.attrs["source_file"] = filename
-    return df
+    out = df[selected].copy()
+    out.attrs["missing_columns"] = missing
+    out.attrs["source_file"] = filename
+    return out
 
 
-# ---------- 1C) Schade: schade met macro.xlsm (sheet BRON) ----------
+# -------------------------
+# 2C) Schade: schade met macro.xlsm (sheet BRON)
+# -------------------------
 
 @st.cache_data(ttl=300)
 def load_schade_bron_df() -> pd.DataFrame:
-    host, port, username, password, base_dir = get_ftp_cfg()
+    ftp = get_ftp_manager()
 
-    remote_path = join_remote(base_dir, "schade met macro.xlsm")
-    b = ftp_download_bytes(host, port, username, password, remote_path)
+    remote_path = ftp.join("schade met macro.xlsm")
+    b = ftp.download_bytes(remote_path)
 
     df = pd.read_excel(BytesIO(b), sheet_name="BRON", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    # In BRON heet de kolom 'personeelsnr' -> hernoem naar 'personeelsnummer' voor consistent gebruik
+    # In BRON heet de kolom 'personeelsnr' -> hernoem intern naar 'personeelsnummer'
     if "personeelsnr" in df.columns and "personeelsnummer" not in df.columns:
         df = df.rename(columns={"personeelsnr": "personeelsnummer"})
 
     wanted = ["personeelsnummer", "Datum", "Link", "Locatie", "voertuig", "Bus/tram", "Type"]
 
-    # case-insensitive selectie
     col_map = {c.lower(): c for c in df.columns}
-    selected = []
-    missing = []
+    selected, missing = [], []
     for w in wanted:
         k = w.lower()
         if k in col_map:
@@ -218,7 +225,6 @@ def load_schade_bron_df() -> pd.DataFrame:
     out = df[selected].copy()
     out.attrs["missing_columns"] = missing
 
-    # datum parseren als aanwezig
     if "Datum" in out.columns:
         out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce")
 
@@ -226,7 +232,7 @@ def load_schade_bron_df() -> pd.DataFrame:
 
 
 # ============================================================
-# 2) UI: TITEL + ZOEKBALK (bovenaan)
+# 3) UI: TITEL + ZOEKBALK
 # ============================================================
 
 st.title("🚍 Chauffeur Dashboard")
@@ -236,7 +242,6 @@ with st.sidebar:
     if st.button("🔄 Herlaad alles (cache leegmaken)"):
         st.cache_data.clear()
 
-# Zoekbalk bovenaan
 pnr_input = st.text_input("Zoek op personeelsnummer", placeholder="bv. 12345")
 if not pnr_input.strip():
     st.info("Geef een personeelsnummer in om de fiche, dienst en schade te tonen.")
@@ -245,7 +250,7 @@ if not pnr_input.strip():
 pnr = normalize_pnr(pnr_input)
 
 # ============================================================
-# 3) UI: PERSOONLIJKE GEGEVENS (JSON)
+# 4) UI: PERSOONLIJKE GEGEVENS
 # ============================================================
 
 st.header("Persoonlijke gegevens")
@@ -266,7 +271,7 @@ except Exception as e:
 st.divider()
 
 # ============================================================
-# 4) UI: DIENST VAN VANDAAG (steekkaart)
+# 5) UI: DIENST VAN VANDAAG
 # ============================================================
 
 st.header("Dienst van vandaag")
@@ -274,12 +279,10 @@ st.header("Dienst van vandaag")
 try:
     dienst_df = load_dienst_vandaag_df()
 
-    # waarschuwing voor ontbrekende kolommen
     missing = dienst_df.attrs.get("missing_columns", [])
     if missing:
         st.warning(f"Ontbrekende kolommen in Dienstlijst (niet getoond): {', '.join(missing)}")
 
-    # filter op personeelnummer (zonder s)
     if "personeelnummer" not in dienst_df.columns:
         st.error(f"Kolom 'personeelnummer' ontbreekt. Gevonden: {list(dienst_df.columns)}")
         st.stop()
@@ -304,7 +307,7 @@ except Exception as e:
 st.divider()
 
 # ============================================================
-# 5) UI: SCHADE (ONDERAAN) - schade met macro.xlsm / BRON
+# 6) UI: SCHADE (ONDERAAN)
 # ============================================================
 
 st.header("Schade (BRON)")
@@ -323,14 +326,12 @@ try:
     schade_df["personeelsnummer"] = schade_df["personeelsnummer"].astype(str).map(normalize_pnr)
     rows = schade_df[schade_df["personeelsnummer"] == pnr].copy()
 
-    # sorteer op datum (nieuwste eerst) als Datum aanwezig is
     if "Datum" in rows.columns:
         rows = rows.sort_values("Datum", ascending=False)
 
     if rows.empty:
         st.info("Geen schades gevonden voor dit personeelsnummer.")
     else:
-        # Link klikbaar tonen
         if "Link" in rows.columns:
             rows["Link"] = rows["Link"].astype(str)
             st.dataframe(
