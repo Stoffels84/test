@@ -53,7 +53,13 @@ def get_ftp_cfg():
     password="..."
     base_dir="/pad/naar/map"  (optioneel)
     """
-    cfg = st.secrets["FTP"]
+    cfg = st.secrets.get("FTP")
+
+    if cfg is None:
+        st.error("FTP configuratie ontbreekt in Streamlit secrets.")
+        st.write("Beschikbare secret keys:", list(st.secrets.keys()))
+        st.stop()
+
     host = cfg["host"]
     port = int(cfg.get("port", 21))
     username = cfg["username"]
