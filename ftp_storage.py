@@ -1,29 +1,13 @@
-from __future__ import annotations
-
 from ftplib import FTP
 from io import BytesIO
-from typing import Optional
 
-
-def ftp_download_bytes(
-    host: str,
-    port: int,
-    username: str,
-    password: str,
-    remote_path: str,
-    timeout: int = 30,
-    passive: bool = True,
-) -> bytes:
-    """
-    Download één bestand via FTP en geef de inhoud terug als bytes.
-    """
+def ftp_download_bytes(host, port, username, password, remote_path, timeout=30, passive=True) -> bytes:
     ftp = FTP()
     ftp.connect(host=host, port=port, timeout=timeout)
     ftp.login(user=username, passwd=password)
     ftp.set_pasv(passive)
 
     bio = BytesIO()
-
     try:
         ftp.retrbinary(f"RETR {remote_path}", bio.write)
         return bio.getvalue()
@@ -31,30 +15,11 @@ def ftp_download_bytes(
         try:
             ftp.quit()
         except Exception:
-            # Als de verbinding al weg is
             try:
                 ftp.close()
             except Exception:
                 pass
 
-def ftp_download_text(
-    host: str,
-    port: int,
-    username: str,
-    password: str,
-    remote_path: str,
-    timeout: int = 30,
-    passive: bool = True,
-    encoding: str = "utf-8",
-) -> str:
-    data = ftp_download_bytes(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        remote_path=remote_path,
-        timeout=timeout,
-        passive=passive,
-    )
+def ftp_download_text(host, port, username, password, remote_path, timeout=30, passive=True, encoding="utf-8") -> str:
+    data = ftp_download_bytes(host, port, username, password, remote_path, timeout, passive)
     return data.decode(encoding, errors="replace")
-
