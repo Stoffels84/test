@@ -393,12 +393,59 @@ try:
 
 except Exception as e:
     st.error(f"Fout bij laden schade (BRON): {e}")
-# ============================================================
-# 6) UI: gesprekken
-# ============================================================
 
+
+
+# ============================================================
+# 7) UI: GESPREKKEN
+# ============================================================
 
 st.header("Gesprekken")
+
+@st.cache_data(ttl=300)
+def load_gesprekken_df() -> pd.DataFrame:
+    ftp = get_ftp_manager()
+
+    remote_path = ftp.join("Overzicht gesprekken (aangepast).xlsx")
+
+    b = ftp.download_bytes(remote_path)
+
+    df = pd.read_excel(
+        BytesIO(b),
+        sheet_name="gesprekken per thema",
+        engine="openpyxl",
+    )
+
+    df.columns = [str(c).strip() for c in df.columns]
+
+    wanted = ["nummer", "Chauffeurnaam", "Onderwerp", "Datum", "Info"]
+
+    col_map = {c.lower(): c for c in df.columns}
+
+    selected = []
+    missing = []
+
+    for w in wanted:
+        if w.lower() in col_map:
+            selected.append(col_map[w.lower()])
+        else:
+            missing.append(w)
+
+    if not selected:
+        raise KeyError(
+            f"Geen verwachte kolommen gevonden in tabblad 'gesprekken per thema'. "
+            f"Gevonden kolommen: {list(df.columns)}"
+        )
+
+    out = df[selected].copy()
+    out.attrs["missing_columns"] = missing
+
+    # Datum zonder uur
+    if "Datum" in out.columns:
+        out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce").dt.date
+
+    return out
+
 
 try:
     gesprekken_df = load_gesprekken_df()
@@ -408,21 +455,36 @@ try:
         st.warning(f"Ontbrekende kolommen in Gesprekken (niet getoond): {', '.join(missing)}")
 
     if "nummer" not in gesprekken_df.columns:
-        st.error(f"Kolom 'nummer' ontbreekt in Gesprekken. Gevonden: {list(gesprekken_df.columns)}")
+        st.error(
+            f"Kolom 'nummer' ontbreekt in Gesprekken. "
+            f"Gevonden kolommen: {list(gesprekken_df.columns)}"
+        )
         st.stop()
 
     gesprekken_df["nummer"] = gesprekken_df["nummer"].astype(str).map(normalize_pnr)
+
     rows = gesprekken_df[gesprekken_df["nummer"] == pnr].copy()
 
-    # sorteer nieuwste bovenaan als Datum bestaat
+    # nieuwste bovenaan
     if "Datum" in rows.columns:
         rows = rows.sort_values("Datum", ascending=False)
 
     if rows.empty:
         st.info("Geen gesprekken gevonden voor dit personeelsnummer.")
     else:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(
+            rows,
+            use_container_width=True,
+            hide_index=True,
+            height=650,
+            column_config={
+                "nummer": st.column_config.TextColumn("nummer", width="small"),
+                "Chauffeurnaam": st.column_config.TextColumn("Chauffeurnaam", width="medium"),
+                "Onderwerp": st.column_config.TextColumn("Onderwerp", width="small"),
+                "Datum": st.column_config.DateColumn("Datum", format="YYYY-MM-DD", width="small"),
+                "Info": st.column_config.TextColumn("Info", width="large"),
+            },
+        )
 
 except Exception as e:
     st.error(f"Fout bij laden gesprekken: {e}")
-
