@@ -247,27 +247,24 @@ except Exception as e:
 st.header("Dienst van vandaag")
 
 try:
-
     dienst_df = load_dienst_vandaag_df()
 
-    dienst_df["personeelsnummer"] = (
-        dienst_df["personeelsnummer"]
-        .astype(str)
-        .map(normalize_pnr)
-    )
-
-    dienst_rows = dienst_df[
-        dienst_df["personeelsnummer"] == pnr
-    ]
-
-    if len(dienst_rows) == 0:
-        st.info("Geen dienst gevonden voor vandaag.")
-    else:
-        st.dataframe(
-            dienst_rows,
-            use_container_width=True,
-            hide_index=True
+    if "personeelnummer" not in dienst_df.columns:
+        st.error(
+            "Kolom 'personeelnummer' niet gevonden in tabblad 'Dienstlijst'. "
+            f"Gevonden kolommen: {list(dienst_df.columns)}"
         )
+        st.stop()
+
+    dienst_df["personeelnummer"] = dienst_df["personeelnummer"].astype(str).map(normalize_pnr)
+
+    dienst_rows = dienst_df[dienst_df["personeelnummer"] == pnr].copy()
+
+    if dienst_rows.empty:
+        st.info("Geen dienst gevonden voor vandaag voor dit personeelnummer.")
+    else:
+        st.dataframe(dienst_rows, use_container_width=True, hide_index=True)
 
 except Exception as e:
     st.error(f"Fout bij laden dienst: {e}")
+
