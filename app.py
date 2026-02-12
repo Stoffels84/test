@@ -226,7 +226,7 @@ def load_schade_bron_df() -> pd.DataFrame:
     out.attrs["missing_columns"] = missing
 
     if "Datum" in out.columns:
-    out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce").dt.date
+        out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce").dt.date
 
 
     return out
