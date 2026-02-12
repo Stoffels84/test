@@ -401,38 +401,47 @@ except Exception as e:
 # 7) UI: GESPREKKEN
 # ============================================================
 # ============================================================
-# 7) UI: GESPREKKEN (met teksterugloop)
+# 7) UI: GESPREKKEN (TEKSTERUGLOOP via components.html)
 # ============================================================
+
+import streamlit.components.v1 as components
 
 st.header("Gesprekken")
 
 @st.cache_data(ttl=300)
-def load_gesprekken_df():
+def load_gesprekken_df() -> pd.DataFrame:
     ftp = get_ftp_manager()
-
     remote_path = ftp.join("Overzicht gesprekken (aangepast).xlsx")
-
     b = ftp.download_bytes(remote_path)
 
     df = pd.read_excel(
         BytesIO(b),
         sheet_name="gesprekken per thema",
-        engine="openpyxl"
+        engine="openpyxl",
     )
 
     df.columns = [str(c).strip() for c in df.columns]
 
     wanted = ["nummer", "Chauffeurnaam", "Onderwerp", "Datum", "Info"]
-
     col_map = {c.lower(): c for c in df.columns}
 
     selected = []
-
+    missing = []
     for w in wanted:
-        if w.lower() in col_map:
-            selected.append(col_map[w.lower()])
+        k = w.lower()
+        if k in col_map:
+            selected.append(col_map[k])
+        else:
+            missing.append(w)
+
+    if not selected:
+        raise KeyError(
+            "Geen verwachte kolommen gevonden in tabblad 'gesprekken per thema'. "
+            f"Gevonden kolommen: {list(df.columns)}"
+        )
 
     out = df[selected].copy()
+    out.attrs["missing_columns"] = missing
 
     if "Datum" in out.columns:
         out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce").dt.date
@@ -443,81 +452,144 @@ def load_gesprekken_df():
 try:
     gesprekken_df = load_gesprekken_df()
 
-    gesprekken_df["nummer"] = gesprekken_df["nummer"].astype(str).map(normalize_pnr)
+    missing = gesprekken_df.attrs.get("missing_columns", [])
+    if missing:
+        st.warning(f"Ontbrekende kolommen in Gesprekken (niet getoond): {', '.join(missing)}")
 
+    if "nummer" not in gesprekken_df.columns:
+        st.error(f"Kolom 'nummer' ontbreekt. Gevonden kolommen: {list(gesprekken_df.columns)}")
+        st.stop()
+
+    gesprekken_df["nummer"] = gesprekken_df["nummer"].astype(str).map(normalize_pnr)
     rows = gesprekken_df[gesprekken_df["nummer"] == pnr].copy()
 
     if "Datum" in rows.columns:
         rows = rows.sort_values("Datum", ascending=False)
 
     if rows.empty:
-        st.info("Geen gesprekken gevonden.")
+        st.info("Geen gesprekken gevonden voor dit personeelsnummer.")
     else:
+        # ✅ Test: als je hieronder NOG steeds "<b>" ziet als tekst, dan wordt components.html niet gebruikt.
+        components.html(
+            "<div style='padding:8px 12px; border-radius:10px; "
+            "border:1px solid rgba(255,255,255,0.15); "
+            "background: rgba(22,27,34,0.60); color:#E6EDF3;'>"
+            "✅ HTML render test (dit moet als STIJLVAK zichtbaar zijn, niet als HTML-tekst)"
+            "</div>",
+            height=60,
+            scrolling=False,
+        )
 
-        # CSS voor teksterugloop
-        st.markdown("""
-        <style>
-        table.wrap-table {
-            width:100%;
-            border-collapse:collapse;
-        }
-        table.wrap-table th, table.wrap-table td {
-            padding:10px;
-            border-bottom:1px solid rgba(255,255,255,0.08);
-            vertical-align:top;
-        }
-        table.wrap-table th {
-            text-align:left;
-            font-weight:600;
-        }
-        td.wrap-info {
-            white-space: normal;
-            word-break: break-word;
-            max-width:800px;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        import html as _html
 
-        import html
+        def esc(x) -> str:
+            return _html.escape("" if x is None else str(x))
 
-        html_rows = ""
+        show = rows[["nummer", "Chauffeurnaam", "Onderwerp", "Datum", "Info"]].copy()
+        for c in ["nummer", "Chauffeurnaam", "Onderwerp", "Info"]:
+            show[c] = show[c].fillna("").astype(str)
+        show["Datum"] = show["Datum"].fillna("").astype(str)
 
-        for _, r in rows.iterrows():
-
-            nummer = html.escape(str(r["nummer"]))
-            naam = html.escape(str(r["Chauffeurnaam"]))
-            onderwerp = html.escape(str(r["Onderwerp"]))
-            datum = html.escape(str(r["Datum"]))
-            info = html.escape(str(r["Info"]))
-
-            html_rows += f"""
-            <tr>
-                <td>{nummer}</td>
-                <td>{naam}</td>
-                <td>{onderwerp}</td>
-                <td>{datum}</td>
-                <td class="wrap-info">{info}</td>
-            </tr>
-            """
-
-        html_table = f"""
-        <table class="wrap-table">
-            <thead>
+        body = []
+        for _, r in show.iterrows():
+            body.append(
+                f"""
                 <tr>
-                    <th>nummer</th>
-                    <th>Chauffeurnaam</th>
-                    <th>Onderwerp</th>
-                    <th>Datum</th>
-                    <th>Info</th>
+                  <td class="nowrap">{esc(r['nummer'])}</td>
+                  <td class="nowrap">{esc(r['Chauffeurnaam'])}</td>
+                  <td class="topic">{esc(r['Onderwerp'])}</td>
+                  <td class="nowrap">{esc(r['Datum'])}</td>
+                  <td class="info">{esc(r['Info'])}</td>
                 </tr>
-            </thead>
-            <tbody>
-                {html_rows}
-            </tbody>
-        </table>
+                """
+            )
+
+        html_doc = f"""
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            body {{
+              margin: 0;
+              padding: 0;
+              font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+              color: #E6EDF3;
+              background: transparent;
+            }}
+            .box {{
+              max-height: 650px;
+              overflow: auto;
+              border: 1px solid rgba(255,255,255,0.10);
+              border-radius: 12px;
+              background: rgba(22,27,34,0.60);
+            }}
+            table {{
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+            }}
+            thead th {{
+              position: sticky;
+              top: 0;
+              z-index: 2;
+              text-align: left;
+              font-weight: 700;
+              padding: 10px 12px;
+              background: rgba(22,27,34,0.95);
+              border-bottom: 1px solid rgba(255,255,255,0.12);
+            }}
+            tbody td {{
+              padding: 10px 12px;
+              border-bottom: 1px solid rgba(255,255,255,0.08);
+              vertical-align: top;
+              font-size: 14px;
+            }}
+            th:nth-child(1), td:nth-child(1) {{ width: 110px; }}
+            th:nth-child(2), td:nth-child(2) {{ width: 220px; }}
+            th:nth-child(3), td:nth-child(3) {{ width: 220px; }}
+            th:nth-child(4), td:nth-child(4) {{ width: 130px; }}
+            .nowrap {{
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }}
+            .topic {{
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }}
+            .info {{
+              white-space: normal;     /* <-- TEKSTERUGLOOP */
+              word-break: break-word;  /* <-- breekt lange woorden */
+              line-height: 1.35;
+            }}
+          </style>
+        </head>
+        <body>
+          <div class="box">
+            <table>
+              <thead>
+                <tr>
+                  <th>nummer</th>
+                  <th>Chauffeurnaam</th>
+                  <th>Onderwerp</th>
+                  <th>Datum</th>
+                  <th>Info</th>
+                </tr>
+              </thead>
+              <tbody>
+                {''.join(body)}
+              </tbody>
+            </table>
+          </div>
+        </body>
+        </html>
         """
 
-        st.markdown(html_table, unsafe_allow_html=True)
+        # ✅ Dit rendert echte HTML met teksterugloop
+        components.html(html_doc, height=680, scrolling=True)
 
 except Exception as e:
+    st.error(f"Fout bij laden gesprekken: {e}")
+
     st.error(f"Fout bij laden gesprekken: {e}")
