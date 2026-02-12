@@ -162,7 +162,7 @@ def load_dienst_vandaag_df():
     df.columns = [str(c).strip() for c in df.columns]
 
     wanted = [
-        "personeelsnummer",
+        "personeelnummer",
         "naam",
         "Dienstadres",
         "Uur",
