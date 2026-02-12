@@ -501,6 +501,20 @@ def _ftp_connect():
 
 
     return ftp
+    
+    @st.cache_data(show_spinner=False, ttl=300)  # 5 min cache
+def fetch_ftp_file_bytes(filename: str, env_sig: str) -> bytes:
+    ftp = _ftp_connect()
+    try:
+        bio = BytesIO()
+        ftp.retrbinary(f"RETR {filename}", bio.write)
+        return bio.getvalue()
+    finally:
+        try:
+            ftp.quit()
+        except Exception:
+            pass
+
 
 
 @st.cache_data(show_spinner=False, ttl=300)  # cache 5 min
@@ -1305,12 +1319,13 @@ if current_page == "dashboard":
     with cB:
         if st.button("Zoek", use_container_width=True):
             st.session_state["q"] = (st.session_state.get("q_input") or "").strip().lower()
-    
+        
     q = (st.session_state.get("q") or "").strip().lower()
     
     if not q:
         st.caption("Typ een zoekterm en klik op **Zoek**.")
         st.stop()
+
 
 
     # ----------------------------
