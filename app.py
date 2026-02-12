@@ -11,9 +11,9 @@ st.set_page_config(page_title="Chauffeur Dashboard", layout="wide")
 def load_personeelsfiche_json():
     cfg = st.secrets.get("FTP", None)
     if cfg is None:
-    st.error("FTP secrets ontbreken. Verwacht een [FTP]-sectie in Streamlit secrets.")
-    st.write("Beschikbare secret keys:", list(st.secrets.keys()))
-    st.stop()
+        st.error("FTP secrets ontbreken. Verwacht een [FTP]-sectie in Streamlit secrets.")
+        st.write("Beschikbare secret keys:", list(st.secrets.keys()))
+        st.stop()
 
     host = cfg["host"]
     port = int(cfg.get("port", 21))
