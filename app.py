@@ -545,57 +545,6 @@ def fetch_ftp_excel_for_today_bytes(env_sig: str) -> tuple[str, bytes]:
         except Exception:
             pass
 
-    
-    @st.cache_data(show_spinner=False, ttl=300)  # 5 min cache
-def fetch_ftp_file_bytes(filename: str, env_sig: str) -> bytes:
-    ftp = _ftp_connect()
-    try:
-        bio = BytesIO()
-        ftp.retrbinary(f"RETR {filename}", bio.write)
-        return bio.getvalue()
-    finally:
-        try:
-            ftp.quit()
-        except Exception:
-            pass
-
-
-
-@st.cache_data(show_spinner=False, ttl=300)  # cache 5 min
-def fetch_ftp_excel_for_today_bytes(env_sig: str) -> tuple[str, bytes]:
-    """
-    Haalt via FTP het Excel-bestand op dat start met yyyymmdd (vandaag).
-    Retourneert (filename, bytes).
-    """
-    today_prefix = _today_yyyymmdd_brussels()
-
-    ftp = _ftp_connect()
-    try:
-        files = ftp.nlst()  # lijst bestandsnamen
-        # filter: start met vandaag en is excel
-        candidates = [
-            f for f in files
-            if str(f).startswith(today_prefix) and str(f).lower().endswith((".xlsx", ".xlsm", ".xls"))
-        ]
-
-        if not candidates:
-            raise FileNotFoundError(
-                f"Geen Excel gevonden op FTP die start met {today_prefix} (map: {FTP_DIR})."
-            )
-
-        # Als er meerdere zijn: neem de 'laatste' alfabetisch (meestal “meest specifieke”)
-        candidates.sort()
-        chosen = candidates[-1]
-
-        bio = BytesIO()
-        ftp.retrbinary(f"RETR {chosen}", bio.write)
-        return chosen, bio.getvalue()
-    finally:
-        try:
-            ftp.quit()
-        except Exception:
-            pass
-
 
 def _normcol(x: str) -> str:
     return re.sub(r"\s+", " ", str(x or "").strip().lower())
