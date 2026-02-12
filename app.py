@@ -483,24 +483,68 @@ def _ftp_connect():
     if FTP_USE_TLS:
         ftp = ftplib.FTP_TLS(FTP_HOST, timeout=30)
         ftp.login(FTP_USER, FTP_PASS)
-        ftp.prot_p()  # data-connection encrypten
+        ftp.prot_p()
     else:
         ftp = ftplib.FTP(FTP_HOST, timeout=30)
         ftp.login(FTP_USER, FTP_PASS)
 
     if FTP_DIR:
-        if FTP_DIR:
+        try:
+            ftp.cwd(FTP_DIR)
+        except Exception as e:
             try:
-                ftp.cwd(FTP_DIR)
-            except Exception as e:
-                try:
-                    here = ftp.pwd()
-                except Exception:
-                    here = "(onbekend)"
-                raise RuntimeError(f"Kan niet naar FTP_DIR='{FTP_DIR}' (huidig: {here})") from e
-
+                here = ftp.pwd()
+            except Exception:
+                here = "(onbekend)"
+            raise RuntimeError(f"Kan niet naar FTP_DIR='{FTP_DIR}' (huidig: {here})") from e
 
     return ftp
+
+
+# ✅ NIEUW — algemene FTP file reader (MOET op kolom 0 starten)
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_ftp_file_bytes(filename: str, env_sig: str) -> bytes:
+    ftp = _ftp_connect()
+    try:
+        bio = BytesIO()
+        ftp.retrbinary(f"RETR {filename}", bio.write)
+        return bio.getvalue()
+    finally:
+        try:
+            ftp.quit()
+        except Exception:
+            pass
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_ftp_excel_for_today_bytes(env_sig: str) -> tuple[str, bytes]:
+    today_prefix = _today_yyyymmdd_brussels()
+
+    ftp = _ftp_connect()
+    try:
+        files = ftp.nlst()
+        candidates = [
+            f for f in files
+            if str(f).startswith(today_prefix) and str(f).lower().endswith((".xlsx", ".xlsm", ".xls"))
+        ]
+
+        if not candidates:
+            raise FileNotFoundError(
+                f"Geen Excel gevonden op FTP die start met {today_prefix} (map: {FTP_DIR})."
+            )
+
+        candidates.sort()
+        chosen = candidates[-1]
+
+        bio = BytesIO()
+        ftp.retrbinary(f"RETR {chosen}", bio.write)
+        return chosen, bio.getvalue()
+    finally:
+        try:
+            ftp.quit()
+        except Exception:
+            pass
+
     
     @st.cache_data(show_spinner=False, ttl=300)  # 5 min cache
 def fetch_ftp_file_bytes(filename: str, env_sig: str) -> bytes:
