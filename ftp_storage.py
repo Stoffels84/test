@@ -36,3 +36,25 @@ def ftp_download_bytes(
                 ftp.close()
             except Exception:
                 pass
+
+def ftp_download_text(
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    remote_path: str,
+    timeout: int = 30,
+    passive: bool = True,
+    encoding: str = "utf-8",
+) -> str:
+    data = ftp_download_bytes(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        remote_path=remote_path,
+        timeout=timeout,
+        passive=passive,
+    )
+    return data.decode(encoding, errors="replace")
+
