@@ -156,12 +156,12 @@ def loading_bus(message: str = "Dashboard wordt geladen..."):
         );
         opacity: 0.95;
       }}
-      .busVehicle {{
+    .busVehicle {
         position: absolute;
         left: -800px;
         top: 50%;
-        transform: translateY(-50%);
-        font-size: 220px; /* 🔥 MEGA */
+        transform: translateY(-50%) scaleX(-1); /* ✅ bus omgedraaid */
+        font-size: 220px;
         filter: drop-shadow(0 0 18px rgba(57,255,20,0.28));
         animation: busDrive 2.8s linear infinite;
         will-change: left;
