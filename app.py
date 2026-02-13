@@ -134,7 +134,8 @@ def get_ftp_manager() -> FTPManager:
 # ============================================================
 
 # ⚠️ VERVANG deze bestandsnaam naar jouw echte loginbestand!
-LOGIN_FILE = "Logins.xlsx"
+LOGIN_FILE = "toegestaan_gebruik.xlsx"
+
 
 @st.cache_data(ttl=300)
 def load_login_df() -> pd.DataFrame:
