@@ -12,7 +12,7 @@
 #      3C) Schade: schade met macro.xlsm                  (sheet: BRON)
 #      3D) Coaching: Coachingslijst.xlsx (Coaching + Voltooide coachings)
 #      3E) Gesprekken: Overzicht gesprekken (aangepast).xlsx (sheet: gesprekken per thema)
-#      3F) Loginbestand: (Blad1) Naam, passwoord, paswoord_hash
+#      3F) Loginbestand: (Blad1) Naam, paswoord, paswoord_hash
 #   4) UI: Titel + zoekbalk (personeelsnummer)
 #   5) UI: Persoonlijke gegevens
 #   6) UI: Dienst van vandaag
@@ -145,7 +145,7 @@ def load_login_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="Blad1", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    required = ["Naam", "passwoord", "paswoord_hash"]
+    required = ["Naam", "paswoord", "paswoord_hash"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise KeyError(f"Loginbestand mist kolommen: {missing}. Gevonden: {list(df.columns)}")
@@ -159,7 +159,7 @@ def load_login_df() -> pd.DataFrame:
 def verify_password(plain: str, stored_plain: str, stored_hash: str) -> bool:
     """
     Ondersteunt:
-    - plain match met kolom 'passwoord' (als die gebruikt wordt)
+    - plain match met kolom 'paswoord' (als die gebruikt wordt)
     - bcrypt hash (als paswoord_hash start met $2 en passlib beschikbaar is)
     - sha256 hex hash (64 hex chars) als fallback
     """
@@ -205,7 +205,7 @@ def login_gate() -> None:
 
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Naam")
-        password = st.text_input("Passwoord", type="password")
+        password = st.text_input("Paswoord", type="password")
         submitted = st.form_submit_button("Inloggen")
 
     if submitted:
@@ -213,7 +213,7 @@ def login_gate() -> None:
         p = (password or "").strip()
 
         if not u or not p:
-            st.warning("Vul naam en passwoord in.")
+            st.warning("Vul naam en paswoord in.")
             st.stop()
 
         match = df[df["Naam"].astype(str).str.strip() == u]
@@ -222,7 +222,7 @@ def login_gate() -> None:
             st.stop()
 
         row = match.iloc[0]
-        ok = verify_password(p, row["passwoord"], row["paswoord_hash"])
+        ok = verify_password(p, row["paswoord"], row["paswoord_hash"])
 
         if not ok:
             st.error("Onjuiste login.")
