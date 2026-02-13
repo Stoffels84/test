@@ -452,7 +452,7 @@ def load_coaching_gepland_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="Coaching", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    wanted = ["aanvraagsdatum", "P-nr", "Volledige naam", "Opmerking"]
+    wanted = ["aanvraagsdatum", "P-nr", "Volledige naam", "Opmerkingen"]
     col_map = {str(c).strip().lower(): c for c in df.columns}
 
     selected, missing = [], []
