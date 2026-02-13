@@ -461,7 +461,7 @@ st.divider()
 # 6) UI: SCHADE (BRON)
 # ============================================================
 
-st.header("Schade (BRON)")
+st.header("Schade (EAF)")
 try:
     schade_df = load_schade_bron_df()
 
@@ -526,7 +526,6 @@ try:
         else:
             st.dataframe(gepland_rows, use_container_width=True, hide_index=True)
 
-    st.divider()
 
     # ---------- Voltooide coaching ----------
     st.subheader("Voltooide coaching")
