@@ -38,6 +38,41 @@ from ftp_client import FTPConfig, FTPManager
 # ============================================================
 
 st.set_page_config(page_title="Chauffeur Dashboard", layout="wide")
+# ============================================================
+# GLOBAL STYLE (Enterprise Dark - Fluo Groene titels)
+# ============================================================
+
+st.markdown("""
+<style>
+
+/* FLUO GROEN kleur */
+:root {
+    --fluo-green: #39FF14;
+}
+
+/* Hoofd titel */
+h1 {
+    color: var(--fluo-green) !important;
+}
+
+/* Headers */
+h2 {
+    color: var(--fluo-green) !important;
+}
+
+/* Subheaders */
+h3 {
+    color: var(--fluo-green) !important;
+}
+
+/* Optioneel: glow effect (enterprise look) */
+h1, h2, h3 {
+    text-shadow: 0 0 8px rgba(57,255,20,0.35);
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 
 
 def normalize_pnr(x) -> str:
