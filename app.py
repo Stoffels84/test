@@ -1,31 +1,33 @@
 # app.py
 # ============================================================
-# CHAUFFEUR DASHBOARD (Enterprise structuur + FTP)
+# CHAUFFEUR DASHBOARD (Enterprise structuur + FTP + LOGIN)
 # ------------------------------------------------------------
 # SECTIES (van boven naar beneden):
-#   0) CONFIG + HELPERS
-#   1) FTP CONFIG + FTP MANAGER (één centrale plek)
-#   2) DATA LOADERS (alle bestanden via FTP)
-#      2A) JSON: personeelsficheGB.json
-#      2B) Dienst van vandaag: steekkaart/yyyymmdd*.xlsx  (sheet: Dienstlijst)
-#      2C) Schade: schade met macro.xlsm                  (sheet: BRON)
-#      2D) Coaching: Coachingslijst.xlsx
-#           - Gepland: sheet Coaching
-#           - Voltooid: sheet Voltooide coachings
-#      2E) Gesprekken: Overzicht gesprekken (aangepast).xlsx (sheet: gesprekken per thema)
-#   3) UI: Titel + zoekbalk (personeelsnummer)
-#   4) UI: Persoonlijke gegevens
-#   5) UI: Dienst van vandaag
-#   6) UI: Schade (BRON)
-#   7) UI: Coaching (onder schade)
-#   8) UI: Gesprekken (onder coaching, met teksterugloop via components.html)
+#   0) CONFIG + GLOBAL STYLE (fluo groene titels)
+#   1) LOGIN (FTP Excel) + LOGOUT knop
+#   2) FTP CONFIG + FTP MANAGER (één centrale plek)
+#   3) DATA LOADERS (alle bestanden via FTP)
+#      3A) JSON: personeelsficheGB.json
+#      3B) Dienst van vandaag: steekkaart/yyyymmdd*.xlsx  (sheet: Dienstlijst)
+#      3C) Schade: schade met macro.xlsm                  (sheet: BRON)
+#      3D) Coaching: Coachingslijst.xlsx (Coaching + Voltooide coachings)
+#      3E) Gesprekken: Overzicht gesprekken (aangepast).xlsx (sheet: gesprekken per thema)
+#      3F) Loginbestand: (Blad1) Naam, passwoord, paswoord_hash
+#   4) UI: Titel + zoekbalk (personeelsnummer)
+#   5) UI: Persoonlijke gegevens
+#   6) UI: Dienst van vandaag
+#   7) UI: Schade (BRON)
+#   8) UI: Coaching (onder schade)
+#   9) UI: Gesprekken (onder coaching, teksterugloop via components.html)
 # ============================================================
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from io import BytesIO
+from typing import Optional
 
 import pandas as pd
 import streamlit as st
@@ -34,46 +36,29 @@ import streamlit.components.v1 as components
 from ftp_client import FTPConfig, FTPManager
 
 # ============================================================
-# 0) CONFIG + HELPERS
+# 0) CONFIG + GLOBAL STYLE
 # ============================================================
 
 st.set_page_config(page_title="Chauffeur Dashboard", layout="wide")
+
+# Fluo-groene titels (h1/h2/h3)
+st.markdown(
+    """
+    <style>
+    :root { --fluo-green: #39FF14; }
+
+    h1, h2, h3 {
+        color: var(--fluo-green) !important;
+        text-shadow: 0 0 8px rgba(57,255,20,0.35);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ============================================================
-# GLOBAL STYLE (Enterprise Dark - Fluo Groene titels)
+# 0B) HELPERS
 # ============================================================
-
-st.markdown("""
-<style>
-
-/* FLUO GROEN kleur */
-:root {
-    --fluo-green: #39FF14;
-}
-
-/* Hoofd titel */
-h1 {
-    color: var(--fluo-green) !important;
-}
-
-/* Headers */
-h2 {
-    color: var(--fluo-green) !important;
-}
-
-/* Subheaders */
-h3 {
-    color: var(--fluo-green) !important;
-}
-
-/* Optioneel: glow effect (enterprise look) */
-h1, h2, h3 {
-    text-shadow: 0 0 8px rgba(57,255,20,0.35);
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
 
 def normalize_pnr(x) -> str:
     """Normaliseer personeelsnr: strip, en 123.0 -> 123."""
@@ -84,6 +69,27 @@ def normalize_pnr(x) -> str:
         s = s[:-2]
     return s
 
+
+def pick_col(df: pd.DataFrame, wanted_name: str) -> Optional[str]:
+    """Zoek een kolom case-insensitive en return de echte kolomnaam."""
+    w = wanted_name.strip().lower()
+    for c in df.columns:
+        if str(c).strip().lower() == w:
+            return c
+    return None
+
+
+# bcrypt (optioneel)
+try:
+    from passlib.context import CryptContext
+    _PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
+except Exception:
+    _PWD_CONTEXT = None
+
+
+# ============================================================
+# 1) FTP SECRETS + FTP MANAGER
+# ============================================================
 
 def require_ftp_secrets() -> dict:
     """
@@ -110,22 +116,6 @@ def require_ftp_secrets() -> dict:
     return cfg
 
 
-def pick_col(df: pd.DataFrame, wanted_name: str) -> str | None:
-    """
-    Zoek een kolom case-insensitive.
-    Returns de échte kolomnaam of None.
-    """
-    w = wanted_name.strip().lower()
-    for c in df.columns:
-        if str(c).strip().lower() == w:
-            return c
-    return None
-
-
-# ============================================================
-# 1) FTP CONFIG + FTP MANAGER
-# ============================================================
-
 @st.cache_resource
 def get_ftp_manager() -> FTPManager:
     cfg = require_ftp_secrets()
@@ -140,12 +130,130 @@ def get_ftp_manager() -> FTPManager:
 
 
 # ============================================================
-# 2) DATA LOADERS (FTP)
+# 2) LOGIN (FTP Excel) + LOGOUT
 # ============================================================
 
-# -------------------------
-# 2A) JSON: personeelsficheGB.json
-# -------------------------
+# ⚠️ VERVANG deze bestandsnaam naar jouw echte loginbestand!
+LOGIN_FILE = "Logins.xlsx"
+
+@st.cache_data(ttl=300)
+def load_login_df() -> pd.DataFrame:
+    ftp = get_ftp_manager()
+    b = ftp.download_bytes(ftp.join(LOGIN_FILE))
+
+    df = pd.read_excel(BytesIO(b), sheet_name="Blad1", engine="openpyxl")
+    df.columns = [str(c).strip() for c in df.columns]
+
+    required = ["Naam", "passwoord", "paswoord_hash"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise KeyError(f"Loginbestand mist kolommen: {missing}. Gevonden: {list(df.columns)}")
+
+    for c in required:
+        df[c] = df[c].fillna("").astype(str)
+
+    return df
+
+
+def verify_password(plain: str, stored_plain: str, stored_hash: str) -> bool:
+    """
+    Ondersteunt:
+    - plain match met kolom 'passwoord' (als die gebruikt wordt)
+    - bcrypt hash (als paswoord_hash start met $2 en passlib beschikbaar is)
+    - sha256 hex hash (64 hex chars) als fallback
+    """
+    plain = (plain or "").strip()
+    stored_plain = (stored_plain or "").strip()
+    stored_hash = (stored_hash or "").strip()
+
+    # 1) plain match
+    if stored_plain and plain == stored_plain:
+        return True
+
+    # 2) bcrypt
+    if stored_hash.startswith("$2") and _PWD_CONTEXT is not None:
+        try:
+            return _PWD_CONTEXT.verify(plain, stored_hash)
+        except Exception:
+            pass
+
+    # 3) sha256
+    is_hex_64 = len(stored_hash) == 64 and all(ch in "0123456789abcdefABCDEF" for ch in stored_hash)
+    if is_hex_64:
+        return hashlib.sha256(plain.encode("utf-8")).hexdigest().lower() == stored_hash.lower()
+
+    return False
+
+
+def login_gate() -> None:
+    """Toont loginpagina tot gebruiker is geauthenticeerd."""
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+        st.session_state.user_name = None
+
+    if st.session_state.authenticated:
+        return
+
+    st.title("🔐 Login")
+
+    try:
+        df = load_login_df()
+    except Exception as e:
+        st.error(f"Kan loginbestand niet laden ({LOGIN_FILE}): {e}")
+        st.stop()
+
+    with st.form("login_form", clear_on_submit=False):
+        username = st.text_input("Naam")
+        password = st.text_input("Passwoord", type="password")
+        submitted = st.form_submit_button("Inloggen")
+
+    if submitted:
+        u = (username or "").strip()
+        p = (password or "").strip()
+
+        if not u or not p:
+            st.warning("Vul naam en passwoord in.")
+            st.stop()
+
+        match = df[df["Naam"].astype(str).str.strip() == u]
+        if match.empty:
+            st.error("Onjuiste login.")
+            st.stop()
+
+        row = match.iloc[0]
+        ok = verify_password(p, row["passwoord"], row["paswoord_hash"])
+
+        if not ok:
+            st.error("Onjuiste login.")
+            st.stop()
+
+        st.session_state.authenticated = True
+        st.session_state.user_name = u
+        st.rerun()
+
+    # zolang niet ingelogd: stop app hier
+    st.stop()
+
+
+# Gate vóór alles
+login_gate()
+
+# LOGOUT in sidebar
+with st.sidebar:
+    st.write(f"Ingelogd als: **{st.session_state.get('user_name','')}**")
+    if st.button("Uitloggen"):
+        st.session_state.authenticated = False
+        st.session_state.user_name = None
+        st.rerun()
+
+    st.divider()
+    if st.button("🔄 Herlaad alles (cache leegmaken)"):
+        st.cache_data.clear()
+
+
+# ============================================================
+# 3) DATA LOADERS (FTP)
+# ============================================================
 
 @st.cache_data(ttl=300)
 def load_personeelsfiche_json():
@@ -178,10 +286,6 @@ def find_person_record(data, personeelnummer: str):
     return None
 
 
-# -------------------------
-# 2B) Dienst van vandaag: steekkaart/yyyymmdd*.xlsx (sheet: Dienstlijst)
-# -------------------------
-
 @st.cache_data(ttl=120)
 def load_dienst_vandaag_df() -> pd.DataFrame:
     ftp = get_ftp_manager()
@@ -202,7 +306,6 @@ def load_dienst_vandaag_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="Dienstlijst", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    # In deze excel filteren we op 'personeelnummer' (zonder s)
     wanted = [
         "personeelnummer",
         "naam",
@@ -236,10 +339,6 @@ def load_dienst_vandaag_df() -> pd.DataFrame:
     return out
 
 
-# -------------------------
-# 2C) Schade: schade met macro.xlsm (sheet: BRON)
-# -------------------------
-
 @st.cache_data(ttl=300)
 def load_schade_bron_df() -> pd.DataFrame:
     ftp = get_ftp_manager()
@@ -248,7 +347,7 @@ def load_schade_bron_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="BRON", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    # In BRON heet de kolom 'personeelsnr' -> hernoem intern naar 'personeelsnummer'
+    # BRON: personeelsnr -> personeelsnummer
     if "personeelsnr" in df.columns and "personeelsnummer" not in df.columns:
         df = df.rename(columns={"personeelsnr": "personeelsnummer"})
 
@@ -269,16 +368,11 @@ def load_schade_bron_df() -> pd.DataFrame:
     out = df[selected].copy()
     out.attrs["missing_columns"] = missing
 
-    # Datum zonder uur
     if "Datum" in out.columns:
         out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce").dt.date
 
     return out
 
-
-# -------------------------
-# 2D) Coaching: Coachingslijst.xlsx
-# -------------------------
 
 @st.cache_data(ttl=300)
 def load_coaching_gepland_df() -> pd.DataFrame:
@@ -288,7 +382,7 @@ def load_coaching_gepland_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="Coaching", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    wanted = ["aanvraagsdatum", "P-nr", "Volledige naam", "Opmerkingen"]
+    wanted = ["aanvraagdatum", "P-nr", "Volledige naam", "Opmerkingen"]
     col_map = {str(c).strip().lower(): c for c in df.columns}
 
     selected, missing = [], []
@@ -305,10 +399,9 @@ def load_coaching_gepland_df() -> pd.DataFrame:
     out = df[selected].copy()
     out.attrs["missing_columns"] = missing
 
-    # aanvraagsdatum zonder uur
-    col = pick_col(out, "aanvraagdatum")
-    if col:
-        out[col] = pd.to_datetime(out[col], errors="coerce").dt.date
+    c = pick_col(out, "aanvraagdatum")
+    if c:
+        out[c] = pd.to_datetime(out[c], errors="coerce").dt.date
 
     return out
 
@@ -321,7 +414,7 @@ def load_coaching_voltooid_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="Voltooide coachings", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    wanted = ["P-nr", "Volledige naam", "Opmerking", "Instructeur", "DAtum coaching"]
+    wanted = ["P-nr", "Volledige naam", "Opmerkingen", "Instructeur", "DAtum coaching"]
     col_map = {str(c).strip().lower(): c for c in df.columns}
 
     selected, missing = [], []
@@ -338,17 +431,12 @@ def load_coaching_voltooid_df() -> pd.DataFrame:
     out = df[selected].copy()
     out.attrs["missing_columns"] = missing
 
-    # datum coaching zonder uur (we zoeken op "datum coaching" case-insensitive)
     for c in out.columns:
         if "datum" in c.lower() and "coach" in c.lower():
             out[c] = pd.to_datetime(out[c], errors="coerce").dt.date
 
     return out
 
-
-# -------------------------
-# 2E) Gesprekken: Overzicht gesprekken (aangepast).xlsx (sheet: gesprekken per thema)
-# -------------------------
 
 @st.cache_data(ttl=300)
 def load_gesprekken_df() -> pd.DataFrame:
@@ -378,7 +466,6 @@ def load_gesprekken_df() -> pd.DataFrame:
     out = df[selected].copy()
     out.attrs["missing_columns"] = missing
 
-    # datum zonder uur
     if "Datum" in out.columns:
         out["Datum"] = pd.to_datetime(out["Datum"], errors="coerce").dt.date
 
@@ -386,25 +473,20 @@ def load_gesprekken_df() -> pd.DataFrame:
 
 
 # ============================================================
-# 3) UI: TITEL + ZOEKBALK
+# 4) UI: TITEL + ZOEKBALK
 # ============================================================
 
 st.title("🚍 Chauffeur Dashboard")
 
-with st.sidebar:
-    st.header("Data")
-    if st.button("🔄 Herlaad alles (cache leegmaken)"):
-        st.cache_data.clear()
-
 pnr_input = st.text_input("Zoek op personeelsnummer", placeholder="bv. 12345")
 if not pnr_input.strip():
-    st.info("Geef een personeelsnummer in om de fiche, dienst, schade, coaching en gesprekken te tonen.")
+    st.info("Geef een personeelsnummer in om alle data te tonen.")
     st.stop()
 
 pnr = normalize_pnr(pnr_input)
 
 # ============================================================
-# 4) UI: PERSOONLIJKE GEGEVENS
+# 5) UI: PERSOONLIJKE GEGEVENS
 # ============================================================
 
 st.header("Persoonlijke gegevens")
@@ -423,7 +505,7 @@ except Exception as e:
 st.divider()
 
 # ============================================================
-# 5) UI: DIENST VAN VANDAAG
+# 6) UI: DIENST VAN VANDAAG
 # ============================================================
 
 st.header("Dienst van vandaag")
@@ -458,10 +540,10 @@ except Exception as e:
 st.divider()
 
 # ============================================================
-# 6) UI: SCHADE (BRON)
+# 7) UI: SCHADE (BRON)
 # ============================================================
 
-st.header("Schade (EAF)")
+st.header("Schade (BRON)")
 try:
     schade_df = load_schade_bron_df()
 
@@ -501,15 +583,16 @@ except Exception as e:
 st.divider()
 
 # ============================================================
-# 7) UI: COACHING (onder schade)
+# 8) UI: COACHING (onder schade)
 # ============================================================
 
 st.header("Coaching")
 
 try:
-    # ---------- Geplande coaching ----------
+    # --- Geplande coaching ---
     st.subheader("Geplande coaching")
     gepland = load_coaching_gepland_df()
+
     miss = gepland.attrs.get("missing_columns", [])
     if miss:
         st.warning(f"Ontbrekende kolommen in 'Coaching' (niet getoond): {', '.join(miss)}")
@@ -526,10 +609,12 @@ try:
         else:
             st.dataframe(gepland_rows, use_container_width=True, hide_index=True)
 
+    st.divider()
 
-    # ---------- Voltooide coaching ----------
+    # --- Voltooide coaching ---
     st.subheader("Voltooide coaching")
     voltooid = load_coaching_voltooid_df()
+
     miss2 = voltooid.attrs.get("missing_columns", [])
     if miss2:
         st.warning(f"Ontbrekende kolommen in 'Voltooide coachings' (niet getoond): {', '.join(miss2)}")
@@ -541,7 +626,6 @@ try:
         voltooid[pcol2] = voltooid[pcol2].astype(str).map(normalize_pnr)
         voltooid_rows = voltooid[voltooid[pcol2] == pnr].copy()
 
-        # sorteer op datum coaching (kolom bevat 'datum' en 'coach')
         date_cols = [c for c in voltooid_rows.columns if "datum" in c.lower() and "coach" in c.lower()]
         if date_cols:
             voltooid_rows = voltooid_rows.sort_values(date_cols[0], ascending=False)
@@ -557,7 +641,7 @@ except Exception as e:
 st.divider()
 
 # ============================================================
-# 8) UI: GESPREKKEN (met teksterugloop via components.html)
+# 9) UI: GESPREKKEN (teksterugloop via components.html)
 # ============================================================
 
 st.header("Gesprekken")
@@ -661,8 +745,8 @@ try:
               text-overflow: ellipsis;
             }}
             .info {{
-              white-space: normal;     /* <-- TEKSTERUGLOOP */
-              word-break: break-word;  /* <-- breekt lange woorden */
+              white-space: normal;
+              word-break: break-word;
               line-height: 1.35;
             }}
           </style>
