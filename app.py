@@ -156,7 +156,7 @@ def loading_bus(message: str = "Dashboard wordt geladen..."):
         );
         opacity: 0.95;
       }}
-    .busVehicle {
+    .busVehicle {{
         position: absolute;
         left: -800px;
         top: 50%;
