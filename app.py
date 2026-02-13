@@ -6,14 +6,14 @@
 # ✅ Batch-load: alles in 1 keer (parallel) -> geen secties die apart laden
 # ✅ Mega bus-animatie tijdens laden (fullscreen overlay)
 # ✅ Datumfix: Europe/Brussels (Streamlit Cloud UTC probleem)
-# ✅ Originele secties: Persoonlijke gegevens, Dienst, Schade, Coaching, Gesprekken (met mooie HTML table)
+# ✅ Persoonlijke gegevens: st.table() => GEEN SCROLL/SLIDER, alles onder elkaar
 # ============================================================
 
 from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import datetime
 from io import BytesIO
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -24,6 +24,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from ftp_client import FTPConfig, FTPManager
+
 
 # ============================================================
 # 0) CONFIG + GLOBAL STYLE
@@ -84,9 +85,6 @@ except Exception:
 # ============================================================
 
 def loading_bus(message: str = "Dashboard wordt geladen..."):
-    """
-    Fullscreen overlay met mega bus. Werkt goed als 'visuele loader' in Streamlit.
-    """
     html = f"""
     <div class="busOverlay">
       <div class="busBox">
@@ -185,16 +183,6 @@ def loading_bus(message: str = "Dashboard wordt geladen..."):
 # ============================================================
 
 def require_ftp_secrets() -> dict:
-    """
-    Verwacht in Streamlit secrets:
-
-    [FTP]
-    host="..."
-    port=21
-    username="..."
-    password="..."
-    base_dir="/pad/naar/map"   # optioneel
-    """
     cfg = st.secrets.get("FTP")
     if cfg is None:
         st.error("FTP configuratie ontbreekt. Voeg een [FTP]-sectie toe in Streamlit secrets.")
@@ -249,12 +237,6 @@ def load_login_df() -> pd.DataFrame:
 
 
 def verify_password(plain: str, stored_plain: str, stored_hash: str) -> bool:
-    """
-    Ondersteunt:
-    - plain match met kolom 'paswoord'
-    - bcrypt hash (als paswoord_hash start met $2 en passlib beschikbaar is)
-    - sha256 hex hash (64 hex chars) als fallback
-    """
     plain = (plain or "").strip()
     stored_plain = (stored_plain or "").strip()
     stored_hash = (stored_hash or "").strip()
@@ -279,7 +261,6 @@ def verify_password(plain: str, stored_plain: str, stored_hash: str) -> bool:
 
 
 def login_gate() -> None:
-    """Toont loginpagina tot gebruiker is geauthenticeerd."""
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.user_name = None
@@ -320,14 +301,13 @@ def login_gate() -> None:
                     st.session_state.user_name = u
                     st.rerun()
 
-    # zolang niet ingelogd: stop app hier
     st.stop()
 
 
 # Gate vóór alles
 login_gate()
 
-# LOGOUT in sidebar
+# Sidebar: logout + cache clear
 with st.sidebar:
     st.write(f"Ingelogd als: **{st.session_state.get('user_name','')}**")
     if st.button("Uitloggen"):
@@ -354,7 +334,6 @@ def load_personeelsfiche_json():
 
 
 def find_person_record(data, personeelnummer: str):
-    """Zoek record in JSON op personeelnummer/personeelsnummer (ook nested)."""
     target = normalize_pnr(personeelnummer)
 
     if isinstance(data, list):
@@ -382,7 +361,7 @@ def load_dienst_vandaag_df() -> pd.DataFrame:
     ftp = get_ftp_manager()
 
     steekkaart_dir = ftp.join("steekkaart")
-    today_prefix = datetime.now(BRUSSELS).strftime("%Y%m%d")  # ✅ timezone fix
+    today_prefix = datetime.now(BRUSSELS).strftime("%Y%m%d")
 
     files = ftp.list_files(steekkaart_dir)
     matches = [f for f in files if f.startswith(today_prefix) and f.lower().endswith((".xlsx", ".xls"))]
@@ -390,7 +369,7 @@ def load_dienst_vandaag_df() -> pd.DataFrame:
         raise FileNotFoundError(f"Geen dienstbestand gevonden in '{steekkaart_dir}' dat start met {today_prefix}")
 
     matches.sort()
-    filename = matches[-1]  # ✅ laatste bestand van de dag
+    filename = matches[-1]  # laatste bestand
 
     remote_path = f"{steekkaart_dir.rstrip('/')}/{filename}"
     b = ftp.download_bytes(remote_path)
@@ -439,7 +418,6 @@ def load_schade_bron_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="BRON", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    # BRON: personeelsnr -> personeelsnummer
     if "personeelsnr" in df.columns and "personeelsnummer" not in df.columns:
         df = df.rename(columns={"personeelsnr": "personeelsnummer"})
 
@@ -570,19 +548,6 @@ def load_gesprekken_df() -> pd.DataFrame:
 
 @st.cache_data(ttl=120)
 def load_all_data() -> dict:
-    """
-    Laadt alle bronnen in één keer. Parallel voor FTP I/O.
-    Returned:
-      {
-        "person_json": ...,
-        "dienst_df": ...,
-        "schade_df": ...,
-        "coaching_gepland": ...,
-        "coaching_voltooid": ...,
-        "gesprekken_df": ...,
-        "_errors": {...}
-      }
-    """
     tasks = {
         "person_json": load_personeelsfiche_json,
         "dienst_df": load_dienst_vandaag_df,
@@ -642,22 +607,53 @@ gepland = bundle.get("coaching_gepland")
 voltooid = bundle.get("coaching_voltooid")
 gesprekken_df = bundle.get("gesprekken_df")
 
+
 # ============================================================
-# 5) UI: PERSOONLIJKE GEGEVENS
+# 5) UI: PERSOONLIJKE GEGEVENS (✅ st.table => geen scroll)
 # ============================================================
 
 st.header("Persoonlijke gegevens")
 if "person_json" in errors:
     st.error(f"Fout bij laden personeelsficheGB.json: {errors['person_json']}")
 else:
-    person = find_person_record(data_json, pnr) if data_json is not None else None
+    person = None
+    if data_json is not None:
+        person = None
+
+        # zoek record
+        def _find_person_record(data, personeelnummer: str):
+            target = normalize_pnr(personeelnummer)
+
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        for key in ["personeelnummer", "personeelsnummer", "pnr", "PNR", "Personeelnummer", "Personeelsnummer"]:
+                            if key in item and normalize_pnr(item.get(key)) == target:
+                                return item
+                return None
+
+            if isinstance(data, dict):
+                if target in data and isinstance(data[target], dict):
+                    return data[target]
+                for v in data.values():
+                    rec = _find_person_record(v, target)
+                    if rec:
+                        return rec
+                return None
+
+            return None
+
+        person = _find_person_record(data_json, pnr)
+
     if person:
         df_person = pd.DataFrame([{"Veld": k, "Waarde": v} for k, v in person.items()])
-        st.dataframe(df_person, use_container_width=True, hide_index=True)
+        # ✅ st.table -> geen slider/scroll, alles zichtbaar
+        st.table(df_person)
     else:
         st.warning("Geen persoonlijke fiche gevonden voor dit personeelsnummer.")
 
 st.divider()
+
 
 # ============================================================
 # 6) UI: DIENST VAN VANDAAG
@@ -688,6 +684,7 @@ else:
 
 st.divider()
 
+
 # ============================================================
 # 7) UI: SCHADE (BRON)
 # ============================================================
@@ -714,21 +711,19 @@ else:
         else:
             if "Link" in rows.columns:
                 rows["Link"] = rows["Link"].fillna("").astype(str)
-                # maak "nan" of niet-url leeg
                 rows["Link"] = rows["Link"].where(rows["Link"].str.startswith(("http://", "https://")), "")
 
                 st.dataframe(
                     rows,
                     use_container_width=True,
                     hide_index=True,
-                    column_config={
-                        "Link": st.column_config.LinkColumn("Link", display_text="Open"),
-                    },
+                    column_config={"Link": st.column_config.LinkColumn("Link", display_text="Open")},
                 )
             else:
                 st.dataframe(rows, use_container_width=True, hide_index=True)
 
 st.divider()
+
 
 # ============================================================
 # 8) UI: COACHING
@@ -785,6 +780,7 @@ else:
             st.dataframe(voltooid_rows, use_container_width=True, hide_index=True)
 
 st.divider()
+
 
 # ============================================================
 # 9) UI: GESPREKKEN (teksterugloop via components.html)
@@ -918,5 +914,4 @@ else:
             </html>
             """
 
-            # enkel de interne box scrollt -> geen dubbele scrollbars
             components.html(html_doc, height=680, scrolling=False)
