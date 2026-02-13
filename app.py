@@ -268,7 +268,7 @@ def login_gate() -> None:
     if st.session_state.authenticated:
         return
 
-    st.title("🔐 Login")
+    st.title("🔐 Dashboard Chauffeur OT Gent")
 
     try:
         df = load_login_df()
@@ -452,7 +452,7 @@ def load_coaching_gepland_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="Coaching", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    wanted = ["aanvraagsdatum", "P-nr", "Volledige naam", "Opmerkingen"]
+    wanted = ["aanvraagsdatum", "P-nr", "Volledige naam", "Opmerking"]
     col_map = {str(c).strip().lower(): c for c in df.columns}
 
     selected, missing = [], []
@@ -484,7 +484,7 @@ def load_coaching_voltooid_df() -> pd.DataFrame:
     df = pd.read_excel(BytesIO(b), sheet_name="Voltooide coachings", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    wanted = ["P-nr", "Volledige naam", "Opmerkingen", "Instructeur", "DAtum coaching"]
+    wanted = ["P-nr", "Volledige naam", "Opmerking", "Instructeur", "DAtum coaching"]
     col_map = {str(c).strip().lower(): c for c in df.columns}
 
     selected, missing = [], []
@@ -686,10 +686,10 @@ st.divider()
 
 
 # ============================================================
-# 7) UI: SCHADE (BRON)
+# 7) UI: SCHADE (EAF)
 # ============================================================
 
-st.header("Schade (BRON)")
+st.header("Schade (EAF)")
 if "schade_df" in errors:
     st.error(f"Fout bij laden schade (BRON): {errors['schade_df']}")
 else:
