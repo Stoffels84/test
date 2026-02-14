@@ -7,13 +7,13 @@
 # ✅ Mega bus-animatie tijdens laden (fullscreen overlay)
 # ✅ Datumfix: Europe/Brussels
 # ✅ Persoonlijke gegevens: st.table() => geen scroll/slider
-# ✅ Dienst: vandaag + morgen + overmorgen (today + 1/+2)
+# ✅ Dienst: gisteren + vandaag + morgen (today -1 / today / today +1)
 # ✅ Dienst-optimalisatie: 3× list_files() -> 1× list_files() (grote winst)
-# ✅ "Geen dienstbestand gevonden" vervangen door: "Er is nog geen steekkaart beschikbaar..."
+# ✅ Geen "Geen dienstbestand gevonden" -> "Er is nog geen steekkaart beschikbaar..."
 # ✅ Coaching: Coachingslijst.xlsx 1x downloaden, 2 sheets lezen
 # ✅ Geen mutaties op gecachte DF's (altijd .copy() in UI)
 # ✅ find_person_record deduplicated
-# ✅ Subtitels Vandaag/Morgen/Overmorgen gecentreerd
+# ✅ Subtitels Gisteren/Vandaag/Morgen gecentreerd
 # ✅ Dienst-blokken (titel + caption + tabel) gecentreerd + smaller
 # ============================================================
 
@@ -23,7 +23,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Optional, Dict
+from typing import Optional
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -50,7 +50,6 @@ st.markdown(
         text-shadow: 0 0 8px rgba(57,255,20,0.35);
     }
 
-    /* Center helper for section subtitles */
     .centerSubTitle {
         text-align: center;
         font-weight: 900;
@@ -61,7 +60,6 @@ st.markdown(
         letter-spacing: 0.2px;
     }
 
-    /* Center helper for captions */
     .centerCaption {
         text-align: center;
         font-size: 14px;
@@ -134,7 +132,6 @@ def centered_caption(text: str) -> None:
 
 
 def center_block_columns():
-    """Center content in the middle column (smaller content like your screenshot)."""
     return st.columns([1, 6, 1])
 
 
@@ -147,7 +144,7 @@ except Exception:
 
 
 # ============================================================
-# 🚍 0C) LOADING ANIMATIE (MEGA BUS FULLSCREEN)
+# 🚍 0C) LOADING ANIMATIE
 # ============================================================
 
 def loading_bus(message: str = "Dashboard wordt geladen..."):
@@ -277,7 +274,7 @@ def get_ftp_manager() -> FTPManager:
 
 
 # ============================================================
-# 2) LOGIN (FTP Excel) + LOGOUT
+# 2) LOGIN (FTP Excel)
 # ============================================================
 
 LOGIN_FILE = "toegestaan_gebruik.xlsx"
@@ -400,10 +397,7 @@ def load_personeelsfiche_json():
 
 
 # ----------------------------
-# ✅ Dienst-optimalisatie:
-#  - 1× list_files()
-#  - selecteer latest file per prefix
-#  - download/read alleen wat bestaat
+# ✅ Dienst-optimalisatie (1× list_files)
 # ----------------------------
 
 DIENST_WANTED = [
@@ -439,7 +433,6 @@ def _pick_latest_file_for_prefix(files: list[str], prefix: str) -> Optional[str]
 
 @st.cache_data(ttl=120)
 def load_dienst_df_for_filename(filename: str) -> pd.DataFrame:
-    """Download + parse één specifiek dienstbestand."""
     ftp = get_ftp_manager()
     steekkaart_dir = ftp.join("steekkaart")
     remote_path = f"{steekkaart_dir.rstrip('/')}/{filename}"
@@ -510,7 +503,6 @@ def load_coachings_bytes() -> bytes:
 def load_coachings_dfs() -> dict:
     b = load_coachings_bytes()
 
-    # --- Gepland ---
     df_gepland = pd.read_excel(BytesIO(b), sheet_name="Coaching", engine="openpyxl")
     df_gepland.columns = [str(c).strip() for c in df_gepland.columns]
 
@@ -533,7 +525,6 @@ def load_coachings_dfs() -> dict:
     if c:
         gepland[c] = pd.to_datetime(gepland[c], errors="coerce").dt.date
 
-    # --- Voltooid ---
     df_voltooid = pd.read_excel(BytesIO(b), sheet_name="Voltooide coachings", engine="openpyxl")
     df_voltooid.columns = [str(c).strip() for c in df_voltooid.columns]
 
@@ -594,39 +585,37 @@ def load_gesprekken_df() -> pd.DataFrame:
 
 
 # ============================================================
-# 3G) BATCH LOAD: alles in 1 keer (parallel)
+# 3G) BATCH LOAD
 # ============================================================
 
 @st.cache_data(ttl=120)
 def load_all_data() -> dict:
     today = datetime.now(BRUSSELS).date()
+    yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
-    overmorgen = today + timedelta(days=2)
 
     prefixes = {
+        "yesterday": yesterday.strftime("%Y%m%d"),
         "today": today.strftime("%Y%m%d"),
         "tomorrow": tomorrow.strftime("%Y%m%d"),
-        "overmorgen": overmorgen.strftime("%Y%m%d"),
     }
 
     results: dict = {}
     errors: dict = {}
 
-    # ✅ 1× list_files() (grote winst)
+    # ✅ 1× list_files()
     try:
         files = load_steekkaart_filelist()
     except Exception as e:
         files = []
-        # als listing faalt: toon later als error op alle drie
         errors["dienst_list"] = str(e)
 
     chosen = {
+        "dienst_gisteren_file": _pick_latest_file_for_prefix(files, prefixes["yesterday"]),
         "dienst_vandaag_file": _pick_latest_file_for_prefix(files, prefixes["today"]),
         "dienst_morgen_file": _pick_latest_file_for_prefix(files, prefixes["tomorrow"]),
-        "dienst_overmorgen_file": _pick_latest_file_for_prefix(files, prefixes["overmorgen"]),
     }
 
-    # Parallel downloads/reads (alleen voor bestaande bestanden)
     tasks = {
         "person_json": load_personeelsfiche_json,
         "schade_df": load_schade_bron_df,
@@ -634,14 +623,13 @@ def load_all_data() -> dict:
         "gesprekken_df": load_gesprekken_df,
     }
 
-    # dienst tasks: alleen toevoegen als filename bestaat én listing niet faalde
     if "dienst_list" not in errors:
+        if chosen["dienst_gisteren_file"]:
+            tasks["dienst_gisteren_df"] = lambda f=chosen["dienst_gisteren_file"]: load_dienst_df_for_filename(f)
         if chosen["dienst_vandaag_file"]:
             tasks["dienst_vandaag_df"] = lambda f=chosen["dienst_vandaag_file"]: load_dienst_df_for_filename(f)
         if chosen["dienst_morgen_file"]:
             tasks["dienst_morgen_df"] = lambda f=chosen["dienst_morgen_file"]: load_dienst_df_for_filename(f)
-        if chosen["dienst_overmorgen_file"]:
-            tasks["dienst_overmorgen_df"] = lambda f=chosen["dienst_overmorgen_file"]: load_dienst_df_for_filename(f)
 
     with ThreadPoolExecutor(max_workers=max(4, len(tasks))) as ex:
         fut_to_key = {ex.submit(fn): key for key, fn in tasks.items()}
@@ -654,12 +642,12 @@ def load_all_data() -> dict:
 
     results["_errors"] = errors
     results["_meta"] = {
+        "yesterday": yesterday.isoformat(),
         "today": today.isoformat(),
         "tomorrow": tomorrow.isoformat(),
-        "overmorgen": overmorgen.isoformat(),
+        "yesterday_prefix": prefixes["yesterday"],
         "today_prefix": prefixes["today"],
         "tomorrow_prefix": prefixes["tomorrow"],
-        "overmorgen_prefix": prefixes["overmorgen"],
         "dienst_files": chosen,
     }
     return results
@@ -695,9 +683,9 @@ errors = bundle.get("_errors", {})
 meta = bundle.get("_meta", {})
 
 data_json = bundle.get("person_json")
+dienst_gisteren_df = bundle.get("dienst_gisteren_df")
 dienst_vandaag_df = bundle.get("dienst_vandaag_df")
 dienst_morgen_df = bundle.get("dienst_morgen_df")
-dienst_overmorgen_df = bundle.get("dienst_overmorgen_df")
 schade_df = bundle.get("schade_df")
 
 coachings = bundle.get("coachings") or {}
@@ -717,7 +705,6 @@ if "person_json" in errors:
     st.error(f"Fout bij laden personeelsficheGB.json: {errors['person_json']}")
 else:
     person = find_person_record(data_json, pnr) if data_json is not None else None
-
     if person:
         df_person = pd.DataFrame([{"Veld": k, "Waarde": v} for k, v in person.items()])
         st.table(df_person)
@@ -728,32 +715,25 @@ st.divider()
 
 
 # ============================================================
-# 6) UI: DIENST (VANDAAG/MORGEN/OVERMORGEN)
+# 6) UI: DIENST (GISTEREN / VANDAAG / MORGEN)
 # ============================================================
 
-st.header("Dienst van vandaag, morgen en overmorgen")
+st.header("Dienst van gisteren, vandaag en morgen")
 st.caption(
+    f"Gisteren: {meta.get('yesterday','')}  —  "
     f"Vandaag: {meta.get('today','')}  —  "
-    f"Morgen: {meta.get('tomorrow','')}  —  "
-    f"Overmorgen: {meta.get('overmorgen','')}"
+    f"Morgen: {meta.get('tomorrow','')}"
 )
 
-def render_dienst_block(
-    label: str,
-    df: Optional[pd.DataFrame],
-    caption_prefix: str,
-):
-    # centered block
+def render_dienst_block(label: str, df: Optional[pd.DataFrame], caption_prefix: str):
     _, mid, _ = center_block_columns()
     with mid:
         centered_subtitle(label)
 
-        # listing error -> toon als error (server issue)
         if "dienst_list" in errors:
             st.error(f"Fout bij ophalen steekkaart-lijst: {errors['dienst_list']}")
             return
 
-        # ✅ als df ontbreekt: NIET "Geen dienstbestand gevonden", maar jouw tekst
         if df is None:
             st.info("Er is nog geen steekkaart beschikbaar...")
             return
@@ -780,8 +760,13 @@ def render_dienst_block(
             st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
-# Als het lezen faalde voor een bestaande file, zie je dat als errors["dienst_x_df"].
-# Dan is df None? Nee: df is None als file niet bestond. Fouten bij lezen vangen we hier apart op:
+# ✅ Gisteren komt boven Vandaag
+if "dienst_gisteren_df" in errors:
+    st.error(f"Fout bij laden steekkaart (gisteren): {errors['dienst_gisteren_df']}")
+render_dienst_block("Gisteren", dienst_gisteren_df, "Bronbestand (gisteren)")
+
+st.divider()
+
 if "dienst_vandaag_df" in errors:
     st.error(f"Fout bij laden steekkaart (vandaag): {errors['dienst_vandaag_df']}")
 render_dienst_block("Vandaag", dienst_vandaag_df, "Bronbestand (vandaag)")
@@ -791,12 +776,6 @@ st.divider()
 if "dienst_morgen_df" in errors:
     st.error(f"Fout bij laden steekkaart (morgen): {errors['dienst_morgen_df']}")
 render_dienst_block("Morgen", dienst_morgen_df, "Bronbestand (morgen)")
-
-st.divider()
-
-if "dienst_overmorgen_df" in errors:
-    st.error(f"Fout bij laden steekkaart (overmorgen): {errors['dienst_overmorgen_df']}")
-render_dienst_block("Overmorgen", dienst_overmorgen_df, "Bronbestand (overmorgen)")
 
 st.divider()
 
