@@ -673,7 +673,7 @@ pnr = normalize_pnr(pnr_input)
 
 loader_slot = st.empty()
 with loader_slot:
-    loading_bus("Alles wordt geladen...")
+    loading_bus("Data wordt ingeladen...")
 
 bundle = load_all_data()
 
