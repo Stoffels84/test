@@ -8,10 +8,13 @@
 # ✅ Datumfix: Europe/Brussels
 # ✅ Persoonlijke gegevens: st.table() => geen scroll/slider
 # ✅ Dienst: vandaag + morgen + overmorgen (today + 1/+2)
+# ✅ Dienst-optimalisatie: 3× list_files() -> 1× list_files() (grote winst)
+# ✅ "Geen dienstbestand gevonden" vervangen door: "Er is nog geen steekkaart beschikbaar..."
 # ✅ Coaching: Coachingslijst.xlsx 1x downloaden, 2 sheets lezen
 # ✅ Geen mutaties op gecachte DF's (altijd .copy() in UI)
 # ✅ find_person_record deduplicated
 # ✅ Subtitels Vandaag/Morgen/Overmorgen gecentreerd
+# ✅ Dienst-blokken (titel + caption + tabel) gecentreerd + smaller
 # ============================================================
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Dict
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -47,7 +50,7 @@ st.markdown(
         text-shadow: 0 0 8px rgba(57,255,20,0.35);
     }
 
-    /* ✅ Center helper for section subtitles */
+    /* Center helper for section subtitles */
     .centerSubTitle {
         text-align: center;
         font-weight: 900;
@@ -56,6 +59,15 @@ st.markdown(
         color: var(--fluo-green);
         text-shadow: 0 0 10px rgba(57,255,20,0.25);
         letter-spacing: 0.2px;
+    }
+
+    /* Center helper for captions */
+    .centerCaption {
+        text-align: center;
+        font-size: 14px;
+        opacity: 0.9;
+        margin-top: 6px;
+        margin-bottom: 8px;
     }
     </style>
     """,
@@ -113,8 +125,17 @@ def find_person_record(data, personeelnummer: str):
 
 
 def centered_subtitle(text: str) -> None:
-    """Gecentreerde subtitel (Vandaag/Morgen/Overmorgen)."""
     st.markdown(f"<div class='centerSubTitle'>{text}</div>", unsafe_allow_html=True)
+
+
+def centered_caption(text: str) -> None:
+    import html as _html
+    st.markdown(f"<div class='centerCaption'>{_html.escape(text)}</div>", unsafe_allow_html=True)
+
+
+def center_block_columns():
+    """Center content in the middle column (smaller content like your screenshot)."""
+    return st.columns([1, 6, 1])
 
 
 # bcrypt (optioneel)
@@ -267,7 +288,6 @@ def load_login_df() -> pd.DataFrame:
     ftp = get_ftp_manager()
     b = ftp.download_bytes(ftp.join(LOGIN_FILE))
 
-    # Robuust: probeer Blad1, anders eerste sheet
     try:
         df = pd.read_excel(BytesIO(b), sheet_name="Blad1", engine="openpyxl")
     except Exception:
@@ -292,18 +312,15 @@ def verify_password(plain: str, stored_plain: str, stored_hash: str) -> bool:
     stored_plain = (stored_plain or "").strip()
     stored_hash = (stored_hash or "").strip()
 
-    # 1) plain match (behouden voor compatibiliteit met huidig Excel)
     if stored_plain and plain == stored_plain:
         return True
 
-    # 2) bcrypt
     if stored_hash.startswith("$2") and _PWD_CONTEXT is not None:
         try:
             return _PWD_CONTEXT.verify(plain, stored_hash)
         except Exception:
             pass
 
-    # 3) sha256
     is_hex_64 = len(stored_hash) == 64 and all(ch in "0123456789abcdefABCDEF" for ch in stored_hash)
     if is_hex_64:
         return hashlib.sha256(plain.encode("utf-8")).hexdigest().lower() == stored_hash.lower()
@@ -355,7 +372,6 @@ def login_gate() -> None:
     st.stop()
 
 
-# Gate vóór alles
 login_gate()
 
 with st.sidebar:
@@ -383,44 +399,58 @@ def load_personeelsfiche_json():
     return json.loads(txt)
 
 
+# ----------------------------
+# ✅ Dienst-optimalisatie:
+#  - 1× list_files()
+#  - selecteer latest file per prefix
+#  - download/read alleen wat bestaat
+# ----------------------------
+
+DIENST_WANTED = [
+    "personeelnummer",
+    "naam",
+    "Dienstadres",
+    "Uur",
+    "Plaats",
+    "richting",
+    "Loop",
+    "Lijn",
+    "voertuig",
+    "wissel",
+    "door appel",
+    "chauffeur appel",
+]
+
+
 @st.cache_data(ttl=120)
-def load_dienst_df_for_date(date_yyyymmdd: str) -> pd.DataFrame:
+def load_steekkaart_filelist() -> list[str]:
     ftp = get_ftp_manager()
-
     steekkaart_dir = ftp.join("steekkaart")
-    files = ftp.list_files(steekkaart_dir)
+    return ftp.list_files(steekkaart_dir)
 
-    matches = [f for f in files if f.startswith(date_yyyymmdd) and f.lower().endswith((".xlsx", ".xls"))]
+
+def _pick_latest_file_for_prefix(files: list[str], prefix: str) -> Optional[str]:
+    matches = [f for f in files if f.startswith(prefix) and f.lower().endswith((".xlsx", ".xls"))]
     if not matches:
-        raise FileNotFoundError(f"Geen dienstbestand gevonden in '{steekkaart_dir}' dat start met {date_yyyymmdd}")
-
+        return None
     matches.sort()
-    filename = matches[-1]
+    return matches[-1]
 
+
+@st.cache_data(ttl=120)
+def load_dienst_df_for_filename(filename: str) -> pd.DataFrame:
+    """Download + parse één specifiek dienstbestand."""
+    ftp = get_ftp_manager()
+    steekkaart_dir = ftp.join("steekkaart")
     remote_path = f"{steekkaart_dir.rstrip('/')}/{filename}"
     b = ftp.download_bytes(remote_path)
 
     df = pd.read_excel(BytesIO(b), sheet_name="Dienstlijst", engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
 
-    wanted = [
-        "personeelnummer",
-        "naam",
-        "Dienstadres",
-        "Uur",
-        "Plaats",
-        "richting",
-        "Loop",
-        "Lijn",
-        "voertuig",
-        "wissel",
-        "door appel",
-        "chauffeur appel",
-    ]
-
     col_map = {str(c).strip().lower(): c for c in df.columns}
     selected, missing = [], []
-    for w in wanted:
+    for w in DIENST_WANTED:
         k = w.lower()
         if k in col_map:
             selected.append(col_map[k])
@@ -433,7 +463,6 @@ def load_dienst_df_for_date(date_yyyymmdd: str) -> pd.DataFrame:
     out = df[selected].copy()
     out.attrs["missing_columns"] = missing
     out.attrs["source_file"] = filename
-    out.attrs["date_prefix"] = date_yyyymmdd
     return out
 
 
@@ -572,28 +601,49 @@ def load_gesprekken_df() -> pd.DataFrame:
 def load_all_data() -> dict:
     today = datetime.now(BRUSSELS).date()
     tomorrow = today + timedelta(days=1)
-    day_after = today + timedelta(days=2)
+    overmorgen = today + timedelta(days=2)
 
     prefixes = {
         "today": today.strftime("%Y%m%d"),
         "tomorrow": tomorrow.strftime("%Y%m%d"),
-        "day_after": day_after.strftime("%Y%m%d"),
+        "overmorgen": overmorgen.strftime("%Y%m%d"),
     }
 
+    results: dict = {}
+    errors: dict = {}
+
+    # ✅ 1× list_files() (grote winst)
+    try:
+        files = load_steekkaart_filelist()
+    except Exception as e:
+        files = []
+        # als listing faalt: toon later als error op alle drie
+        errors["dienst_list"] = str(e)
+
+    chosen = {
+        "dienst_vandaag_file": _pick_latest_file_for_prefix(files, prefixes["today"]),
+        "dienst_morgen_file": _pick_latest_file_for_prefix(files, prefixes["tomorrow"]),
+        "dienst_overmorgen_file": _pick_latest_file_for_prefix(files, prefixes["overmorgen"]),
+    }
+
+    # Parallel downloads/reads (alleen voor bestaande bestanden)
     tasks = {
         "person_json": load_personeelsfiche_json,
-        "dienst_vandaag_df": lambda: load_dienst_df_for_date(prefixes["today"]),
-        "dienst_morgen_df": lambda: load_dienst_df_for_date(prefixes["tomorrow"]),
-        "dienst_overmorgen_df": lambda: load_dienst_df_for_date(prefixes["day_after"]),
         "schade_df": load_schade_bron_df,
         "coachings": load_coachings_dfs,
         "gesprekken_df": load_gesprekken_df,
     }
 
-    results = {}
-    errors = {}
+    # dienst tasks: alleen toevoegen als filename bestaat én listing niet faalde
+    if "dienst_list" not in errors:
+        if chosen["dienst_vandaag_file"]:
+            tasks["dienst_vandaag_df"] = lambda f=chosen["dienst_vandaag_file"]: load_dienst_df_for_filename(f)
+        if chosen["dienst_morgen_file"]:
+            tasks["dienst_morgen_df"] = lambda f=chosen["dienst_morgen_file"]: load_dienst_df_for_filename(f)
+        if chosen["dienst_overmorgen_file"]:
+            tasks["dienst_overmorgen_df"] = lambda f=chosen["dienst_overmorgen_file"]: load_dienst_df_for_filename(f)
 
-    with ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+    with ThreadPoolExecutor(max_workers=max(4, len(tasks))) as ex:
         fut_to_key = {ex.submit(fn): key for key, fn in tasks.items()}
         for fut in as_completed(fut_to_key):
             key = fut_to_key[fut]
@@ -606,10 +656,11 @@ def load_all_data() -> dict:
     results["_meta"] = {
         "today": today.isoformat(),
         "tomorrow": tomorrow.isoformat(),
-        "day_after": day_after.isoformat(),
+        "overmorgen": overmorgen.isoformat(),
         "today_prefix": prefixes["today"],
         "tomorrow_prefix": prefixes["tomorrow"],
-        "day_after_prefix": prefixes["day_after"],
+        "overmorgen_prefix": prefixes["overmorgen"],
+        "dienst_files": chosen,
     }
     return results
 
@@ -684,80 +735,68 @@ st.header("Dienst van vandaag, morgen en overmorgen")
 st.caption(
     f"Vandaag: {meta.get('today','')}  —  "
     f"Morgen: {meta.get('tomorrow','')}  —  "
-    f"Overmorgen: {meta.get('day_after','')}"
+    f"Overmorgen: {meta.get('overmorgen','')}"
 )
 
 def render_dienst_block(
     label: str,
     df: Optional[pd.DataFrame],
-    error_key: str,
-    not_found_info_text: str,
     caption_prefix: str,
 ):
-    centered_subtitle(label)
+    # centered block
+    _, mid, _ = center_block_columns()
+    with mid:
+        centered_subtitle(label)
 
-    if error_key in errors:
-        msg = str(errors[error_key])
-        # netter bij "file bestaat (nog) niet"
-        if "Geen dienstbestand gevonden" in msg:
-            st.info(not_found_info_text)
+        # listing error -> toon als error (server issue)
+        if "dienst_list" in errors:
+            st.error(f"Fout bij ophalen steekkaart-lijst: {errors['dienst_list']}")
+            return
+
+        # ✅ als df ontbreekt: NIET "Geen dienstbestand gevonden", maar jouw tekst
+        if df is None:
+            st.info("Er is nog geen steekkaart beschikbaar...")
+            return
+
+        missing = df.attrs.get("missing_columns", [])
+        if missing:
+            st.warning(f"Ontbrekende kolommen in Dienstlijst ({label.lower()}, niet getoond): {', '.join(missing)}")
+
+        if "personeelnummer" not in df.columns:
+            st.error(f"Kolom 'personeelnummer' ontbreekt ({label.lower()}). Gevonden: {list(df.columns)}")
+            return
+
+        local = df.copy()
+        local["personeelnummer"] = local["personeelnummer"].astype(str).map(normalize_pnr)
+        rows = local[local["personeelnummer"] == pnr].copy()
+
+        source_file = df.attrs.get("source_file", "")
+        if source_file:
+            centered_caption(f"{caption_prefix}: {source_file}")
+
+        if rows.empty:
+            st.info(f"Geen dienst gevonden voor {label.lower()} voor dit personeelnummer.")
         else:
-            st.error(msg)
-        return
-
-    if df is None:
-        st.info(not_found_info_text)
-        return
-
-    missing = df.attrs.get("missing_columns", [])
-    if missing:
-        st.warning(f"Ontbrekende kolommen in Dienstlijst ({label.lower()}, niet getoond): {', '.join(missing)}")
-
-    if "personeelnummer" not in df.columns:
-        st.error(f"Kolom 'personeelnummer' ontbreekt ({label.lower()}). Gevonden: {list(df.columns)}")
-        return
-
-    local = df.copy()
-    local["personeelnummer"] = local["personeelnummer"].astype(str).map(normalize_pnr)
-    rows = local[local["personeelnummer"] == pnr].copy()
-
-    source_file = df.attrs.get("source_file", "")
-    if source_file:
-        st.caption(f"{caption_prefix}: {source_file}")
-
-    if rows.empty:
-        st.info(f"Geen dienst gevonden voor {label.lower()} voor dit personeelnummer.")
-    else:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
-render_dienst_block(
-    label="Vandaag",
-    df=dienst_vandaag_df,
-    error_key="dienst_vandaag_df",
-    not_found_info_text="Er is geen dienstbestand voor vandaag beschikbaar.",
-    caption_prefix="Bronbestand (vandaag)",
-)
+# Als het lezen faalde voor een bestaande file, zie je dat als errors["dienst_x_df"].
+# Dan is df None? Nee: df is None als file niet bestond. Fouten bij lezen vangen we hier apart op:
+if "dienst_vandaag_df" in errors:
+    st.error(f"Fout bij laden steekkaart (vandaag): {errors['dienst_vandaag_df']}")
+render_dienst_block("Vandaag", dienst_vandaag_df, "Bronbestand (vandaag)")
 
 st.divider()
 
-render_dienst_block(
-    label="Morgen",
-    df=dienst_morgen_df,
-    error_key="dienst_morgen_df",
-    not_found_info_text="Er is nog geen dienstbestand voor morgen beschikbaar.",
-    caption_prefix="Bronbestand (morgen)",
-)
+if "dienst_morgen_df" in errors:
+    st.error(f"Fout bij laden steekkaart (morgen): {errors['dienst_morgen_df']}")
+render_dienst_block("Morgen", dienst_morgen_df, "Bronbestand (morgen)")
 
 st.divider()
 
-render_dienst_block(
-    label="Overmorgen",
-    df=dienst_overmorgen_df,
-    error_key="dienst_overmorgen_df",
-    not_found_info_text="Er is nog geen dienstbestand voor overmorgen beschikbaar.",
-    caption_prefix="Bronbestand (overmorgen)",
-)
+if "dienst_overmorgen_df" in errors:
+    st.error(f"Fout bij laden steekkaart (overmorgen): {errors['dienst_overmorgen_df']}")
+render_dienst_block("Overmorgen", dienst_overmorgen_df, "Bronbestand (overmorgen)")
 
 st.divider()
 
@@ -815,7 +854,6 @@ st.header("Coaching")
 if "coachings" in errors:
     st.error(f"Fout bij laden coaching: {errors['coachings']}")
 else:
-    # --- Geplande coaching ---
     st.subheader("Geplande coaching")
     if gepland is None:
         st.info("Geplande coaching niet beschikbaar.")
@@ -839,7 +877,6 @@ else:
 
     st.divider()
 
-    # --- Voltooide coaching ---
     st.subheader("Voltooide coaching")
     if voltooid is None:
         st.info("Voltooide coaching niet beschikbaar.")
