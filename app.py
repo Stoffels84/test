@@ -7,10 +7,11 @@
 # ✅ Mega bus-animatie tijdens laden (fullscreen overlay)
 # ✅ Datumfix: Europe/Brussels
 # ✅ Persoonlijke gegevens: st.table() => geen scroll/slider
-# ✅ Dienst: vandaag + morgen (today + 1 dag)
+# ✅ Dienst: vandaag + morgen + overmorgen (today + 1/+2)
 # ✅ Coaching: Coachingslijst.xlsx 1x downloaden, 2 sheets lezen
 # ✅ Geen mutaties op gecachte DF's (altijd .copy() in UI)
 # ✅ find_person_record deduplicated
+# ✅ Subtitels Vandaag/Morgen/Overmorgen gecentreerd
 # ============================================================
 
 from __future__ import annotations
@@ -44,6 +45,17 @@ st.markdown(
     h1, h2, h3 {
         color: var(--fluo-green) !important;
         text-shadow: 0 0 8px rgba(57,255,20,0.35);
+    }
+
+    /* ✅ Center helper for section subtitles */
+    .centerSubTitle {
+        text-align: center;
+        font-weight: 900;
+        font-size: 34px;
+        margin: 10px 0 6px 0;
+        color: var(--fluo-green);
+        text-shadow: 0 0 10px rgba(57,255,20,0.25);
+        letter-spacing: 0.2px;
     }
     </style>
     """,
@@ -98,6 +110,11 @@ def find_person_record(data, personeelnummer: str):
         return None
 
     return None
+
+
+def centered_subtitle(text: str) -> None:
+    """Gecentreerde subtitel (Vandaag/Morgen/Overmorgen)."""
+    st.markdown(f"<div class='centerSubTitle'>{text}</div>", unsafe_allow_html=True)
 
 
 # bcrypt (optioneel)
@@ -250,7 +267,7 @@ def load_login_df() -> pd.DataFrame:
     ftp = get_ftp_manager()
     b = ftp.download_bytes(ftp.join(LOGIN_FILE))
 
-    # Robuuster: probeer Blad1, anders eerste sheet
+    # Robuust: probeer Blad1, anders eerste sheet
     try:
         df = pd.read_excel(BytesIO(b), sheet_name="Blad1", engine="openpyxl")
     except Exception:
@@ -275,7 +292,7 @@ def verify_password(plain: str, stored_plain: str, stored_hash: str) -> bool:
     stored_plain = (stored_plain or "").strip()
     stored_hash = (stored_hash or "").strip()
 
-    # 1) plain match (laat staan omdat je huidige bestand dit blijkbaar gebruikt)
+    # 1) plain match (behouden voor compatibiliteit met huidig Excel)
     if stored_plain and plain == stored_plain:
         return True
 
@@ -555,13 +572,19 @@ def load_gesprekken_df() -> pd.DataFrame:
 def load_all_data() -> dict:
     today = datetime.now(BRUSSELS).date()
     tomorrow = today + timedelta(days=1)
-    today_prefix = today.strftime("%Y%m%d")
-    tomorrow_prefix = tomorrow.strftime("%Y%m%d")
+    day_after = today + timedelta(days=2)
+
+    prefixes = {
+        "today": today.strftime("%Y%m%d"),
+        "tomorrow": tomorrow.strftime("%Y%m%d"),
+        "day_after": day_after.strftime("%Y%m%d"),
+    }
 
     tasks = {
         "person_json": load_personeelsfiche_json,
-        "dienst_vandaag_df": lambda: load_dienst_df_for_date(today_prefix),
-        "dienst_morgen_df": lambda: load_dienst_df_for_date(tomorrow_prefix),
+        "dienst_vandaag_df": lambda: load_dienst_df_for_date(prefixes["today"]),
+        "dienst_morgen_df": lambda: load_dienst_df_for_date(prefixes["tomorrow"]),
+        "dienst_overmorgen_df": lambda: load_dienst_df_for_date(prefixes["day_after"]),
         "schade_df": load_schade_bron_df,
         "coachings": load_coachings_dfs,
         "gesprekken_df": load_gesprekken_df,
@@ -583,8 +606,10 @@ def load_all_data() -> dict:
     results["_meta"] = {
         "today": today.isoformat(),
         "tomorrow": tomorrow.isoformat(),
-        "today_prefix": today_prefix,
-        "tomorrow_prefix": tomorrow_prefix,
+        "day_after": day_after.isoformat(),
+        "today_prefix": prefixes["today"],
+        "tomorrow_prefix": prefixes["tomorrow"],
+        "day_after_prefix": prefixes["day_after"],
     }
     return results
 
@@ -621,10 +646,13 @@ meta = bundle.get("_meta", {})
 data_json = bundle.get("person_json")
 dienst_vandaag_df = bundle.get("dienst_vandaag_df")
 dienst_morgen_df = bundle.get("dienst_morgen_df")
+dienst_overmorgen_df = bundle.get("dienst_overmorgen_df")
 schade_df = bundle.get("schade_df")
+
 coachings = bundle.get("coachings") or {}
 gepland = coachings.get("gepland")
 voltooid = coachings.get("voltooid")
+
 gesprekken_df = bundle.get("gesprekken_df")
 
 
@@ -649,72 +677,87 @@ st.divider()
 
 
 # ============================================================
-# 6) UI: DIENST VAN VANDAAG + MORGEN
+# 6) UI: DIENST (VANDAAG/MORGEN/OVERMORGEN)
 # ============================================================
 
-st.header("Dienst van vandaag en morgen")
-st.caption(f"Vandaag: {meta.get('today','')}  —  Morgen: {meta.get('tomorrow','')}")
+st.header("Dienst van vandaag, morgen en overmorgen")
+st.caption(
+    f"Vandaag: {meta.get('today','')}  —  "
+    f"Morgen: {meta.get('tomorrow','')}  —  "
+    f"Overmorgen: {meta.get('day_after','')}"
+)
 
-# ---- Vandaag ----
-st.subheader("Vandaag")
-if "dienst_vandaag_df" in errors:
-    st.error(str(errors["dienst_vandaag_df"]))
-elif dienst_vandaag_df is None:
-    st.error("Dienst (vandaag) niet geladen.")
-else:
-    missing = dienst_vandaag_df.attrs.get("missing_columns", [])
-    if missing:
-        st.warning(f"Ontbrekende kolommen in Dienstlijst (vandaag, niet getoond): {', '.join(missing)}")
+def render_dienst_block(
+    label: str,
+    df: Optional[pd.DataFrame],
+    error_key: str,
+    not_found_info_text: str,
+    caption_prefix: str,
+):
+    centered_subtitle(label)
 
-    if "personeelnummer" not in dienst_vandaag_df.columns:
-        st.error(f"Kolom 'personeelnummer' ontbreekt (vandaag). Gevonden: {list(dienst_vandaag_df.columns)}")
-    else:
-        dfv = dienst_vandaag_df.copy()
-        dfv["personeelnummer"] = dfv["personeelnummer"].astype(str).map(normalize_pnr)
-        dienst_rows = dfv[dfv["personeelnummer"] == pnr].copy()
-
-        source_file = dienst_vandaag_df.attrs.get("source_file", "")
-        if source_file:
-            st.caption(f"Bronbestand (vandaag): {source_file}")
-
-        if dienst_rows.empty:
-            st.info("Geen dienst gevonden voor vandaag voor dit personeelsnummer.")
+    if error_key in errors:
+        msg = str(errors[error_key])
+        # netter bij "file bestaat (nog) niet"
+        if "Geen dienstbestand gevonden" in msg:
+            st.info(not_found_info_text)
         else:
-            st.dataframe(dienst_rows, use_container_width=True, hide_index=True)
+            st.error(msg)
+        return
+
+    if df is None:
+        st.info(not_found_info_text)
+        return
+
+    missing = df.attrs.get("missing_columns", [])
+    if missing:
+        st.warning(f"Ontbrekende kolommen in Dienstlijst ({label.lower()}, niet getoond): {', '.join(missing)}")
+
+    if "personeelnummer" not in df.columns:
+        st.error(f"Kolom 'personeelnummer' ontbreekt ({label.lower()}). Gevonden: {list(df.columns)}")
+        return
+
+    local = df.copy()
+    local["personeelnummer"] = local["personeelnummer"].astype(str).map(normalize_pnr)
+    rows = local[local["personeelnummer"] == pnr].copy()
+
+    source_file = df.attrs.get("source_file", "")
+    if source_file:
+        st.caption(f"{caption_prefix}: {source_file}")
+
+    if rows.empty:
+        st.info(f"Geen dienst gevonden voor {label.lower()} voor dit personeelnummer.")
+    else:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+render_dienst_block(
+    label="Vandaag",
+    df=dienst_vandaag_df,
+    error_key="dienst_vandaag_df",
+    not_found_info_text="Er is geen dienstbestand voor vandaag beschikbaar.",
+    caption_prefix="Bronbestand (vandaag)",
+)
 
 st.divider()
 
-# ---- Morgen ----
-st.subheader("Morgen")
-if "dienst_morgen_df" in errors:
-    # Vaak is dit gewoon: file bestaat nog niet -> toon als info i.p.v. rood
-    msg = str(errors["dienst_morgen_df"])
-    if "Geen dienstbestand gevonden" in msg:
-        st.info("Er is nog geen dienstbestand voor morgen beschikbaar.")
-    else:
-        st.error(msg)
-elif dienst_morgen_df is None:
-    st.info("Dienst (morgen) nog niet beschikbaar.")
-else:
-    missing = dienst_morgen_df.attrs.get("missing_columns", [])
-    if missing:
-        st.warning(f"Ontbrekende kolommen in Dienstlijst (morgen, niet getoond): {', '.join(missing)}")
+render_dienst_block(
+    label="Morgen",
+    df=dienst_morgen_df,
+    error_key="dienst_morgen_df",
+    not_found_info_text="Er is nog geen dienstbestand voor morgen beschikbaar.",
+    caption_prefix="Bronbestand (morgen)",
+)
 
-    if "personeelnummer" not in dienst_morgen_df.columns:
-        st.error(f"Kolom 'personeelnummer' ontbreekt (morgen). Gevonden: {list(dienst_morgen_df.columns)}")
-    else:
-        dfm = dienst_morgen_df.copy()
-        dfm["personeelnummer"] = dfm["personeelnummer"].astype(str).map(normalize_pnr)
-        dienst_rows = dfm[dfm["personeelnummer"] == pnr].copy()
+st.divider()
 
-        source_file = dienst_morgen_df.attrs.get("source_file", "")
-        if source_file:
-            st.caption(f"Bronbestand (morgen): {source_file}")
-
-        if dienst_rows.empty:
-            st.info("Geen dienst gevonden voor morgen voor dit personeelnummer.")
-        else:
-            st.dataframe(dienst_rows, use_container_width=True, hide_index=True)
+render_dienst_block(
+    label="Overmorgen",
+    df=dienst_overmorgen_df,
+    error_key="dienst_overmorgen_df",
+    not_found_info_text="Er is nog geen dienstbestand voor overmorgen beschikbaar.",
+    caption_prefix="Bronbestand (overmorgen)",
+)
 
 st.divider()
 
@@ -858,7 +901,6 @@ else:
             def esc(x) -> str:
                 return _html.escape("" if x is None else str(x))
 
-            # Veilig: enkel kolommen die bestaan
             desired_cols = ["nummer", "Chauffeurnaam", "Onderwerp", "Datum", "Info"]
             show_cols = [c for c in desired_cols if c in rows.columns]
             show = rows[show_cols].copy()
